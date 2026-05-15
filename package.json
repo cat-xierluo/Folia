@@ -23,7 +23,8 @@
     "dompurify": "3.4.3",
     "markdown-it": "14.1.1",
     "react": "^19.2.6",
-    "react-dom": "^19.2.6"
+    "react-dom": "^19.2.6",
+    "vditor": "3.11.2"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
