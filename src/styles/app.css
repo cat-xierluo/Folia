@@ -1,0 +1,180 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: #333;
+  background: #fff;
+}
+
+.app-layout {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+/* Toolbar - minimal, Typora-like */
+.app-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 38px;
+  padding: 0 16px;
+  background: #fafafa;
+  border-bottom: 1px solid #e8e8e8;
+  flex-shrink: 0;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.toolbar-left, .toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.app-toolbar button {
+  padding: 3px 10px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  color: #666;
+  transition: all 0.15s;
+}
+
+.app-toolbar button:hover {
+  background: #e8e8e8;
+  color: #333;
+}
+
+.app-toolbar button.active {
+  background: #4a4a4a;
+  color: #fff;
+}
+
+.file-name {
+  font-size: 12px;
+  color: #999;
+  margin-left: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Main Content - Fixed Split */
+.main-content {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+.split-layout .editor-pane {
+  flex: 0 0 45%;
+  border-right: 1px solid #e8e8e8;
+  background: #fff;
+}
+
+.split-layout .preview-area {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+/* TOC Pane */
+.toc-pane {
+  flex: 0 0 180px;
+  border-right: 1px solid #e8e8e8;
+  background: #fafafa;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+.toc-header {
+  padding: 10px 14px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #999;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid #eee;
+}
+
+.toc-list {
+  padding: 6px 0;
+}
+
+.toc-item {
+  display: block;
+  padding: 4px 14px;
+  font-size: 12px;
+  color: #666;
+  text-decoration: none;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: all 0.1s;
+}
+
+.toc-item:hover {
+  color: #333;
+  background: #eee;
+}
+
+.toc-h1 { font-weight: 600; color: #444; }
+.toc-h2 { padding-left: 26px; }
+.toc-h3 { padding-left: 38px; }
+.toc-h4 { padding-left: 50px; }
+.toc-h5 { padding-left: 62px; }
+.toc-h6 { padding-left: 74px; }
+
+/* Editor Pane */
+.editor-pane {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  height: 100%;
+}
+
+.editor-pane .cm-editor {
+  height: 100%;
+  font-size: 14px;
+}
+
+.editor-pane .cm-editor .cm-content {
+  font-family: "SF Mono", "Menlo", "Monaco", "Consolas", monospace;
+}
+
+/* Preview Shell */
+.preview-shell {
+  flex: 1;
+  overflow: auto;
+  background: #fff;
+}
+
+/* Status Bar */
+.status-bar {
+  display: flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 16px;
+  background: #fafafa;
+  border-top: 1px solid #e8e8e8;
+  font-size: 11px;
+  color: #aaa;
+  flex-shrink: 0;
+  gap: 12px;
+}
+
+.status-dirty {
+  color: #e67e22;
+  font-weight: 500;
+}
