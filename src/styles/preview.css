@@ -5,7 +5,7 @@
   background: #fff;
 }
 
-.preview-document {
+.preview-content {
   max-width: 800px;
   margin: 0 auto;
   padding: 40px 32px 80px;
@@ -14,7 +14,8 @@
   color: #333;
 }
 
-.preview-document h1 {
+/* Override Vditor defaults with legal-document-friendly styles */
+.preview-content h1 {
   font-size: 28px;
   margin: 0 0 20px;
   text-align: center;
@@ -22,7 +23,7 @@
   color: #222;
 }
 
-.preview-document h2 {
+.preview-content h2 {
   font-size: 22px;
   margin: 32px 0 14px;
   font-weight: 700;
@@ -31,31 +32,31 @@
   border-bottom: 1px solid #eee;
 }
 
-.preview-document h3 {
+.preview-content h3 {
   font-size: 18px;
   margin: 24px 0 10px;
   font-weight: 600;
   color: #333;
 }
 
-.preview-document h4 {
+.preview-content h4 {
   font-size: 16px;
   margin: 20px 0 8px;
   font-weight: 600;
 }
 
-.preview-document p {
+.preview-content p {
   margin: 8px 0;
 }
 
-.preview-document blockquote {
+.preview-content blockquote {
   margin: 12px 0;
   padding: 8px 16px;
   border-left: 3px solid #ddd;
   color: #777;
 }
 
-.preview-document code {
+.preview-content code {
   background: #f5f5f5;
   padding: 1px 5px;
   border-radius: 3px;
@@ -63,7 +64,7 @@
   color: #c7254e;
 }
 
-.preview-document pre {
+.preview-content pre {
   background: #fafafa;
   border: 1px solid #eee;
   padding: 14px;
@@ -72,14 +73,14 @@
   margin: 12px 0;
 }
 
-.preview-document pre code {
+.preview-content pre code {
   background: none;
   padding: 0;
   color: #333;
 }
 
 /* Tables - clean, legal-document friendly */
-.preview-document table {
+.preview-content table {
   width: 100%;
   border-collapse: collapse;
   table-layout: fixed;
@@ -87,8 +88,8 @@
   font-size: 14px;
 }
 
-.preview-document th,
-.preview-document td {
+.preview-content th,
+.preview-content td {
   border: 1px solid #d0d0d0;
   padding: 8px 10px;
   vertical-align: top;
@@ -96,39 +97,44 @@
   overflow-wrap: anywhere;
 }
 
-.preview-document th {
+.preview-content th {
   background: #fafafa;
   text-align: center;
   font-weight: 600;
   color: #555;
 }
 
-.preview-document td[colspan] {
+.preview-content td[colspan] {
   background: #fafafa;
   font-weight: 600;
   color: #444;
 }
 
-.preview-document a {
+.preview-content a {
   color: #4285f4;
   text-decoration: none;
 }
 
-.preview-document a:hover {
+.preview-content a:hover {
   text-decoration: underline;
 }
 
-.preview-document img {
+.preview-content img {
   max-width: 100%;
 }
 
-.preview-document hr {
+.preview-content hr {
   border: none;
   border-top: 1px solid #eee;
   margin: 24px 0;
 }
 
-.preview-document ul, .preview-document ol {
+.preview-content ul, .preview-content ol {
   padding-left: 24px;
   margin: 8px 0;
+}
+
+/* Vditor chart/formula containers */
+.preview-content .vditor-wysiwyg__preview {
+  overflow: auto;
 }

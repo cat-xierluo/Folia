@@ -1,6 +1,6 @@
-import { useMemo, useEffect, useRef } from 'react';
-import { renderMarkdown } from '../services/markdownService';
-import { sanitizeHtml } from '../services/sanitizeService';
+import { useEffect, useRef } from 'react';
+import Vditor from 'vditor';
+import 'vditor/dist/index.css';
 import type { TocItem } from '../types/document';
 
 type PreviewPaneProps = {
@@ -9,30 +9,40 @@ type PreviewPaneProps = {
 };
 
 export function PreviewPane({ source, tocIds }: PreviewPaneProps) {
-  const html = useMemo(() => {
-    let rendered = renderMarkdown(source);
+  const containerRef = useRef<HTMLDivElement>(null);
 
-    // 为标题注入 id 以支持 TOC 跳转
-    if (tocIds.length > 0) {
-      let idx = 0;
-      rendered = rendered.replace(/<(h[1-6])>/gi, (match, tag) => {
-        const tocItem = tocIds[idx++];
-        if (tocItem) {
-          return `<${tag} id="${tocItem.id}">`;
-        }
-        return match;
-      });
-    }
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
 
-    return sanitizeHtml(rendered);
+    Vditor.preview(el, source, {
+      mode: 'light',
+      anchor: 0,
+      cdn: '/vditor',
+      hljs: {
+        style: 'github',
+        enable: true,
+        lineNumber: false,
+      },
+      markdown: {
+        sanitize: true,
+      },
+      after() {
+        if (tocIds.length === 0) return;
+        const headings = el.querySelectorAll('h1, h2, h3, h4, h5, h6');
+        headings.forEach((h, i) => {
+          const tocItem = tocIds[i];
+          if (tocItem) {
+            h.id = tocItem.id;
+          }
+        });
+      },
+    });
   }, [source, tocIds]);
 
   return (
     <div className="preview-shell">
-      <article
-        className="preview-document"
-        dangerouslySetInnerHTML={{ __html: html }}
-      />
+      <div ref={containerRef} className="vditor-reset preview-content" />
     </div>
   );
 }
