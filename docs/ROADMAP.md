@@ -10,6 +10,7 @@
 ## 当前进展概览
 
 - **v0.1 MVP 已完成**：基础的 Markdown + HTML 分屏阅读编辑器，支持 TOC 大纲、拖拽打开、文件保存。
+- **v0.2 渲染引擎升级已完成**：用 Vditor.preview() 替换 markdown-it + DOMPurify，支持 Mermaid/KaTeX/代码高亮等。
 - 项目已推送到 GitHub: https://github.com/cat-xierluo/Folia
 
 ## 阶段状态速览
@@ -17,9 +18,10 @@
 | 阶段 | 目标摘要 | 当前状态 | 备注 |
 | :--- | :--- | :--- | :--- |
 | v0.1 MVP | 基础分屏阅读编辑 | 🟢 已完成 | CodeMirror + markdown-it |
-| v0.2 编辑体验 | 所见即所得编辑 | ⚪ 未开始 | Milkdown 替换 CodeMirror |
-| v0.3 文档管理 | 最近文件、多文件 | ⚪ 未开始 | |
-| v0.4 法律增强 | 表格编辑、模板 | ⚪ 未开始 | |
+| v0.2 渲染引擎 | Vditor 替换 markdown-it | 🟢 已完成 | Vditor.preview() + 本地 CDN |
+| v0.3 编辑体验 | 所见即所得编辑 | ⚪ 未开始 | 待定方案 |
+| v0.4 文档管理 | 最近文件、多文件 | ⚪ 未开始 | |
+| v0.5 法律增强 | 表格编辑、模板 | ⚪ 未开始 | |
 
 ## 任务详情
 
@@ -37,25 +39,31 @@
 - [x] 法律文档表格样式
 - [x] 推送到 GitHub
 
-### v0.2 所见即所得编辑
+### v0.2 渲染引擎升级（已完成）
 
-- [ ] 调研 Milkdown 集成方案，确认 HTML 表格编辑支持程度
-- [ ] 安装 Milkdown 及相关插件（@milkdown/core, @milkdown/react, @milkdown/preset-commonmark, @milkdown/preset-gfm）
-- [ ] 创建 `MilkdownEditor.tsx` 组件，替换 `EditorPane.tsx`
-- [ ] 实现 Markdown 源码 ↔ Milkdown 双向同步
-- [ ] 保留源码编辑模式作为 fallback（可切换）
-- [ ] 验证 HTML table（rowspan/colspan）在 Milkdown 中的渲染和编辑
-- [ ] 更新工具栏：添加「源码 / 所见即所得」模式切换
-- [ ] 更新样式适配 Milkdown 输出的 DOM 结构
+- [x] 调研 Vditor.preview() 静态渲染方案，确认 HTML table（rowspan/colspan）支持
+- [x] 复制 Vditor 静态资源到 public/vditor/dist/（本地 CDN，不依赖 unpkg）
+- [x] 改写 PreviewPane.tsx，用 Vditor.preview() 替换 markdown-it + DOMPurify
+- [x] 更新 preview.css 选择器适配 Vditor DOM 结构（.vditor-reset）
+- [x] 收紧 CSP 配置（移除 https: 通配）
+- [x] 清理测试代码（删除 VditorTest.tsx，恢复 App.tsx）
+- [x] 验证：标题、列表、代码高亮、表格、大纲均正常
 
-### v0.3 文档管理
+### v0.3 编辑体验
+
+- [ ] 调研所见即所得编辑方案（Vditor 编辑器 / Milkdown / 其他）
+- [ ] 实现 Markdown 源码 ↔ 可视化编辑双向同步
+- [ ] 保留源码编辑模式作为 fallback
+- [ ] 验证 HTML table 在编辑器中的表现
+
+### v0.4 文档管理
 
 - [ ] 最近打开文件列表（持久化到本地存储）
 - [ ] 文件变更检测（外部编辑后提示刷新）
 - [ ] 关闭前未保存提醒
 - [ ] 左侧文件侧边栏（可选）
 
-### v0.4 法律增强
+### v0.5 法律增强
 
 - [ ] 表格列隐藏规则可配置（data-hide-last-column 属性）
 - [ ] 证据目录模板
@@ -66,5 +74,6 @@
 ## 进度日志
 
 - **2026-05-15**
+  - v0.2 渲染引擎升级完成。用 Vditor.preview() 替换 markdown-it + DOMPurify，支持 Mermaid 图表、KaTeX 公式、highlight.js 代码高亮。Vditor 静态资源本地化到 public/vditor/dist/。CSP 收紧为只允许本地资源。
   - v0.1 MVP 完成。项目从零搭建：Tauri v2 + React 19 + TypeScript + Vite 8，集成 markdown-it、DOMPurify、CodeMirror 6。支持分屏阅读编辑、TOC 大纲、拖拽打开、快捷键。
   - 项目重命名为 Folia，推送到 GitHub。

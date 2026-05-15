@@ -75,26 +75,45 @@ v0.1 不实现提交模式和打印，专注核心阅读编辑体验。
 
 ---
 
-### [DEC-005] - 2026-05-15 - 计划：所见即所得编辑方案选型
+### [DEC-005] - 2026-05-15 - 渲染引擎选型：Vditor.preview() 替换 markdown-it
 
 **背景**
-v0.2 计划引入所见即所得编辑，需要选择编辑器框架。
+v0.1 使用 markdown-it + DOMPurify 渲染 Markdown + HTML，功能可用但缺少 Mermaid 图表、KaTeX 公式、代码高亮等常见 Markdown 特性。v0.2 需要增强渲染能力。
 
 **选项**
-1. Typora 路线 — contentEditable + 自研引擎，工程量极大
-2. ProseMirror 路线 — Milkdown / Tiptap，生态成熟
-3. 混合路线 — 普通文本所见即所得，复杂 HTML 表格 fallback 到源码
+1. 继续用 markdown-it + 插件 — 需要逐一集成 Mermaid/KaTeX/highlight.js，维护成本高
+2. Vditor.preview() — 静态渲染方法，独立于编辑器使用，自带 Lute 引擎 + 所有高级渲染
+3. Milkdown（ProseMirror）— 所见即所得编辑器，但当前只需渲染不需要编辑
 
 **决策**
-计划采用 Milkdown（基于 ProseMirror）。
+采用 Vditor.preview()（方案 2）。
 
 **理由**
-Milkdown 原生支持 Markdown 模式和 GFM 插件，可在 Tauri WebView 中运行，不需要换 Electron。对 HTML 表格的编辑支持需在 v0.2 开发阶段验证，必要时采用混合路线（方案 3）。
+Vditor.preview() 是纯渲染方法，不需要引入完整编辑器。实测可渲染 HTML table（rowspan/colspan），自带 Mermaid/ECharts/KaTeX/highlight.js/outline。MIT 协议。保留自己的布局和 CodeMirror 编辑器，只替换渲染层，改动最小。静态资源本地化到 `public/vditor/dist/`，桌面应用不依赖外部 CDN。
 
 **影响**
-v0.2 将替换 CodeMirror 为 Milkdown。需保留源码模式作为 fallback。
+- `PreviewPane.tsx` 改用 `Vditor.preview()` 替换 markdown-it + DOMPurify
+- `markdownService.ts` 不再使用（Vditor 自带 Lute 引擎）
+- `sanitizeService.ts` 不再直接调用（Vditor 内置 sanitize: true）
+- CSS 选择器从 `.preview-document` 改为 `.preview-content`
+- CSP 需保留 `'unsafe-eval'`（Vditor 动态加载资源需要）
 
 ## 第二部分：工作日志
+
+### 2026-05-15 21:30 (Claude)
+
+- **目标:** v0.2 渲染引擎升级 — 用 Vditor.preview() 替换 markdown-it + DOMPurify
+- **操作:**
+  1. 调研 Vditor 项目，确认 Vditor.preview() 静态方法可独立于编辑器使用
+  2. 创建 VditorTest.tsx 测试组件，验证 HTML table（rowspan/colspan）渲染、三种编辑模式、静态预览
+  3. 复制 Vditor 静态资源（node_modules/vditor/dist/）到 public/vditor/dist/，实现本地 CDN
+  4. 改写 PreviewPane.tsx，用 Vditor.preview() 替换 markdown-it → DOMPurify → dangerouslySetInnerHTML 链路
+  5. 更新 preview.css 选择器适配 Vditor DOM 结构
+  6. 收紧 CSP 配置（移除 https: 通配，保留 unsafe-eval）
+  7. 清理测试代码，恢复 App.tsx 指向 AppLayout
+  8. 更新 ROADMAP / DECISIONS / CHANGELOG / ARCHITECTURE / CLAUDE.md
+- **结果:** v0.2 完成。TypeScript 类型检查通过，应用启动正常，标题/列表/代码高亮/表格/大纲均验证通过
+- **下一步:** v0.3 所见即所得编辑体验（方案待定）
 
 ### 2026-05-15 16:30 (Claude)
 

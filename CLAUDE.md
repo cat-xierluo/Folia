@@ -4,7 +4,7 @@
 
 Folia 是一个轻量 Markdown 阅读器，专为法律文档设计。稳定渲染包含 `rowspan`、`colspan` 等复杂 HTML 表格的 Markdown 文件。
 
-技术栈：Tauri v2 + React 19 + TypeScript + Vite 8 + markdown-it + DOMPurify + CodeMirror 6
+技术栈：Tauri v2 + React 19 + TypeScript + Vite 8 + Vditor.preview() + CodeMirror 6
 
 ## 基本约定
 
@@ -34,6 +34,7 @@ npx tsc --noEmit     # 类型检查
 
 ## 关键设计决策
 
-- 渲染链路：Markdown → markdown-it (html:true) → DOMPurify → DOM，不可绕过 DOMPurify
+- 渲染引擎：Vditor.preview()（v0.2 起），自带 Lute 引擎 + XSS 过滤，支持 Mermaid/KaTeX/代码高亮
 - 布局：固定左右分屏（编辑 + 预览），不做视图模式切换
-- 编辑器：当前 CodeMirror 6，v0.2 计划迁移到 Milkdown（所见即所得）
+- 编辑器：当前 CodeMirror 6，v0.3 计划引入所见即所得编辑
+- Vditor CDN：本地化到 `public/vditor/dist/`，不依赖外部 CDN
