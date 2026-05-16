@@ -1,5 +1,9 @@
 # Folia
 
+<p align="center">
+  <img src="docs/icon.png" alt="Folia" width="128" height="128">
+</p>
+
 一个轻量的 Markdown 阅读器，支持原生 HTML 渲染。
 
 专为法律文档设计——稳定渲染包含 `rowspan`、`colspan` 等复杂 HTML 表格的 Markdown 文件。
@@ -11,15 +15,14 @@
 - 左右分屏：源码编辑 + 实时预览
 - 文档大纲（TOC），点击跳转
 - 保存 / 另存为
-- 安全处理：DOMPurify 清洗，禁止脚本执行
+- 安全处理：Vditor 内置 XSS 过滤（sanitize: true）
 
 ## 技术栈
 
 - Tauri v2
 - React 19 + TypeScript
 - Vite 8
-- markdown-it（html: true）
-- DOMPurify
+- Vditor.preview()（Lute 引擎 + 代码高亮 / Mermaid / KaTeX）
 - CodeMirror 6
 
 ## 开发

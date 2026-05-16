@@ -2,6 +2,43 @@
 
 ## 第一部分：决策记录
 
+### [DEC-006] - 2026-05-16 - Word 导出与预览：纯 JS/TS 方案
+
+**背景**
+用户希望将现有 md2word 项目（独立 Tauri 桌面应用，Python + python-docx 转换引擎 + React 配置前端）的 Word 导出能力集成到 Folia 中，同时增加 .docx 文件预览能力。
+
+md2word 独立项目包含：
+- 完整配置系统（30+ 字段的 flat config schema：中英文字体、逐级标题样式、页边距、图片比例、表格行高等）
+- 4 个内置预设（modern/academic/legal/business）+ 用户自定义预设
+- 可搜索字体选择器、逐级标题配置组件、A4 模拟预览
+- i18n（中英文）
+- Rust 后端管理配置持久化、Python sidecar 编排
+
+**选项**
+1. Python sidecar — 复用 md2word.py 作为 Tauri sidecar。优点：直接复用 1967 行转换代码。缺点：引入跨语言复杂度，包体积增加 50MB+，需管理 Python 进程。
+2. 纯 JS/TS（docx npm + mammoth）— 用 TypeScript 重写转换逻辑。优点：全部在 WebView 内运行，零外部依赖。缺点：需移植转换代码。
+3. Rust 原生 — 用 Rust crate 生成 docx。优点：性能最好。缺点：Rust docx 生态不成熟。
+
+**决策**
+选择方案 2：纯 JS/TS。
+
+**理由**
+npm `docx` 包与 python-docx 功能完全对等（rowspan/CJK 字体 API 更好）。`mammoth` 可做 .docx → HTML 预览。所有逻辑在 WebView 内完成。
+
+**配置系统集成策略**
+采用 md2word 独立项目的 flat config schema 模式（`font_size_h1`、`margin_top` 等），但遵循 Folia 的 UI 克制原则：
+- v0.6 只暴露**预设选择**作为主 UI（5 个预设：legal/academic/report/service-plan/minimal）
+- 完整的 30+ 字段配置 schema 在代码中定义，但 UI 上只通过「高级设置」折叠面板暴露
+- 不做独立的样式管理视图，只在 Settings 页面中增加一个"导出"分组
+- 不引入 md2word 的 Glassmorphism 风格，保持 Folia 的透明/极简视觉系统
+
+**影响**
+- 新增 npm 依赖：`docx`（~200KB）、`mammoth`（~140KB）
+- 新建 `src/services/word/` 目录（转换引擎 ~1300 行 TS）
+- 新建 `src/config/exportConfig.ts`（flat config schema，30+ 字段）
+- 需要添加 Tauri 二进制文件读写权限
+- Mermaid 图表在 Word 导出中降级为文本
+
 ### [DEC-001] - 2026-05-15 - 桌面框架选型：Tauri v2
 
 **背景**
@@ -99,6 +136,18 @@ Vditor.preview() 是纯渲染方法，不需要引入完整编辑器。实测可
 - CSP 需保留 `'unsafe-eval'`（Vditor 动态加载资源需要）
 
 ## 第二部分：工作日志
+
+### 2026-05-16 (Claude)
+
+- **目标:** 规划 v0.6 Word 导出与预览功能
+- **操作:**
+  1. 调研 md2word Skill 项目（Python 模块结构、配置体系、5 个预设）
+  2. 调研 npm `docx` 包和 `mammoth` 包的 JS 生态能力
+  3. 确认纯 JS/TS 方案可行性（docx npm 与 python-docx 功能对等）
+  4. 设计四阶段实现方案（转换引擎 → 导出 UI → Word 预览 → 预设设置）
+  5. 更新 ROADMAP / DECISIONS / ISSUES 上下文文件
+- **结果:** v0.6 方案确定，全部任务已记录到 ISSUES.md
+- **下一步:** 按阶段执行，阶段一（转换引擎）为后续所有阶段的前置依赖
 
 ### 2026-05-15 21:30 (Claude)
 
