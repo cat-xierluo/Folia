@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.0] - 2026-05-16
+
+### Added
+
+- Word 导出功能：Markdown → 格式化 .docx，支持 5 个预设（法律/学术/公文/法律服务方案/简约通用）
+- Word 预览功能：打开 .docx 文件，mammoth 转 HTML 在预览区渲染
+- 拖拽支持 .docx 文件
+- `Cmd+Shift+E` 快捷键触发 Word 导出
+- 应用图标：用户设计的字母 F 图标，全平台格式（.icns / .ico / PNG）
+- 设计系统文档 `docs/DESIGN.md`
+- 问题登记簿 `docs/ISSUES.md`
+
+### Changed
+
+- README.md 技术栈更新为 Vditor + 补充图标
+- Tauri capabilities 新增 `fs:allow-read-file` 和 `fs:allow-write-file` 二进制文件权限
+
 ## [0.2.0] - 2026-05-15
 
 ### Changed
