@@ -25,3 +25,6 @@ dist-ssr
 
 # Tauri
 src-tauri/target/
+
+# Claude Code
+.claude/
