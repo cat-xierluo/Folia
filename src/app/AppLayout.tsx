@@ -3,11 +3,13 @@ import type { OpenedFile, TocItem } from '../types/document';
 import { createEmptyFile } from '../types/document';
 import { openFile, saveFile, saveFileAs } from '../services/fileService';
 import { exportToWord } from '../services/wordExportService';
+import { getExportPreset } from '../services/settingsService';
 import { Toolbar } from '../components/Toolbar';
 import { EditorPane } from '../components/EditorPane';
 import { PreviewPane } from '../components/PreviewPane';
 import { DocxPreviewPane } from '../components/DocxPreviewPane';
 import { StatusBar } from '../components/StatusBar';
+import { SettingsPage } from '../components/SettingsPage';
 import { readTextFile, readFile } from '@tauri-apps/plugin-fs';
 import { convertDocxToHtml } from '../services/docxPreviewService';
 
@@ -29,6 +31,7 @@ export function AppLayout() {
   const [file, setFile] = useState<OpenedFile>(createEmptyFile());
   const [toc, setToc] = useState<TocItem[]>([]);
   const [tocVisible, setTocVisible] = useState(true);
+  const [settingsVisible, setSettingsVisible] = useState(false);
 
   const handleOpen = useCallback(async () => {
     const opened = await openFile();
@@ -66,7 +69,7 @@ export function AppLayout() {
   const handleExportWord = useCallback(async () => {
     if (!file.path) return;
     try {
-      await exportToWord(file.content, file.name);
+      await exportToWord(file.content, file.name, getExportPreset());
     } catch (e) {
       console.error('Export failed:', e);
     }
@@ -139,6 +142,14 @@ export function AppLayout() {
     );
   }, [toc, tocVisible]);
 
+  if (settingsVisible) {
+    return (
+      <div className="app-layout">
+        <SettingsPage onClose={() => setSettingsVisible(false)} />
+      </div>
+    );
+  }
+
   return (
     <div className="app-layout">
       <Toolbar
@@ -150,6 +161,7 @@ export function AppLayout() {
         onSave={handleSave}
         onSaveAs={handleSaveAs}
         onExportWord={handleExportWord}
+        onOpenSettings={() => setSettingsVisible(true)}
       />
       <div className="main-content split-layout">
         {file.fileType === 'docx' ? (
