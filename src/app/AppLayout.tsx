@@ -2,11 +2,14 @@ import { useState, useCallback, useEffect, useMemo } from 'react';
 import type { OpenedFile, TocItem } from '../types/document';
 import { createEmptyFile } from '../types/document';
 import { openFile, saveFile, saveFileAs } from '../services/fileService';
+import { exportToWord } from '../services/wordExportService';
 import { Toolbar } from '../components/Toolbar';
 import { EditorPane } from '../components/EditorPane';
 import { PreviewPane } from '../components/PreviewPane';
+import { DocxPreviewPane } from '../components/DocxPreviewPane';
 import { StatusBar } from '../components/StatusBar';
-import { readTextFile } from '@tauri-apps/plugin-fs';
+import { readTextFile, readFile } from '@tauri-apps/plugin-fs';
+import { convertDocxToHtml } from '../services/docxPreviewService';
 
 function extractToc(content: string): TocItem[] {
   const headings: TocItem[] = [];
@@ -37,9 +40,17 @@ export function AppLayout() {
 
   const handleOpenPath = useCallback(async (path: string) => {
     const name = path.split('/').pop() || '未命名';
-    const content = await readTextFile(path);
-    setFile({ path, name, content, dirty: false, lastSavedContent: content });
-    setToc(extractToc(content));
+    const ext = name.split('.').pop()?.toLowerCase();
+    if (ext === 'docx') {
+      const data = await readFile(path);
+      const html = await convertDocxToHtml(data.buffer);
+      setFile({ path, name, content: '', docxHtml: html, fileType: 'docx', dirty: false, lastSavedContent: '' });
+      setToc([]);
+    } else {
+      const content = await readTextFile(path);
+      setFile({ path, name, content, fileType: ext === 'html' ? 'html' : 'markdown', dirty: false, lastSavedContent: content });
+      setToc(extractToc(content));
+    }
   }, []);
 
   const handleSave = useCallback(async () => {
@@ -50,6 +61,15 @@ export function AppLayout() {
   const handleSaveAs = useCallback(async () => {
     const updated = await saveFileAs(file);
     setFile(updated);
+  }, [file]);
+
+  const handleExportWord = useCallback(async () => {
+    if (!file.path) return;
+    try {
+      await exportToWord(file.content, file.name);
+    } catch (e) {
+      console.error('Export failed:', e);
+    }
   }, [file]);
 
   const handleContentChange = useCallback((value: string) => {
@@ -67,10 +87,11 @@ export function AppLayout() {
       if (mod && e.key === 'o') { e.preventDefault(); handleOpen(); }
       if (mod && e.key === 's' && !e.shiftKey) { e.preventDefault(); handleSave(); }
       if (mod && e.key === 's' && e.shiftKey) { e.preventDefault(); handleSaveAs(); }
+      if (mod && e.shiftKey && e.key === 'E') { e.preventDefault(); handleExportWord(); }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [handleOpen, handleSave, handleSaveAs]);
+  }, [handleOpen, handleSave, handleSaveAs, handleExportWord]);
 
   useEffect(() => {
     const handler = async (e: DragEvent) => {
@@ -80,7 +101,7 @@ export function AppLayout() {
       if (!items || items.length === 0) return;
       const f = items[0];
       const ext = f.name.split('.').pop()?.toLowerCase();
-      if (ext === 'md' || ext === 'markdown' || ext === 'html') {
+      if (ext === 'md' || ext === 'markdown' || ext === 'html' || ext === 'docx') {
         const path = (f as unknown as { path?: string }).path;
         if (path) await handleOpenPath(path);
       }
@@ -128,12 +149,23 @@ export function AppLayout() {
         onOpen={handleOpen}
         onSave={handleSave}
         onSaveAs={handleSaveAs}
+        onExportWord={handleExportWord}
       />
       <div className="main-content split-layout">
-        <EditorPane source={file.content} onChange={handleContentChange} />
+        {file.fileType === 'docx' ? (
+          <div className="editor-pane" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <span style={{ color: '#999', fontSize: '12px' }}>Word 文件为只读</span>
+          </div>
+        ) : (
+          <EditorPane source={file.content} onChange={handleContentChange} />
+        )}
         <div className="preview-area">
           {tocPane}
-          <PreviewPane source={file.content} tocIds={toc} />
+          {file.fileType === 'docx' ? (
+            <DocxPreviewPane html={file.docxHtml ?? ''} />
+          ) : (
+            <PreviewPane source={file.content} tocIds={toc} />
+          )}
         </div>
       </div>
       <StatusBar filePath={file.path} dirty={file.dirty} />
