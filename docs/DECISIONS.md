@@ -137,6 +137,18 @@ Vditor.preview() 是纯渲染方法，不需要引入完整编辑器。实测可
 
 ## 第二部分：工作日志
 
+### 2026-05-16 18:30 (Claude)
+
+- **目标:** 修复测试发现的 Bug + Settings 弹窗化 + 补充设置项
+- **操作:**
+  1. 修复 CSS 设计系统不渲染（main.tsx 缺少 app.css import）
+  2. 移除 parser.ts/chart-handler.ts 中未使用的 BorderType 导入
+  3. 图标 RGBA 转换 + 奶油色背景（修复 Tauri 构建失败）
+  4. 创建 Issue #7 + PR #8：Settings 从全屏页面改为弹窗浮层，补充 General/编辑器/预览设置项
+  5. Settings 弹窗：半透明遮罩 + ESC/点击关闭 + 640px 宽 + 5px 圆角
+  6. 新增设置：Auto-save、Default encoding、Reopen last file、Font family、Spell check、Preview font、Preview width
+- **结果:** PR #8 squash 合并，Issue #7 关闭
+
 ### 2026-05-16 (Claude)
 
 - **目标:** v0.6 后续优化 — 图片嵌入导出 + Settings 预设选择器
