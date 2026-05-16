@@ -9,8 +9,8 @@
   max-width: 800px;
   margin: 0 auto;
   padding: 40px 32px 80px;
-  line-height: 1.7;
-  font-size: 15px;
+  line-height: var(--preview-line-height, 1.7);
+  font-size: var(--preview-font-size, 15px);
   color: #333;
 }
 
