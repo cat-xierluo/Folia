@@ -1,3 +1,28 @@
+/* ===== CSS Variables (DESIGN.md Design System) ===== */
+
+:root {
+  /* Neutral scale */
+  --bg: oklch(97% 0.012 80);       /* warm cream — preview area */
+  --surface: oklch(99% 0.005 80);   /* pure white — editor, sidebar */
+  --border: oklch(89% 0.012 80);    /* dividers, input borders */
+  --fg: oklch(20% 0.02 60);         /* body text, headings */
+  --muted: oklch(48% 0.015 60);     /* secondary text, buttons */
+
+  /* Accent — single emphasis color */
+  --accent: oklch(58% 0.16 35);
+
+  /* Font stacks */
+  --font-display: 'Iowan Old Style', 'Charter', 'Noto Serif SC', Georgia, serif;
+  --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', system-ui, sans-serif;
+  --font-mono: ui-monospace, 'IBM Plex Mono', 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+
+  /* Smooth text rendering */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ===== Reset ===== */
+
 * {
   margin: 0;
   padding: 0;
@@ -8,10 +33,13 @@ html, body, #root {
   height: 100%;
   width: 100%;
   overflow: hidden;
-  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
-  color: #333;
-  background: #fff;
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--fg);
+  background: var(--bg);
 }
+
+/* ===== App Layout ===== */
 
 .app-layout {
   display: flex;
@@ -19,15 +47,17 @@ html, body, #root {
   height: 100vh;
 }
 
-/* Toolbar - minimal, Typora-like */
+/* ===== Title Bar (Toolbar) ===== */
+/* Transparent background — blends into content area */
+
 .app-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 38px;
-  padding: 0 16px;
-  background: #fafafa;
-  border-bottom: 1px solid #e8e8e8;
+  height: 36px;
+  padding: 0 12px 0 16px;
+  background: transparent;
+  border-bottom: none;
   flex-shrink: 0;
   -webkit-user-select: none;
   user-select: none;
@@ -40,36 +70,53 @@ html, body, #root {
 }
 
 .app-toolbar button {
-  padding: 3px 10px;
+  width: auto;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 8px;
   border: none;
-  border-radius: 4px;
+  border-radius: 3px;
   background: transparent;
   cursor: pointer;
-  font-size: 12px;
-  color: #666;
+  font-size: 13px;
+  font-family: var(--font-body);
+  color: var(--border);
   transition: all 0.15s;
 }
 
 .app-toolbar button:hover {
-  background: #e8e8e8;
-  color: #333;
+  background: var(--border);
+  color: var(--fg);
 }
 
 .app-toolbar button.active {
-  background: #4a4a4a;
-  color: #fff;
+  color: var(--accent);
+}
+
+.app-toolbar button:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .file-name {
+  font-family: var(--font-mono);
   font-size: 12px;
-  color: #999;
+  color: var(--muted);
   margin-left: 8px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  opacity: 0;
+  transition: opacity 0.2s;
 }
 
-/* Main Content - Fixed Split */
+/* Show file name when a file is opened (class added by parent) */
+.file-name.visible {
+  opacity: 1;
+}
+
+/* ===== Main Content — Split Layout ===== */
+
 .main-content {
   flex: 1;
   display: flex;
@@ -78,33 +125,50 @@ html, body, #root {
 
 .split-layout .editor-pane {
   flex: 0 0 45%;
-  border-right: 1px solid #e8e8e8;
-  background: #fff;
+  border-right: none;
+  background: var(--surface);
 }
 
 .split-layout .preview-area {
   flex: 1;
   display: flex;
   overflow: hidden;
+  background: var(--bg);
 }
 
-/* TOC Pane */
+/* ===== Resizer (5px divider between editor and preview) ===== */
+
+.resizer {
+  width: 5px;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+
+.resizer:hover, .resizer.dragging {
+  background: var(--accent);
+}
+
+/* ===== TOC Pane ===== */
+
 .toc-pane {
   flex: 0 0 180px;
-  border-right: 1px solid #e8e8e8;
-  background: #fafafa;
+  border-right: 1px solid var(--border);
+  background: var(--surface);
   overflow-y: auto;
   flex-shrink: 0;
 }
 
 .toc-header {
   padding: 10px 14px;
-  font-size: 11px;
-  font-weight: 600;
-  color: #999;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  color: var(--muted);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  border-bottom: 1px solid #eee;
+  letter-spacing: 0.1em;
+  border-bottom: 1px solid var(--border);
 }
 
 .toc-list {
@@ -115,28 +179,28 @@ html, body, #root {
   display: block;
   padding: 4px 14px;
   font-size: 12px;
-  color: #666;
+  color: var(--muted);
   text-decoration: none;
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  transition: all 0.1s;
+  transition: color 0.1s;
 }
 
 .toc-item:hover {
-  color: #333;
-  background: #eee;
+  color: var(--fg);
 }
 
-.toc-h1 { font-weight: 600; color: #444; }
+.toc-h1 { font-weight: 500; color: var(--fg); }
 .toc-h2 { padding-left: 26px; }
 .toc-h3 { padding-left: 38px; }
 .toc-h4 { padding-left: 50px; }
 .toc-h5 { padding-left: 62px; }
 .toc-h6 { padding-left: 74px; }
 
-/* Editor Pane */
+/* ===== Editor Pane ===== */
+
 .editor-pane {
   display: flex;
   flex-direction: column;
@@ -146,36 +210,50 @@ html, body, #root {
 
 .editor-pane .cm-editor {
   height: 100%;
-  font-size: 14px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.75;
 }
 
 .editor-pane .cm-editor .cm-content {
-  font-family: "SF Mono", "Menlo", "Monaco", "Consolas", monospace;
+  font-family: var(--font-mono);
+  caret-color: var(--accent);
 }
 
-/* Preview Shell */
+.editor-pane .cm-editor .cm-gutters {
+  width: 44px;
+  font-size: 11px;
+  color: var(--border);
+}
+
+/* ===== Preview Shell ===== */
+
 .preview-shell {
   flex: 1;
   overflow: auto;
-  background: #fff;
+  background: var(--bg);
 }
 
-/* Status Bar */
+/* ===== Status Bar ===== */
+/* Transparent, 10px mono, border color — barely visible */
+
 .status-bar {
   display: flex;
   align-items: center;
-  height: 24px;
+  height: 22px;
   padding: 0 16px;
-  background: #fafafa;
-  border-top: 1px solid #e8e8e8;
-  font-size: 11px;
-  color: #aaa;
+  background: transparent;
+  border-top: none;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--border);
   flex-shrink: 0;
   gap: 12px;
+  letter-spacing: 0.02em;
 }
 
 .status-dirty {
-  color: #e67e22;
+  color: var(--accent);
   font-weight: 500;
 }
 
@@ -191,8 +269,8 @@ html, body, #root {
 .settings-sidebar {
   width: 200px;
   flex-shrink: 0;
-  background: var(--surface, #fff);
-  border-right: 1px solid var(--border, #e8e8e8);
+  background: var(--surface);
+  border-right: 1px solid var(--border);
   padding-top: 16px;
   display: flex;
   flex-direction: column;
@@ -204,25 +282,25 @@ html, body, #root {
   gap: 6px;
   padding: 0 20px 16px;
   font-size: 12px;
-  color: var(--muted, #666);
+  color: var(--muted);
   cursor: pointer;
   transition: color 0.1s;
   background: none;
   border: none;
-  font-family: var(--font-body, -apple-system, BlinkMacSystemFont, sans-serif);
+  font-family: var(--font-body);
 }
 
 .settings-back:hover {
-  color: var(--accent, #a0522d);
+  color: var(--accent);
 }
 
 .settings-title {
-  font-family: var(--font-display, 'Iowan Old Style', 'Charter', Georgia, serif);
+  font-family: var(--font-display);
   font-size: 20px;
   font-weight: 400;
   padding: 0 20px 16px;
   letter-spacing: -0.01em;
-  color: var(--fg, #333);
+  color: var(--fg);
 }
 
 .settings-nav {
@@ -233,23 +311,23 @@ html, body, #root {
 .settings-nav-item {
   padding: 6px 20px;
   font-size: 13px;
-  color: var(--muted, #666);
+  color: var(--muted);
   background: none;
   border: none;
   border-inline-start: 2px solid transparent;
   cursor: pointer;
   text-align: start;
   transition: color 0.1s, border-color 0.1s, background 0.1s;
-  font-family: var(--font-body, -apple-system, BlinkMacSystemFont, sans-serif);
+  font-family: var(--font-body);
 }
 
 .settings-nav-item:hover {
-  color: var(--fg, #333);
+  color: var(--fg);
 }
 
 .settings-nav-item.active {
-  color: var(--fg, #333);
-  border-inline-start-color: var(--accent, #a0522d);
+  color: var(--fg);
+  border-inline-start-color: var(--accent);
   background: oklch(58% 0.16 35 / 0.04);
 }
 
@@ -257,7 +335,7 @@ html, body, #root {
   flex: 1;
   padding: 36px 44px;
   overflow-y: auto;
-  background: var(--bg, #faf9f7);
+  background: var(--bg);
 }
 
 .settings-section {
@@ -265,14 +343,14 @@ html, body, #root {
 }
 
 .settings-section-title {
-  font-family: var(--font-display, 'Iowan Old Style', 'Charter', Georgia, serif);
+  font-family: var(--font-display);
   font-size: 17px;
   font-weight: 400;
   margin-bottom: 16px;
   padding-bottom: 6px;
-  border-bottom: 1px solid var(--border, #e8e8e8);
+  border-bottom: 1px solid var(--border);
   letter-spacing: -0.01em;
-  color: var(--fg, #333);
+  color: var(--fg);
 }
 
 .settings-preset-list {
@@ -307,20 +385,20 @@ html, body, #root {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  border: 1.5px solid var(--border, #e0ddd8);
+  border: 1.5px solid var(--border);
   margin-top: 2px;
   transition: border-color 0.15s, background 0.15s;
   position: relative;
 }
 
 .settings-preset-item:hover .settings-preset-indicator {
-  border-color: var(--muted, #666);
+  border-color: var(--muted);
 }
 
 .settings-preset-item.active .settings-preset-indicator {
-  border-color: var(--accent, #a0522d);
-  background: var(--accent, #a0522d);
-  box-shadow: inset 0 0 0 2.5px var(--bg, #faf9f7);
+  border-color: var(--accent);
+  background: var(--accent);
+  box-shadow: inset 0 0 0 2.5px var(--bg);
 }
 
 .settings-preset-content {
@@ -331,20 +409,121 @@ html, body, #root {
 
 .settings-preset-name {
   font-size: 13px;
-  color: var(--fg, #333);
+  color: var(--fg);
 }
 
 .settings-preset-desc {
   font-size: 11px;
-  color: var(--muted, #666);
+  color: var(--muted);
   margin-top: 2px;
 }
 
 .settings-preset-item.active .settings-preset-name {
-  color: var(--accent, #a0522d);
+  color: var(--accent);
 }
 
-/* Toolbar settings button */
+/* ===== Settings Controls ===== */
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 0;
+  border-bottom: 1px solid oklch(89% 0.012 80 / 0.4);
+}
+
+.settings-row:last-child {
+  border-bottom: none;
+}
+
+.settings-label {
+  font-size: 13px;
+  color: var(--fg);
+}
+
+.settings-desc {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.settings-select {
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--surface);
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: var(--fg);
+}
+
+.toggle-switch {
+  width: 34px;
+  height: 18px;
+  border-radius: 9px;
+  background: var(--border);
+  position: relative;
+  cursor: pointer;
+  transition: background 0.2s;
+  border: none;
+}
+
+.toggle-switch.on {
+  background: var(--accent);
+}
+
+.toggle-switch::after {
+  content: '';
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: white;
+  top: 2px;
+  left: 2px;
+  transition: transform 0.2s;
+}
+
+.toggle-switch.on::after {
+  transform: translateX(16px);
+}
+
+/* ===== Shortcut List ===== */
+
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-bottom: 1px solid oklch(89% 0.012 80 / 0.4);
+}
+
+.shortcut-row:last-child {
+  border-bottom: none;
+}
+
+.shortcut-label {
+  font-size: 13px;
+  color: var(--fg);
+}
+
+.shortcut-keys {
+  display: flex;
+  gap: 4px;
+}
+
+.shortcut-key {
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: var(--bg);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+}
+
+/* ===== Toolbar Settings Button ===== */
+
 .toolbar-settings-btn {
   font-size: 14px !important;
   line-height: 1;

@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import Vditor from 'vditor';
 import 'vditor/dist/index.css';
 import type { TocItem } from '../types/document';
+import { getSettings } from '../services/settingsService';
 
 type PreviewPaneProps = {
   source: string;
@@ -10,6 +11,7 @@ type PreviewPaneProps = {
 
 export function PreviewPane({ source, tocIds }: PreviewPaneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const settings = getSettings();
 
   useEffect(() => {
     const el = containerRef.current;
@@ -41,7 +43,13 @@ export function PreviewPane({ source, tocIds }: PreviewPaneProps) {
   }, [source, tocIds]);
 
   return (
-    <div className="preview-shell">
+    <div
+      className="preview-shell"
+      style={{
+        '--preview-font-size': `${settings.previewFontSize}px`,
+        '--preview-line-height': `${settings.previewLineHeight}`,
+      } as React.CSSProperties}
+    >
       <div ref={containerRef} className="vditor-reset preview-content" />
     </div>
   );

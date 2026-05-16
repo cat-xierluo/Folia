@@ -3,7 +3,7 @@ import type { OpenedFile, TocItem } from '../types/document';
 import { createEmptyFile } from '../types/document';
 import { openFile, saveFile, saveFileAs } from '../services/fileService';
 import { exportToWord } from '../services/wordExportService';
-import { getExportPreset } from '../services/settingsService';
+import { getExportPreset, getSettings } from '../services/settingsService';
 import { Toolbar } from '../components/Toolbar';
 import { EditorPane } from '../components/EditorPane';
 import { PreviewPane } from '../components/PreviewPane';
@@ -142,16 +142,18 @@ export function AppLayout() {
     );
   }, [toc, tocVisible]);
 
+  const zoomLevel = getSettings().zoomLevel;
+
   if (settingsVisible) {
     return (
-      <div className="app-layout">
+      <div className="app-layout" style={{ fontSize: `${zoomLevel}%` }}>
         <SettingsPage onClose={() => setSettingsVisible(false)} />
       </div>
     );
   }
 
   return (
-    <div className="app-layout">
+    <div className="app-layout" style={{ fontSize: `${zoomLevel}%` }}>
       <Toolbar
         dirty={file.dirty}
         fileName={file.name}
