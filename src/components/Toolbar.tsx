@@ -7,11 +7,12 @@ type ToolbarProps = {
   onSave: () => void;
   onSaveAs: () => void;
   onExportWord: () => void;
+  onOpenSettings: () => void;
 };
 
 export function Toolbar({
   dirty, fileName, tocVisible, onToggleToc,
-  onOpen, onSave, onSaveAs, onExportWord,
+  onOpen, onSave, onSaveAs, onExportWord, onOpenSettings,
 }: ToolbarProps) {
   return (
     <div className="app-toolbar">
@@ -25,6 +26,9 @@ export function Toolbar({
       <div className="toolbar-right">
         <button className={tocVisible ? 'active' : ''} onClick={onToggleToc}>
           大纲
+        </button>
+        <button className="toolbar-settings-btn" onClick={onOpenSettings} title="设置">
+          ⚙
         </button>
       </div>
     </div>
