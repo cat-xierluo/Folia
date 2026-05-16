@@ -3,6 +3,7 @@ import {
   Packer,
   Paragraph,
   TextRun,
+  ImageRun,
   AlignmentType,
   HeadingLevel,
   Footer,
@@ -12,6 +13,7 @@ import {
   TabStopType,
   TabStopPosition,
 } from 'docx';
+import { readFile } from '@tauri-apps/plugin-fs';
 import type { PresetConfig } from './types';
 import { getPreset, DEFAULT_PRESET_ID } from './config';
 import {
@@ -42,7 +44,7 @@ import {
  * @param preset   导出预设，未提供时使用默认预设 (legal)
  * @param options  额外选项（暂仅预留 fileName）
  */
-export function markdownToDocx(
+export async function markdownToDocx(
   content: string,
   preset?: PresetConfig,
   _options?: { fileName?: string },
@@ -53,7 +55,7 @@ export function markdownToDocx(
   let processed = content.replace(/<!--[\s\S]*?-->/g, '');
 
   // 2. 状态机 → 段落
-  const paragraphs = parseLines(processed, config);
+  const paragraphs = await parseLines(processed, config);
 
   // 3. 组装文档
   const doc = new Document({
@@ -101,7 +103,7 @@ export function markdownToDocx(
 
 type ParserState = 'normal' | 'code_block' | 'mermaid_block' | 'html_table';
 
-function parseLines(content: string, config: PresetConfig): Paragraph[] {
+async function parseLines(content: string, config: PresetConfig): Promise<Paragraph[]> {
   const paragraphs: Paragraph[] = [];
   const lines = content.split('\n');
 
@@ -251,7 +253,8 @@ function parseLines(content: string, config: PresetConfig): Paragraph[] {
     const imgMatch = line.trim().match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
     if (imgMatch) {
       flushTable();
-      paragraphs.push(...addImage(imgMatch[2], imgMatch[1], config));
+      const imgParagraphs = await addImage(imgMatch[2], imgMatch[1], config);
+      paragraphs.push(...imgParagraphs);
       continue;
     }
 
@@ -352,6 +355,133 @@ function buildFooter(
         }),
       ],
     }),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Helper: image utilities
+// ---------------------------------------------------------------------------
+
+/** 从文件路径提取扩展名（小写，无点） */
+function extractExtension(path: string): string {
+  const match = path.match(/\.([a-z]{2,4})$/i);
+  return match ? match[1].toLowerCase() : '';
+}
+
+/** MIME 子类型 → docx ImageRun type */
+function mimeToDocxType(mimeSub: string): 'jpg' | 'png' | 'gif' | 'bmp' {
+  if (mimeSub === 'jpeg' || mimeSub === 'jpg') return 'jpg';
+  if (mimeSub === 'gif') return 'gif';
+  if (mimeSub === 'bmp') return 'bmp';
+  // 默认 png（覆盖 png、svg+xml 等不支持的类型）
+  return 'png';
+}
+
+/** 文件扩展名 → docx ImageRun type，默认 png */
+function extToDocxType(ext: string): 'jpg' | 'png' | 'gif' | 'bmp' {
+  if (ext === 'jpg' || ext === 'jpeg') return 'jpg';
+  if (ext === 'gif') return 'gif';
+  if (ext === 'bmp') return 'bmp';
+  return 'png';
+}
+
+/** 图片尺寸（像素），宽高可能为 0 表示未知 */
+interface ImageDimensions {
+  width: number;
+  height: number;
+}
+
+/**
+ * 从图片二进制头部解析原始宽高。
+ * 支持 JPEG（SOF0/SOF2 标记）和 PNG（IHDR 块）。
+ * 其他格式或解析失败时返回 { width: 0, height: 0 }。
+ */
+function parseImageDimensions(
+  data: Uint8Array,
+  _type: 'jpg' | 'png' | 'gif' | 'bmp',
+): ImageDimensions {
+  try {
+    const buf = data.buffer;
+
+    // PNG: 前 8 字节签名，然后 4 字节长度 + 4 字节 "IHDR"
+    if (data[0] === 0x89 && data[1] === 0x50) {
+      // PNG signature: 89 50 4E 47
+      const view = new DataView(buf, data.byteOffset, data.byteLength);
+      // IHDR 数据从偏移 16 开始（8 签名 + 4 长度 + 4 类型 = 16）
+      const w = view.getUint32(16, false); // big-endian
+      const h = view.getUint32(20, false);
+      if (w > 0 && h > 0) return { width: w, height: h };
+    }
+
+    // JPEG: 查找 SOF0 (FF C0) 或 SOF2 (FF C2) 标记
+    if (data[0] === 0xff && data[1] === 0xd8) {
+      let offset = 2;
+      const view = new DataView(buf, data.byteOffset, data.byteLength);
+      while (offset < data.length - 9) {
+        if (data[offset] !== 0xff) break;
+        const marker = data[offset + 1];
+        // SOF0 = 0xC0, SOF2 = 0xC2
+        if (marker === 0xc0 || marker === 0xc2) {
+          const h = view.getUint16(offset + 5, false);
+          const w = view.getUint16(offset + 7, false);
+          if (w > 0 && h > 0) return { width: w, height: h };
+        }
+        // 跳到下一个标记（长度字段在 marker 后 2 字节）
+        if (offset + 3 >= data.length) break;
+        const segLen = view.getUint16(offset + 2, false);
+        offset += 2 + segLen;
+      }
+    }
+
+    // GIF: 宽高在头部的第 6-9 字节（little-endian）
+    if (data[0] === 0x47 && data[1] === 0x49 && data[2] === 0x46) {
+      const view = new DataView(buf, data.byteOffset, data.byteLength);
+      const w = view.getUint16(6, true);
+      const h = view.getUint16(8, true);
+      if (w > 0 && h > 0) return { width: w, height: h };
+    }
+
+    // BMP: 宽高在头部的第 18-25 字节
+    if (data[0] === 0x42 && data[1] === 0x4d) {
+      const view = new DataView(buf, data.byteOffset, data.byteLength);
+      const w = view.getInt32(18, true);
+      const h = Math.abs(view.getInt32(22, true));
+      if (w > 0 && h > 0) return { width: w, height: h };
+    }
+  } catch {
+    // 解析失败，忽略
+  }
+
+  return { width: 0, height: 0 };
+}
+
+/**
+ * 根据 config.image 约束计算最终输出像素尺寸。
+ *
+ * - 如果原始尺寸已知，按比例缩放到 max_width_cm 之内
+ * - 如果原始尺寸未知，使用 max_width_cm 作为宽度，按 4:3 比例估算高度
+ */
+function calculateImageSize(
+  dimensions: ImageDimensions,
+  config: PresetConfig,
+): { width: number; height: number } {
+  const ic = config.image;
+  // max_width_cm 转换为像素（1 cm = target_dpi / 2.54 px）
+  const maxWidthPx = Math.round(ic.max_width_cm * ic.target_dpi / 2.54);
+
+  if (dimensions.width > 0 && dimensions.height > 0) {
+    const ratio = ic.display_ratio;
+    const scale = Math.min(1, maxWidthPx / (dimensions.width * ratio));
+    return {
+      width: Math.round(dimensions.width * ratio * scale),
+      height: Math.round(dimensions.height * ratio * scale),
+    };
+  }
+
+  // 尺寸未知：使用最大宽度，4:3 比例
+  return {
+    width: maxWidthPx,
+    height: Math.round(maxWidthPx * 3 / 4),
   };
 }
 
@@ -517,10 +647,14 @@ function addImage(
   _url: string,
   alt: string,
   config: PresetConfig,
-): Paragraph[] {
-  // 本地路径和远程 URL 在导出时均使用占位符
-  // 后续可通过 Tauri fs 读取本地文件实现真正的图片嵌入
-  return [
+): Paragraph[];
+async function addImage(
+  url: string,
+  alt: string,
+  config: PresetConfig,
+): Promise<Paragraph[]> {
+  // 创建文本占位符（降级方案）
+  const createPlaceholder = (): Paragraph =>
     new Paragraph({
       spacing: { before: 80, after: 80 },
       children: [
@@ -535,6 +669,71 @@ function addImage(
           size: ptToHalfPt(config.fonts.default.size),
         }),
       ],
-    }),
-  ];
+    });
+
+  // HTTP/HTTPS URL：受 CSP 限制，使用占位符
+  if (/^https?:\/\//i.test(url)) {
+    return [createPlaceholder()];
+  }
+
+  try {
+    let data: Uint8Array;
+    let imageType: 'jpg' | 'png' | 'gif' | 'bmp';
+
+    // Data URI：解析 base64 数据
+    const dataUriMatch = url.match(/^data:image\/([a-z+]+);base64,(.+)$/i);
+    if (dataUriMatch) {
+      const mimeSub = dataUriMatch[1].toLowerCase();
+      imageType = mimeToDocxType(mimeSub);
+      const base64 = dataUriMatch[2];
+      const binary = atob(base64);
+      data = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        data[i] = binary.charCodeAt(i);
+      }
+    } else {
+      // 本地路径：使用 Tauri readFile 读取
+      // 推断图片类型
+      const ext = extractExtension(url);
+      imageType = extToDocxType(ext);
+
+      // 解析路径：支持相对路径（以 ./ 开头的）
+      const filePath = url.startsWith('./') ? url.slice(2) : url;
+
+      data = await readFile(filePath);
+    }
+
+    // 解析原始图片尺寸（像素）
+    const dimensions = parseImageDimensions(data, imageType);
+
+    // 计算输出尺寸：按 config.image 约束缩放
+    const { width: pixelWidth, height: pixelHeight } = calculateImageSize(
+      dimensions,
+      config,
+    );
+
+    return [
+      new Paragraph({
+        alignment: AlignmentType.CENTER,
+        spacing: { before: 80, after: 80 },
+        children: [
+          new ImageRun({
+            type: imageType,
+            data,
+            transformation: {
+              width: pixelWidth,
+              height: pixelHeight,
+            },
+            altText: {
+              name: alt || 'image',
+              description: alt,
+            },
+          }),
+        ],
+      }),
+    ];
+  } catch {
+    // 读取或解析失败时优雅降级为文本占位符
+    return [createPlaceholder()];
+  }
 }
