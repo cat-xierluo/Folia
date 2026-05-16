@@ -96,7 +96,7 @@
 #### 阶段四：预设设置
 
 - [x] 创建 `src/services/settingsService.ts` — localStorage 持久化默认导出预设
-- [ ] Settings 页面添加"导出"部分（预设选择器）
+- [x] Settings 页面添加"导出"部分（预设选择器）
 
 ### v0.5 法律增强
 
@@ -109,6 +109,7 @@
 ## 进度日志
 
 - **2026-05-16**
+  - v0.6 后续优化完成：图片嵌入导出（PR #4）+ Settings 预设选择器（PR #3）。全部 v0.6 任务已完成。
   - v0.6 Word 导出与预览完成。纯 TS 转换引擎（docx npm + mammoth），支持 Markdown 导出 Word（5 个预设）+ .docx 文件预览。新增 12 个文件，修改 7 个文件。
   - 规划 v0.6 Word 导出与预览功能。决策：纯 JS/TS 方案（docx npm + mammoth），复用 md2word Skill 的 5 个预设（legal/academic/report/service-plan/minimal）。详见 `docs/DECISIONS.md` DEC-006。
 

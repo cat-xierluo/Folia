@@ -6,6 +6,9 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Word 导出支持嵌入本地图片（JPEG/PNG/GIF/BMP，Tauri readFile + docx ImageRun，自动缩放）
+- Settings 页面：导出预设选择器（5 个预设单选列表），选择持久化到 localStorage
+- 导出 Word 时使用用户选择的预设（替换原来硬编码的 legal 预设）
 - Word 导出功能：Markdown → 格式化 .docx，支持 5 个预设（法律/学术/公文/法律服务方案/简约通用）
 - Word 预览功能：打开 .docx 文件，mammoth 转 HTML 在预览区渲染
 - 拖拽支持 .docx 文件

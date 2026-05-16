@@ -139,6 +139,16 @@ Vditor.preview() 是纯渲染方法，不需要引入完整编辑器。实测可
 
 ### 2026-05-16 (Claude)
 
+- **目标:** v0.6 后续优化 — 图片嵌入导出 + Settings 预设选择器
+- **操作:**
+  1. 创建 GitHub Issue #1（图片嵌入）和 #2（Settings 预设选择器）
+  2. 并行启动两个 worktree agent，各自创建 feature branch + PR
+  3. PR #3（Settings 预设选择器）：新增 SettingsPage + ExportSection，遵循 DESIGN.md 规范，code review 后 squash 合并
+  4. PR #4（图片嵌入）：重写 addImage 为 async，支持本地路径（Tauri readFile）、Data URI（base64 解码）、HTTP 降级，JPEG/PNG/GIF/BMP 二进制头解析获取原始尺寸，code review 后 squash 合并
+- **结果:** 全部 v0.6 任务完成，无剩余 issue
+
+### 2026-05-16 (Claude)
+
 - **目标:** 规划 v0.6 Word 导出与预览功能
 - **操作:**
   1. 调研 md2word Skill 项目（Python 模块结构、配置体系、5 个预设）
