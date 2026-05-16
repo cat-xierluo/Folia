@@ -144,14 +144,6 @@ export function AppLayout() {
 
   const zoomLevel = getSettings().zoomLevel;
 
-  if (settingsVisible) {
-    return (
-      <div className="app-layout" style={{ fontSize: `${zoomLevel}%` }}>
-        <SettingsPage onClose={() => setSettingsVisible(false)} />
-      </div>
-    );
-  }
-
   return (
     <div className="app-layout" style={{ fontSize: `${zoomLevel}%` }}>
       <Toolbar
@@ -183,6 +175,7 @@ export function AppLayout() {
         </div>
       </div>
       <StatusBar filePath={file.path} dirty={file.dirty} />
+      {settingsVisible && <SettingsPage onClose={() => setSettingsVisible(false)} />}
     </div>
   );
 }

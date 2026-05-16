@@ -257,41 +257,37 @@ html, body, #root {
   font-weight: 500;
 }
 
-/* ===== Settings Page ===== */
+/* ===== Settings Overlay & Modal ===== */
 
-.settings-page {
+.settings-overlay {
+  position: fixed;
+  inset: 0;
+  background: oklch(20% 0.02 60 / 0.35);
   display: flex;
-  flex: 1;
-  height: 100%;
-  overflow: hidden;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
 }
 
-.settings-sidebar {
-  width: 200px;
+.settings-modal {
+  width: 640px;
+  max-height: 75vh;
+  display: flex;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  overflow: hidden;
+  box-shadow: 0 6px 32px oklch(20% 0.02 60 / 0.18);
+}
+
+.settings-modal-sidebar {
+  width: 180px;
   flex-shrink: 0;
   background: var(--surface);
   border-right: 1px solid var(--border);
-  padding-top: 16px;
+  padding: 20px 0;
   display: flex;
   flex-direction: column;
-}
-
-.settings-back {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 20px 16px;
-  font-size: 12px;
-  color: var(--muted);
-  cursor: pointer;
-  transition: color 0.1s;
-  background: none;
-  border: none;
-  font-family: var(--font-body);
-}
-
-.settings-back:hover {
-  color: var(--accent);
 }
 
 .settings-title {
@@ -331,15 +327,15 @@ html, body, #root {
   background: oklch(58% 0.16 35 / 0.04);
 }
 
-.settings-content {
+.settings-modal-content {
   flex: 1;
-  padding: 36px 44px;
+  padding: 24px 32px;
   overflow-y: auto;
   background: var(--bg);
 }
 
 .settings-section {
-  max-width: 560px;
+  max-width: 420px;
 }
 
 .settings-section-title {

@@ -3,30 +3,50 @@ import type { PresetId } from './word';
 const STORAGE_KEY = 'folia-settings';
 const LEGACY_KEY = 'folia-export-settings';
 
+export type EditorFontFamily = 'IBM Plex Mono' | 'JetBrains Mono' | 'SF Mono' | 'System Default';
+export type PreviewFontFamily = 'Iowan Old Style' | 'Georgia' | 'System Default';
+export type DefaultEncoding = 'UTF-8' | 'GBK' | 'GB18030';
+export type PreviewWidth = 640 | 680 | 720 | 800;
+
 export interface AppSettings {
+  // 通用
+  autoSave: boolean;
+  defaultEncoding: DefaultEncoding;
+  reopenLastFile: boolean;
   // 导出
   exportPresetId: PresetId;
   // 编辑器
+  editorFontFamily: EditorFontFamily;
   editorFontSize: number;
   editorTabSize: number;
   editorWordWrap: boolean;
   editorLineNumbers: boolean;
+  editorSpellCheck: boolean;
   // 预览
+  previewFontFamily: PreviewFontFamily;
   previewFontSize: number;
   previewLineHeight: number;
+  previewWidth: PreviewWidth;
   // 外观
   theme: 'light' | 'dark';
   zoomLevel: number;
 }
 
 const defaults: AppSettings = {
+  autoSave: false,
+  defaultEncoding: 'UTF-8',
+  reopenLastFile: true,
   exportPresetId: 'legal',
+  editorFontFamily: 'IBM Plex Mono',
   editorFontSize: 13,
   editorTabSize: 4,
   editorWordWrap: true,
   editorLineNumbers: true,
+  editorSpellCheck: false,
+  previewFontFamily: 'Iowan Old Style',
   previewFontSize: 15,
   previewLineHeight: 1.7,
+  previewWidth: 680,
   theme: 'light',
   zoomLevel: 100,
 };
