@@ -4,6 +4,8 @@ export interface OpenedFile {
   content: string;
   dirty: boolean;
   lastSavedContent: string;
+  fileType: 'markdown' | 'html' | 'docx';
+  docxHtml?: string;
 }
 
 export interface TocItem {
@@ -13,5 +15,5 @@ export interface TocItem {
 }
 
 export function createEmptyFile(): OpenedFile {
-  return { path: '', name: '未命名', content: '', dirty: false, lastSavedContent: '' };
+  return { path: '', name: '未命名', content: '', dirty: false, lastSavedContent: '', fileType: 'markdown' };
 }

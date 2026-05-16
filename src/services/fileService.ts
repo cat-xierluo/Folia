@@ -1,6 +1,7 @@
 import { open, save } from '@tauri-apps/plugin-dialog';
-import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
+import { readTextFile, readFile, writeTextFile } from '@tauri-apps/plugin-fs';
 import type { OpenedFile } from '../types/document';
+import { convertDocxToHtml } from './docxPreviewService';
 
 export async function openFile(): Promise<OpenedFile | null> {
   const selected = await open({
@@ -8,6 +9,7 @@ export async function openFile(): Promise<OpenedFile | null> {
     filters: [
       { name: 'Markdown', extensions: ['md', 'markdown'] },
       { name: 'HTML', extensions: ['html'] },
+      { name: 'Word 文档', extensions: ['docx'] },
       { name: 'All', extensions: ['*'] },
     ],
   });
@@ -16,9 +18,18 @@ export async function openFile(): Promise<OpenedFile | null> {
 
   const path = selected as string;
   const name = path.split('/').pop() || '未命名';
-  const content = await readTextFile(path);
 
-  return { path, name, content, dirty: false, lastSavedContent: content };
+  if (path.endsWith('.docx')) {
+    const data = await readFile(path);
+    const docxHtml = await convertDocxToHtml(data.buffer as ArrayBuffer);
+    return { path, name, content: '', dirty: false, lastSavedContent: '', fileType: 'docx', docxHtml };
+  }
+
+  const content = await readTextFile(path);
+  const ext = path.split('.').pop()?.toLowerCase();
+  const fileType = ext === 'html' ? 'html' as const : 'markdown' as const;
+
+  return { path, name, content, dirty: false, lastSavedContent: content, fileType };
 }
 
 export async function saveFile(file: OpenedFile): Promise<OpenedFile> {
