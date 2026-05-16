@@ -2,7 +2,6 @@ import {
   Paragraph,
   TextRun,
   AlignmentType,
-  BorderType,
 } from 'docx';
 import type { PresetConfig } from './types';
 

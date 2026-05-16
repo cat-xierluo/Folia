@@ -8,7 +8,6 @@ import {
   HeadingLevel,
   Footer,
   PageNumber,
-  BorderType,
   Tab,
   TabStopType,
   TabStopPosition,
