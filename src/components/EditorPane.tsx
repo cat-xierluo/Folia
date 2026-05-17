@@ -3,7 +3,7 @@ import CodeMirror from '@uiw/react-codemirror';
 import { markdown } from '@codemirror/lang-markdown';
 import { EditorState } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
-import { getSettings } from '../services/settingsService';
+import { useSettings } from '../hooks/useSettings';
 
 type EditorPaneProps = {
   source: string;
@@ -11,7 +11,10 @@ type EditorPaneProps = {
 };
 
 export function EditorPane({ source, onChange }: EditorPaneProps) {
-  const settings = getSettings();
+  const settings = useSettings();
+  const editorFontFamily = settings.editorFontFamily === 'System Default'
+    ? 'var(--font-mono)'
+    : `'${settings.editorFontFamily}', var(--font-mono)`;
 
   const extensions = useMemo(() => {
     const exts: Parameters<typeof CodeMirror>[0]['extensions'] = [markdown()];
@@ -26,14 +29,21 @@ export function EditorPane({ source, onChange }: EditorPaneProps) {
 
     exts.push(
       EditorView.theme({
+        '&': {
+          fontFamily: editorFontFamily,
+        },
         '.cm-content': {
           fontSize: `${settings.editorFontSize}px`,
+          fontFamily: editorFontFamily,
+        },
+        '.cm-gutters': {
+          fontFamily: editorFontFamily,
         },
       })
     );
 
     return exts;
-  }, [settings.editorFontSize, settings.editorTabSize, settings.editorWordWrap]);
+  }, [editorFontFamily, settings.editorFontSize, settings.editorTabSize, settings.editorWordWrap]);
 
   return (
     <div className="editor-pane">
@@ -42,6 +52,7 @@ export function EditorPane({ source, onChange }: EditorPaneProps) {
         height="100%"
         extensions={extensions}
         onChange={onChange}
+        spellCheck={settings.editorSpellCheck}
         theme="light"
         basicSetup={{
           lineNumbers: settings.editorLineNumbers,

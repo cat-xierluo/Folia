@@ -1,12 +1,12 @@
 import { useState } from 'react';
-import { getSettings, updateSettings } from '../../services/settingsService';
+import { getSettings, updateSettings, type AppSettings } from '../../services/settingsService';
 
 const ZOOM_LEVELS = [80, 90, 100, 110, 120];
 
 export function AppearanceSection() {
   const [settings, setSettings] = useState(() => getSettings());
 
-  const handleChange = (patch: Record<string, unknown>) => {
+  const handleChange = (patch: Partial<AppSettings>) => {
     updateSettings(patch);
     setSettings(getSettings());
   };
@@ -22,7 +22,7 @@ export function AppearanceSection() {
         <select
           className="settings-select"
           value={settings.theme}
-          onChange={(e) => handleChange({ theme: e.target.value })}
+          onChange={(e) => handleChange({ theme: e.target.value as AppSettings['theme'] })}
         >
           <option value="light">亮色</option>
           <option value="dark" disabled>暗色（即将推出）</option>

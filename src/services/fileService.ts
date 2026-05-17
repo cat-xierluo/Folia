@@ -1,9 +1,19 @@
 import { open, save } from '@tauri-apps/plugin-dialog';
 import { readTextFile, readFile, writeTextFile } from '@tauri-apps/plugin-fs';
 import type { OpenedFile } from '../types/document';
-import { convertDocxToHtml } from './docxPreviewService';
+import type { DefaultEncoding } from './settingsService';
 
-export async function openFile(): Promise<OpenedFile | null> {
+export async function readTextWithEncoding(path: string, encoding: DefaultEncoding): Promise<string> {
+  if (encoding === 'UTF-8') {
+    return readTextFile(path);
+  }
+
+  const data = await readFile(path);
+  const label = encoding.toLowerCase();
+  return new TextDecoder(label).decode(data);
+}
+
+export async function openFile(encoding: DefaultEncoding = 'UTF-8'): Promise<OpenedFile | null> {
   const selected = await open({
     multiple: false,
     filters: [
@@ -17,15 +27,20 @@ export async function openFile(): Promise<OpenedFile | null> {
   if (!selected) return null;
 
   const path = selected as string;
+  return openPath(path, encoding);
+}
+
+export async function openPath(path: string, encoding: DefaultEncoding = 'UTF-8'): Promise<OpenedFile> {
   const name = path.split('/').pop() || '未命名';
 
   if (path.endsWith('.docx')) {
     const data = await readFile(path);
+    const { convertDocxToHtml } = await import('./docxPreviewService');
     const docxHtml = await convertDocxToHtml(data.buffer as ArrayBuffer);
     return { path, name, content: '', dirty: false, lastSavedContent: '', fileType: 'docx', docxHtml };
   }
 
-  const content = await readTextFile(path);
+  const content = await readTextWithEncoding(path, encoding);
   const ext = path.split('.').pop()?.toLowerCase();
   const fileType = ext === 'html' ? 'html' as const : 'markdown' as const;
 

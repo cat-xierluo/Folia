@@ -1,6 +1,10 @@
-import type { ParsedTextPart, TextFormat, PresetConfig } from './types';
+import type { ParsedTextPart, PresetConfig } from './types';
 import { TextRun, AlignmentType } from 'docx';
-import type { TextRunOptions } from 'docx';
+import type { IRunOptions } from 'docx';
+
+type MutableRunOptions = {
+  -readonly [K in keyof IRunOptions]: IRunOptions[K];
+};
 
 /** Convert points to half-points (docx uses half-points for font sizes). */
 export function ptToHalfPt(pt: number): number {
@@ -178,7 +182,7 @@ export function createFormattedRuns(
       fontSize = config.table.header_font.size;
     }
 
-    const runOptions: TextRunOptions = {
+    const runOptions: MutableRunOptions = {
       text: part.text,
       font: {
         eastAsia: font.name,

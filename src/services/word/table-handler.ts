@@ -2,6 +2,7 @@ import {
   Table, TableRow, TableCell, Paragraph, TextRun,
   WidthType, AlignmentType, VerticalAlign, BorderStyle,
   type IBorderOptions,
+  type ITableBordersOptions,
 } from 'docx';
 import type { PresetConfig } from './types';
 import { createFormattedRuns, ptToHalfPt } from './formatter';
@@ -31,13 +32,14 @@ export function createMarkdownTable(
     makeCell(text, colWidths[col], config, true),
   );
 
-  const bodyRows = rows.slice(1).map(
-    (row) => new TableRow({
-      children: row.map((text, col) =>
-        makeCell(padRow(row, colCount)[col], colWidths[col], config, false),
+  const bodyRows = rows.slice(1).map((row) => {
+    const paddedRow = padRow(row, colCount);
+    return new TableRow({
+      children: paddedRow.map((text, col) =>
+        makeCell(text, colWidths[col], config, false),
       ),
-    }),
-  );
+    });
+  });
 
   return new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
@@ -174,7 +176,7 @@ function makeCell(
   });
 }
 
-function tableBorders(config: PresetConfig): IBorderOptions {
+function tableBorders(config: PresetConfig): ITableBordersOptions {
   if (!config.table.border_enabled) {
     return {
       top: { style: BorderStyle.NONE, size: 0 },
@@ -185,7 +187,7 @@ function tableBorders(config: PresetConfig): IBorderOptions {
       insideVertical: { style: BorderStyle.NONE, size: 0 },
     };
   }
-  const b = {
+  const b: IBorderOptions = {
     style: BorderStyle.SINGLE,
     size: config.table.border_width,
     color: config.table.border_color,

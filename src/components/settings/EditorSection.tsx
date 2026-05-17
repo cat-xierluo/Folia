@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { getSettings, updateSettings } from '../../services/settingsService';
+import { getSettings, updateSettings, type AppSettings } from '../../services/settingsService';
 import type { EditorFontFamily } from '../../services/settingsService';
 
 const FONT_SIZES = [12, 13, 14, 15, 16, 18];
@@ -9,7 +9,7 @@ const FONT_FAMILIES: EditorFontFamily[] = ['IBM Plex Mono', 'JetBrains Mono', 'S
 export function EditorSection() {
   const [settings, setSettings] = useState(() => getSettings());
 
-  const handleChange = (patch: Record<string, unknown>) => {
+  const handleChange = (patch: Partial<AppSettings>) => {
     updateSettings(patch);
     setSettings(getSettings());
   };
@@ -25,7 +25,7 @@ export function EditorSection() {
         <select
           className="settings-select"
           value={settings.editorFontFamily}
-          onChange={(e) => handleChange({ editorFontFamily: e.target.value })}
+          onChange={(e) => handleChange({ editorFontFamily: e.target.value as EditorFontFamily })}
         >
           {FONT_FAMILIES.map((f) => (
             <option key={f} value={f}>{f}</option>

@@ -70,10 +70,13 @@ html, body, #root {
 }
 
 .app-toolbar button {
-  width: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
   min-width: 26px;
   height: 26px;
-  padding: 0 8px;
+  padding: 0;
   border: none;
   border-radius: 3px;
   background: transparent;
@@ -98,7 +101,33 @@ html, body, #root {
   cursor: default;
 }
 
+.app-toolbar button svg {
+  display: block;
+}
+
+.wordmark {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--muted);
+  letter-spacing: 0;
+}
+
+.wordmark span {
+  color: var(--accent);
+}
+
+.toolbar-separator {
+  width: 1px;
+  height: 14px;
+  margin: 0 5px;
+  background: var(--border);
+  opacity: 0.7;
+}
+
 .file-name {
+  display: inline-flex;
+  align-items: center;
   font-family: var(--font-mono);
   font-size: 12px;
   color: var(--muted);
@@ -113,6 +142,15 @@ html, body, #root {
 /* Show file name when a file is opened (class added by parent) */
 .file-name.visible {
   opacity: 1;
+}
+
+.dirty-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  margin-right: 6px;
+  flex-shrink: 0;
 }
 
 /* ===== Main Content — Split Layout ===== */
@@ -167,7 +205,7 @@ html, body, #root {
   font-weight: 500;
   color: var(--muted);
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: 0;
   border-bottom: 1px solid var(--border);
 }
 
@@ -226,6 +264,22 @@ html, body, #root {
   color: var(--border);
 }
 
+.readonly-pane {
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.lazy-pane {
+  align-items: center;
+  justify-content: center;
+  color: var(--border);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
 /* ===== Preview Shell ===== */
 
 .preview-shell {
@@ -249,7 +303,7 @@ html, body, #root {
   color: var(--border);
   flex-shrink: 0;
   gap: 12px;
-  letter-spacing: 0.02em;
+  letter-spacing: 0;
 }
 
 .status-dirty {
@@ -295,7 +349,7 @@ html, body, #root {
   font-size: 20px;
   font-weight: 400;
   padding: 0 20px 16px;
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
   color: var(--fg);
 }
 
@@ -345,7 +399,7 @@ html, body, #root {
   margin-bottom: 16px;
   padding-bottom: 6px;
   border-bottom: 1px solid var(--border);
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
   color: var(--fg);
 }
 
@@ -521,6 +575,5 @@ html, body, #root {
 /* ===== Toolbar Settings Button ===== */
 
 .toolbar-settings-btn {
-  font-size: 14px !important;
   line-height: 1;
 }

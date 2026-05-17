@@ -2,6 +2,9 @@ import type { PresetId } from './word';
 
 const STORAGE_KEY = 'folia-settings';
 const LEGACY_KEY = 'folia-export-settings';
+const LAST_FILE_KEY = 'folia-last-opened-file';
+
+export const SETTINGS_CHANGED_EVENT = 'folia-settings-changed';
 
 export type EditorFontFamily = 'IBM Plex Mono' | 'JetBrains Mono' | 'SF Mono' | 'System Default';
 export type PreviewFontFamily = 'Iowan Old Style' | 'Georgia' | 'System Default';
@@ -51,43 +54,61 @@ const defaults: AppSettings = {
   zoomLevel: 100,
 };
 
-/**
- * 从 localStorage 迁移旧版导出设置。
- * 旧 key 'folia-export-settings' 中存储了 { defaultPresetId } 。
- * 迁移后删除旧 key，避免重复迁移。
- */
-function migrateLegacySettings(): void {
+function readStoredSettings(): Partial<AppSettings> {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) return {};
+  const parsed = JSON.parse(raw);
+  return parsed && typeof parsed === 'object' ? parsed : {};
+}
+
+function migrateLegacySettings(stored: Partial<AppSettings>): Partial<AppSettings> {
+  const next = { ...stored };
   try {
     const legacyRaw = localStorage.getItem(LEGACY_KEY);
     if (legacyRaw) {
       const legacy = JSON.parse(legacyRaw);
       if (legacy.defaultPresetId) {
-        const current = getSettings();
-        current.exportPresetId = legacy.defaultPresetId;
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(current));
+        next.exportPresetId = legacy.defaultPresetId;
       }
       localStorage.removeItem(LEGACY_KEY);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...defaults, ...next }));
     }
   } catch {
     // 迁移失败不影响正常使用
   }
+  return next;
+}
+
+function emitSettingsChanged(settings: AppSettings): void {
+  window.dispatchEvent(new CustomEvent<AppSettings>(SETTINGS_CHANGED_EVENT, { detail: settings }));
 }
 
 export function getSettings(): AppSettings {
   try {
-    migrateLegacySettings();
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { ...defaults };
-    return { ...defaults, ...JSON.parse(raw) };
+    return { ...defaults, ...migrateLegacySettings(readStoredSettings()) };
   } catch {
     return { ...defaults };
   }
 }
 
-export function updateSettings(patch: Partial<AppSettings>): void {
+export function updateSettings(patch: Partial<AppSettings>): AppSettings {
   const current = getSettings();
   const merged = { ...current, ...patch };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+  emitSettingsChanged(merged);
+  return merged;
+}
+
+export function getLastOpenedPath(): string | null {
+  return localStorage.getItem(LAST_FILE_KEY);
+}
+
+export function setLastOpenedPath(path: string): void {
+  localStorage.setItem(LAST_FILE_KEY, path);
+}
+
+export function clearLastOpenedPath(): void {
+  localStorage.removeItem(LAST_FILE_KEY);
 }
 
 // ---- Backward-compatible API ----

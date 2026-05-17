@@ -1,7 +1,6 @@
 import {
   Paragraph,
   TextRun,
-  AlignmentType,
 } from 'docx';
 import type { PresetConfig } from './types';
 

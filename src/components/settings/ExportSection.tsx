@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { getExportPreset, setExportPreset } from '../../services/settingsService';
 import { listPresets } from '../../services/word/config';
 import type { PresetId } from '../../services/word/types';
@@ -6,10 +6,6 @@ import type { PresetId } from '../../services/word/types';
 export function ExportSection() {
   const [selected, setSelected] = useState<PresetId>(getExportPreset());
   const presets = listPresets();
-
-  useEffect(() => {
-    setSelected(getExportPreset());
-  }, []);
 
   const handleChange = (id: PresetId) => {
     setSelected(id);

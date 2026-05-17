@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { getSettings, updateSettings } from '../../services/settingsService';
+import { getSettings, updateSettings, type AppSettings } from '../../services/settingsService';
 import type { DefaultEncoding } from '../../services/settingsService';
 
 const ENCODINGS: DefaultEncoding[] = ['UTF-8', 'GBK', 'GB18030'];
@@ -7,7 +7,7 @@ const ENCODINGS: DefaultEncoding[] = ['UTF-8', 'GBK', 'GB18030'];
 export function GeneralSection() {
   const [settings, setSettings] = useState(() => getSettings());
 
-  const handleChange = (patch: Record<string, unknown>) => {
+  const handleChange = (patch: Partial<AppSettings>) => {
     updateSettings(patch);
     setSettings(getSettings());
   };
@@ -34,7 +34,7 @@ export function GeneralSection() {
         <select
           className="settings-select"
           value={settings.defaultEncoding}
-          onChange={(e) => handleChange({ defaultEncoding: e.target.value })}
+          onChange={(e) => handleChange({ defaultEncoding: e.target.value as DefaultEncoding })}
         >
           {ENCODINGS.map((enc) => (
             <option key={enc} value={enc}>{enc}</option>

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { getSettings, updateSettings } from '../../services/settingsService';
+import { getSettings, updateSettings, type AppSettings } from '../../services/settingsService';
 import type { PreviewFontFamily, PreviewWidth } from '../../services/settingsService';
 
 const FONT_SIZES = [13, 14, 15, 16, 18];
@@ -10,7 +10,7 @@ const PREVIEW_WIDTHS: PreviewWidth[] = [640, 680, 720, 800];
 export function PreviewSection() {
   const [settings, setSettings] = useState(() => getSettings());
 
-  const handleChange = (patch: Record<string, unknown>) => {
+  const handleChange = (patch: Partial<AppSettings>) => {
     updateSettings(patch);
     setSettings(getSettings());
   };
@@ -26,7 +26,7 @@ export function PreviewSection() {
         <select
           className="settings-select"
           value={settings.previewFontFamily}
-          onChange={(e) => handleChange({ previewFontFamily: e.target.value })}
+          onChange={(e) => handleChange({ previewFontFamily: e.target.value as PreviewFontFamily })}
         >
           {PREVIEW_FONTS.map((f) => (
             <option key={f} value={f}>{f}</option>
@@ -41,7 +41,7 @@ export function PreviewSection() {
         <select
           className="settings-select"
           value={settings.previewWidth}
-          onChange={(e) => handleChange({ previewWidth: Number(e.target.value) })}
+          onChange={(e) => handleChange({ previewWidth: Number(e.target.value) as PreviewWidth })}
         >
           {PREVIEW_WIDTHS.map((w) => (
             <option key={w} value={w}>{w}px</option>

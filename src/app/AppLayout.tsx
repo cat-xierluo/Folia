@@ -1,17 +1,23 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { OpenedFile, TocItem } from '../types/document';
 import { createEmptyFile } from '../types/document';
-import { openFile, saveFile, saveFileAs } from '../services/fileService';
-import { exportToWord } from '../services/wordExportService';
-import { getExportPreset, getSettings } from '../services/settingsService';
+import { getExportPreset, getLastOpenedPath, setLastOpenedPath } from '../services/settingsService';
+import { useSettings } from '../hooks/useSettings';
 import { Toolbar } from '../components/Toolbar';
-import { EditorPane } from '../components/EditorPane';
 import { PreviewPane } from '../components/PreviewPane';
-import { DocxPreviewPane } from '../components/DocxPreviewPane';
 import { StatusBar } from '../components/StatusBar';
-import { SettingsPage } from '../components/SettingsPage';
-import { readTextFile, readFile } from '@tauri-apps/plugin-fs';
-import { convertDocxToHtml } from '../services/docxPreviewService';
+
+const EditorPane = lazy(() =>
+  import('../components/EditorPane').then((module) => ({ default: module.EditorPane })),
+);
+
+const SettingsPage = lazy(() =>
+  import('../components/SettingsPage').then((module) => ({ default: module.SettingsPage })),
+);
+
+const DocxPreviewPane = lazy(() =>
+  import('../components/DocxPreviewPane').then((module) => ({ default: module.DocxPreviewPane })),
+);
 
 function extractToc(content: string): TocItem[] {
   const headings: TocItem[] = [];
@@ -28,47 +34,52 @@ function extractToc(content: string): TocItem[] {
 }
 
 export function AppLayout() {
+  const settings = useSettings();
+  const reopenAttempted = useRef(false);
   const [file, setFile] = useState<OpenedFile>(createEmptyFile());
   const [toc, setToc] = useState<TocItem[]>([]);
   const [tocVisible, setTocVisible] = useState(true);
   const [settingsVisible, setSettingsVisible] = useState(false);
+  const [editorReady, setEditorReady] = useState(false);
 
   const handleOpen = useCallback(async () => {
-    const opened = await openFile();
+    const { openFile } = await import('../services/fileService');
+    const opened = await openFile(settings.defaultEncoding);
     if (opened) {
       setFile(opened);
       setToc(extractToc(opened.content));
+      if (opened.path) setLastOpenedPath(opened.path);
+      if (opened.fileType !== 'docx') setEditorReady(true);
     }
-  }, []);
+  }, [settings.defaultEncoding]);
 
   const handleOpenPath = useCallback(async (path: string) => {
-    const name = path.split('/').pop() || '未命名';
-    const ext = name.split('.').pop()?.toLowerCase();
-    if (ext === 'docx') {
-      const data = await readFile(path);
-      const html = await convertDocxToHtml(data.buffer);
-      setFile({ path, name, content: '', docxHtml: html, fileType: 'docx', dirty: false, lastSavedContent: '' });
-      setToc([]);
-    } else {
-      const content = await readTextFile(path);
-      setFile({ path, name, content, fileType: ext === 'html' ? 'html' : 'markdown', dirty: false, lastSavedContent: content });
-      setToc(extractToc(content));
-    }
-  }, []);
+    const { openPath } = await import('../services/fileService');
+    const opened = await openPath(path, settings.defaultEncoding);
+    setFile(opened);
+    setToc(opened.fileType === 'docx' ? [] : extractToc(opened.content));
+    setLastOpenedPath(path);
+    if (opened.fileType !== 'docx') setEditorReady(true);
+  }, [settings.defaultEncoding]);
 
   const handleSave = useCallback(async () => {
+    const { saveFile } = await import('../services/fileService');
     const updated = await saveFile(file);
     setFile(updated);
+    if (updated.path) setLastOpenedPath(updated.path);
   }, [file]);
 
   const handleSaveAs = useCallback(async () => {
+    const { saveFileAs } = await import('../services/fileService');
     const updated = await saveFileAs(file);
     setFile(updated);
+    if (updated.path) setLastOpenedPath(updated.path);
   }, [file]);
 
   const handleExportWord = useCallback(async () => {
     if (!file.path) return;
     try {
+      const { exportToWord } = await import('../services/wordExportService');
       await exportToWord(file.content, file.name, getExportPreset());
     } catch (e) {
       console.error('Export failed:', e);
@@ -118,6 +129,45 @@ export function AppLayout() {
     };
   }, [handleOpenPath]);
 
+  useEffect(() => {
+    if (!settings.reopenLastFile || file.path || reopenAttempted.current) return;
+    const lastPath = getLastOpenedPath();
+    if (!lastPath) return;
+    reopenAttempted.current = true;
+    let idleId: number | undefined;
+    const timeout = window.setTimeout(() => {
+      const reopen = () => {
+        void handleOpenPath(lastPath).catch((e) => {
+          console.warn('Failed to reopen last file:', e);
+        });
+      };
+
+      if ('requestIdleCallback' in window) {
+        idleId = window.requestIdleCallback(reopen, { timeout: 1500 });
+      } else {
+        reopen();
+      }
+    }, 700);
+
+    return () => {
+      window.clearTimeout(timeout);
+      if (idleId !== undefined && 'cancelIdleCallback' in window) {
+        window.cancelIdleCallback(idleId);
+      }
+    };
+  }, [file.path, handleOpenPath, settings.reopenLastFile]);
+
+  useEffect(() => {
+    if (!settings.autoSave || !file.path || !file.dirty || file.fileType === 'docx') return;
+    const timeout = window.setTimeout(() => {
+      void import('../services/fileService')
+        .then(({ saveFile }) => saveFile(file))
+        .then((updated) => setFile(updated))
+        .catch((e) => console.error('Auto-save failed:', e));
+    }, 800);
+    return () => window.clearTimeout(timeout);
+  }, [file, settings.autoSave]);
+
   const tocPane = useMemo(() => {
     if (!tocVisible || toc.length === 0) return null;
     return (
@@ -142,10 +192,8 @@ export function AppLayout() {
     );
   }, [toc, tocVisible]);
 
-  const zoomLevel = getSettings().zoomLevel;
-
   return (
-    <div className="app-layout" style={{ fontSize: `${zoomLevel}%` }}>
+    <div className="app-layout" style={{ fontSize: `${settings.zoomLevel}%` }}>
       <Toolbar
         dirty={file.dirty}
         fileName={file.name}
@@ -159,23 +207,47 @@ export function AppLayout() {
       />
       <div className="main-content split-layout">
         {file.fileType === 'docx' ? (
-          <div className="editor-pane" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <span style={{ color: '#999', fontSize: '12px' }}>Word 文件为只读</span>
+          <div className="editor-pane readonly-pane">
+            <span>Word 文件为只读</span>
           </div>
         ) : (
-          <EditorPane source={file.content} onChange={handleContentChange} />
+          editorReady ? (
+            <Suspense fallback={<div className="editor-pane lazy-pane"><span>编辑器加载中</span></div>}>
+              <EditorPane source={file.content} onChange={handleContentChange} />
+            </Suspense>
+          ) : (
+            <div
+              className="editor-pane lazy-pane"
+              role="button"
+              tabIndex={0}
+              aria-label="编辑器"
+              onClick={() => setEditorReady(true)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setEditorReady(true);
+                }
+              }}
+            />
+          )
         )}
         <div className="preview-area">
           {tocPane}
           {file.fileType === 'docx' ? (
-            <DocxPreviewPane html={file.docxHtml ?? ''} />
+            <Suspense fallback={<div className="preview-shell" />}>
+              <DocxPreviewPane html={file.docxHtml ?? ''} />
+            </Suspense>
           ) : (
             <PreviewPane source={file.content} tocIds={toc} />
           )}
         </div>
       </div>
       <StatusBar filePath={file.path} dirty={file.dirty} />
-      {settingsVisible && <SettingsPage onClose={() => setSettingsVisible(false)} />}
+      {settingsVisible && (
+        <Suspense fallback={<div className="settings-overlay" />}>
+          <SettingsPage onClose={() => setSettingsVisible(false)} />
+        </Suspense>
+      )}
     </div>
   );
 }

@@ -8,16 +8,13 @@ import {
   HeadingLevel,
   Footer,
   PageNumber,
-  Tab,
-  TabStopType,
-  TabStopPosition,
+  type FileChild,
 } from 'docx';
 import { readFile } from '@tauri-apps/plugin-fs';
 import type { PresetConfig } from './types';
 import { getPreset, DEFAULT_PRESET_ID } from './config';
 import {
   createFormattedRuns,
-  convertQuotesToChinese,
   ptToHalfPt,
   parseAlignment,
 } from './formatter';
@@ -46,12 +43,13 @@ import {
 export async function markdownToDocx(
   content: string,
   preset?: PresetConfig,
-  _options?: { fileName?: string },
+  options?: { fileName?: string },
 ): Promise<Blob> {
+  void options;
   const config = preset ?? getPreset(DEFAULT_PRESET_ID);
 
   // 1. 预处理：去除 HTML 注释
-  let processed = content.replace(/<!--[\s\S]*?-->/g, '');
+  const processed = content.replace(/<!--[\s\S]*?-->/g, '');
 
   // 2. 状态机 → 段落
   const paragraphs = await parseLines(processed, config);
@@ -102,8 +100,8 @@ export async function markdownToDocx(
 
 type ParserState = 'normal' | 'code_block' | 'mermaid_block' | 'html_table';
 
-async function parseLines(content: string, config: PresetConfig): Promise<Paragraph[]> {
-  const paragraphs: Paragraph[] = [];
+async function parseLines(content: string, config: PresetConfig): Promise<FileChild[]> {
+  const paragraphs: FileChild[] = [];
   const lines = content.split('\n');
 
   let state: ParserState = 'normal';
@@ -123,8 +121,7 @@ async function parseLines(content: string, config: PresetConfig): Promise<Paragr
 
   const flushTable = () => {
     if (tableBuffer.length > 0) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      paragraphs.push(createMarkdownTable(tableBuffer, config) as any);
+      paragraphs.push(createMarkdownTable(tableBuffer, config));
       tableBuffer = [];
     }
   };
@@ -160,8 +157,7 @@ async function parseLines(content: string, config: PresetConfig): Promise<Paragr
     if (state === 'html_table') {
       buffer.push(line);
       if (line.includes('</table>')) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        paragraphs.push(createHtmlTable(buffer.join('\n'), config) as any);
+        paragraphs.push(createHtmlTable(buffer.join('\n'), config));
         buffer = [];
         state = 'normal';
       }
@@ -299,8 +295,7 @@ async function parseLines(content: string, config: PresetConfig): Promise<Paragr
   } else if (state === 'mermaid_block') {
     paragraphs.push(...createMermaidFallback(buffer.join('\n'), config));
   } else if (state === 'html_table') {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    paragraphs.push(createHtmlTable(buffer.join('\n'), config) as any);
+    paragraphs.push(createHtmlTable(buffer.join('\n'), config));
   }
 
   flushQuote();
@@ -397,7 +392,6 @@ interface ImageDimensions {
  */
 function parseImageDimensions(
   data: Uint8Array,
-  _type: 'jpg' | 'png' | 'gif' | 'bmp',
 ): ImageDimensions {
   try {
     const buf = data.buffer;
@@ -642,11 +636,6 @@ function addCodeBlock(
   return createCodeFallback(lines.join('\n'), language, config);
 }
 
-function addImage(
-  _url: string,
-  alt: string,
-  config: PresetConfig,
-): Paragraph[];
 async function addImage(
   url: string,
   alt: string,
@@ -703,7 +692,7 @@ async function addImage(
     }
 
     // 解析原始图片尺寸（像素）
-    const dimensions = parseImageDimensions(data, imageType);
+    const dimensions = parseImageDimensions(data);
 
     // 计算输出尺寸：按 config.image 约束缩放
     const { width: pixelWidth, height: pixelHeight } = calculateImageSize(

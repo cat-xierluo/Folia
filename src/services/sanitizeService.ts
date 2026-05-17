@@ -16,7 +16,7 @@ const ALLOWED_ATTR = [
   'href', 'src', 'alt', 'title',
   'colspan', 'rowspan',
   'align', 'width', 'height',
-  'class', 'id', 'style',
+  'class', 'id',
 ];
 
 export function sanitizeHtml(html: string): string {
