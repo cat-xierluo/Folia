@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.1] - 2026-05-17
+
+### Fixed
+
+- 修复前端生产构建失败和 ESLint 失败，恢复 `npm run build` / `npm run lint` 可用。
+- `.docx` 预览接入 DOMPurify 清洗，避免 Mammoth HTML 输出直接注入预览区。
+- 修复旧版导出设置迁移的递归读取风险。
+- Settings 中的自动保存、重新打开上次文件、默认编码、编辑器字体/拼写检查、预览字体/宽度等选项接入运行时行为。
+
+### Changed
+
+- Toolbar 改为 lucide 图标按钮，并补充 Folia wordmark，整体更贴近 `docs/DESIGN.md` 的克制工具风格。
+- Markdown / Word 预览统一使用设计系统变量，修正白底、蓝色链接等硬编码样式。
+- Word 导出、docx 预览、Vditor 预览改为按需加载，降低首屏主包压力。
+- 启动路径进一步瘦身：空文档不加载 Vditor JS/CSS，CodeMirror 编辑器、Tauri 文件服务、Settings 与 docx 预览均改为按需加载，上次文件恢复延迟到启动后的空闲时段。
+
+### Added
+
+- 新增 Vitest 测试脚本与服务层测试，覆盖 HTML 清洗和设置持久化/迁移。
+- 新增 `package-lock.json` 固定前端依赖版本。
+
+### Removed
+
+- 移除遗留 `markdown-it` / `@types/markdown-it` 依赖和不再使用的 `markdownService.ts`。
+- 精简 `public/vditor/dist/`，移除运行时不引用的 TS/type 声明和未压缩 Vditor 构建文件，保留阅读功能所需的本地资源。
+
 ## [0.3.0] - 2026-05-16
 
 ### Added

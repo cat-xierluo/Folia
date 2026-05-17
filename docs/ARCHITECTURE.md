@@ -36,13 +36,15 @@
 ```
 用户打开文件
   ↓
-Tauri plugin-fs 读取文本
+按需加载 fileService，再通过 Tauri plugin-fs 读取文本
   ↓
 写入 React state (OpenedFile.content)
   ↓
-┌─ EditorPane: CodeMirror 显示源码，onChange 更新 state
+┌─ EditorPane: 打开非 docx 文件或用户点击编辑区时懒加载 CodeMirror，onChange 更新 state
 │
 └─ PreviewPane:
+     空内容时跳过 Vditor 加载
+     ↓
      Vditor.preview(containerEl, source, options)
      ↓
      Lute 引擎解析 Markdown + HTML
@@ -61,8 +63,10 @@ Tauri plugin-fs 读取文本
 | 文件 | 职责 |
 |------|------|
 | `fileService.ts` | 封装 Tauri dialog + fs，提供 openFile / saveFile / saveFileAs |
-
-> 注：`markdownService.ts` 和 `sanitizeService.ts` 在 v0.2 中已不再使用（Vditor 自带 Lute 引擎和 XSS 过滤）。
+| `settingsService.ts` | 管理 localStorage 设置、旧配置迁移、设置变更广播、上次打开文件路径 |
+| `sanitizeService.ts` | DOMPurify HTML 清洗；当前用于 docx 预览 HTML 安全边界 |
+| `docxPreviewService.ts` | 按需加载 mammoth，将 docx 转换为已清洗 HTML |
+| `wordExportService.ts` | 按需加载 Word 导出转换链路并写入 .docx 文件 |
 
 ### components/
 
@@ -80,11 +84,20 @@ Tauri plugin-fs 读取文本
 | `AppLayout.tsx` | 主布局，管理文件状态、TOC 提取（正则）、拖拽打开、快捷键 |
 | `App.tsx` | 入口组件 |
 
+## 启动性能策略
+
+- 首屏只加载应用 shell、Toolbar、StatusBar、Preview 容器和少量设置逻辑。
+- Tauri 文件服务从主入口移出，打开、保存、自动保存时才动态加载 dialog/fs 相关代码。
+- CodeMirror 编辑器通过 `React.lazy()` 拆分，仅在打开非 docx 文件或用户点击/聚焦编辑区时加载。
+- Vditor JS/CSS 仅在预览内容非空时动态加载，空文档启动不加载预览引擎。
+- Settings 页面、Word 导出链路、docx 预览组件与转换链路均按需加载。
+- “重新打开上次文件”延迟到启动后的空闲时段执行，避免大文件读取/转换阻塞冷启动。
+
 ### 静态资源
 
 | 路径 | 职责 |
 |------|------|
-| `public/vditor/dist/` | Vditor 本地 CDN 资源（Lute、Mermaid、KaTeX、highlight.js 等） |
+| `public/vditor/dist/` | Vditor 本地 CDN 运行时资源（Lute、Mermaid、KaTeX、highlight.js 等）；已移除运行时不引用的 TS/type 声明和未压缩构建文件 |
 
 ## Tauri 配置
 

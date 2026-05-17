@@ -137,6 +137,58 @@ Vditor.preview() 是纯渲染方法，不需要引入完整编辑器。实测可
 
 ## 第二部分：工作日志
 
+### 2026-05-17 18:08 (Codex)
+
+- **目标:** 完善 Folia 启动加速收尾
+- **操作:**
+  1. 将 `fileService` 从主入口静态依赖改为事件触发时动态导入，打开、保存和自动保存时才加载 Tauri dialog/fs 相关代码
+  2. 将 `.docx` 预览组件拆为懒加载，普通 Markdown 首屏不加载 Word 预览 UI
+  3. 空文档不再自动预热 CodeMirror，改为打开非 docx 文件或用户点击/聚焦编辑区时加载编辑器
+  4. 精简 `public/vditor/dist/`，移除运行时不引用的 TS/type 声明和未压缩 Vditor 构建文件，保留 Mermaid/KaTeX/highlight.js 等阅读能力资源
+  5. 用 Playwright 验证空文档首屏不加载 CodeMirror/Vditor，点击编辑区后才加载编辑器，输入内容后才加载 Vditor 预览资源
+  6. 更新 ARCHITECTURE / CHANGELOG
+- **结果:** 主入口 JS chunk 维持约 206KB，Vditor 本地静态资源从约 23MB 降到约 21MB。`npm run build`、`npm run lint`、`npm test`、`cargo check --manifest-path src-tauri/Cargo.toml`、`npm audit --audit-level=moderate`、`git diff --check` 均通过。Vite 仍提示 `EditorPane` chunk 超过 500KB，但该 chunk 已不在空文档冷启动路径中。
+- **下一步:** 若继续追求安装包体积，可在确认取舍后按功能开关进一步裁剪 Vditor 的 MathJax、Graphviz、Markmap 等高级预览资源。
+
+### 2026-05-17 17:42 (Codex)
+
+- **目标:** 继续优化 Folia 冷启动速度
+- **操作:**
+  1. `PreviewPane` 空内容时跳过 Vditor 加载，并用 `useDeferredValue` 降低预览更新优先级
+  2. Vditor JS/CSS 改为内容非空时动态加载，首屏 CSS 从 44KB 降到约 10KB
+  3. `EditorPane` 与 `SettingsPage` 改为 `React.lazy()`，CodeMirror 编辑器从首屏路径移出，用户点击编辑区可立即加载
+  4. “重新打开上次文件”延迟到启动后的空闲时段，避免大文件读取/转换阻塞 shell
+  5. 移除遗留 `markdown-it` / `@types/markdown-it` 依赖和 `markdownService.ts`
+  6. 更新 ARCHITECTURE / CHANGELOG
+- **结果:** 主入口 JS chunk 从优化前约 834KB 降到约 212KB；首屏 CSS 从约 44KB 降到约 10KB。构建仍提示 `EditorPane` chunk 超过 500KB，但该 chunk 已移出冷启动关键路径。`npm run build`、`npm run lint`、`npm test`、`cargo check`、`npm audit --json` 均通过。
+- **下一步:** 如需继续降低安装包体积，可精简 `public/vditor/dist/` 的未用静态资源；如需继续降低编辑器 chunk，可评估 CodeMirror extension 细分或阅读优先模式。
+
+### 2026-05-17 17:21 (Codex)
+
+- **目标:** 修复稳定性问题并现代化主界面设计
+- **操作:**
+  1. 新增 Vitest 与服务层测试，覆盖 HTML 清洗、设置读取/迁移/持久化
+  2. 修复 `npm run build` 类型错误：`docx` 类型、未使用导入、图片与表格类型、`markdown-it` 类型声明
+  3. 修复 `npm run lint`：忽略 `public/vditor/dist/` 第三方资源，调整 React Hooks 规则问题
+  4. `.docx` 预览接入 DOMPurify，避免 Mammoth HTML 直接注入
+  5. Settings 接入运行时行为：自动保存、重新打开上次文件、默认编码、编辑器字体/拼写检查、预览字体/宽度
+  6. Toolbar 改为 lucide 图标按钮，预览 CSS 统一使用 DESIGN.md 变量；Word 导出、docx 预览、Vditor 改为按需加载
+  7. 新增 `package-lock.json` 固定依赖版本，更新 CHANGELOG 与 ISSUES 状态
+- **结果:** ISS-022 ~ ISS-027 已修复归档；`npm run build`、`npm run lint`、`npm test`、`cargo check`、`npm audit --json` 均通过。Vite 仍提示主入口 chunk 超过 500KB，当前已通过按需加载拆出 Vditor、Word 导出和 docx 预览，剩余主要来自首屏编辑器依赖。
+- **下一步:** 可继续做包体精细拆分或补充端到端测试覆盖打开/保存/导出完整流程
+
+### 2026-05-17 17:01 (Codex)
+
+- **目标:** 审查项目稳定性、可优化点和现代化设计空间
+- **操作:**
+  1. 查阅 ROADMAP / ISSUES / DESIGN，确认当前阶段和设计约束
+  2. 检查核心路径：文件打开保存、Vditor 预览、CodeMirror 编辑、Settings、Word 导出与 docx 预览
+  3. 执行验证：`npm run build`、`npm run lint`、`npm audit --json`、`npm outdated --json`、`cargo check`
+  4. 启动 Vite 本地界面，用 Playwright 检查主界面与 Settings 弹窗视觉表现
+  5. 将审查发现录入 `docs/ISSUES.md`：ISS-022 ~ ISS-027
+- **结果:** Rust 侧 `cargo check` 通过，npm audit 无漏洞；前端 build 与 lint 当前失败，且存在 docx 预览安全边界、设置项未接入运行时、设计系统实现落差、缺少锁文件与自动化测试等问题
+- **下一步:** 建议先处理 Group A（ISS-022/ISS-023）恢复构建与 lint，再处理 ISS-024 的 docx HTML 清洗，最后分批补齐 Settings 行为和 UI 现代化
+
 ### 2026-05-16 18:30 (Claude)
 
 - **目标:** 修复测试发现的 Bug + Settings 弹窗化 + 补充设置项
