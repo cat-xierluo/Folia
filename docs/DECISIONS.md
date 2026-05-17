@@ -137,6 +137,25 @@ Vditor.preview() 是纯渲染方法，不需要引入完整编辑器。实测可
 
 ## 第二部分：工作日志
 
+### 2026-05-17 18:21 (Codex)
+
+- **目标:** 推进 ISS-028 的第一阶段资源触发优化
+- **操作:**
+  1. 审计 Vditor.preview 的资源加载逻辑，确认 Mermaid、KaTeX、Graphviz、Markmap 等高级渲染器本身会在 DOM 中存在对应语法时才加载资源
+  2. 新增 `markdownFeatureDetector`，扫描 Markdown fenced code 类型，区分普通代码块与 Vditor 自渲染代码块
+  3. `PreviewPane` 根据探测结果启用或禁用普通 `highlight.js` 脚本；仅包含 Mermaid/math/Graphviz/Markmap 等自渲染块时不加载普通高亮脚本，普通代码块仍保持高亮
+  4. 新增 Vitest 覆盖普通文档、普通代码块、Mermaid/math 块、混合代码块
+  5. 用 Playwright 验证 Mermaid-only 文档加载 Mermaid 但不加载 `highlight.min.js`，普通 `ts` 代码块仍加载 `highlight.min.js`
+- **结果:** ISS-028 进入进行中状态，已完成内部动态判断的第一步；没有新增用户设置，也不牺牲内容完整性。
+- **下一步:** 继续评估 Vditor preview 是否可安全跳过 i18n/icon 脚本，或补充端到端回归样例后再考虑安装包资源裁剪。
+
+### 2026-05-17 18:14 (Codex)
+
+- **目标:** 记录后续高级 Markdown 资源优化方向
+- **操作:** 在 `docs/ISSUES.md` 新增 ISS-028，明确不向用户暴露“极速/完整”模式，后续通过内部内容探测和按需加载推进，同时默认保护完整渲染能力。
+- **结果:** 后续优化有明确边界：优先动态判断，避免增加用户心智负担；只有在不影响启动速度或内容完整性的前提下才裁剪资源。
+- **下一步:** 推进 ISS-028 时先审计 Vditor 各高级资源的触发条件，再用包含 Mermaid、KaTeX、MathJax、Graphviz、Markmap、代码高亮的样例验证。
+
 ### 2026-05-17 18:08 (Codex)
 
 - **目标:** 完善 Folia 启动加速收尾

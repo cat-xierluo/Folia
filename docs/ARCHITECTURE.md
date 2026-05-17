@@ -45,6 +45,8 @@
 └─ PreviewPane:
      空内容时跳过 Vditor 加载
      ↓
+     探测代码块类型，普通代码块才启用 highlight.js
+     ↓
      Vditor.preview(containerEl, source, options)
      ↓
      Lute 引擎解析 Markdown + HTML
@@ -63,6 +65,7 @@
 | 文件 | 职责 |
 |------|------|
 | `fileService.ts` | 封装 Tauri dialog + fs，提供 openFile / saveFile / saveFileAs |
+| `markdownFeatureDetector.ts` | 轻量扫描 Markdown fenced code 类型，为 Vditor 预览提供内部资源触发判断 |
 | `settingsService.ts` | 管理 localStorage 设置、旧配置迁移、设置变更广播、上次打开文件路径 |
 | `sanitizeService.ts` | DOMPurify HTML 清洗；当前用于 docx 预览 HTML 安全边界 |
 | `docxPreviewService.ts` | 按需加载 mammoth，将 docx 转换为已清洗 HTML |
@@ -90,6 +93,7 @@
 - Tauri 文件服务从主入口移出，打开、保存、自动保存时才动态加载 dialog/fs 相关代码。
 - CodeMirror 编辑器通过 `React.lazy()` 拆分，仅在打开非 docx 文件或用户点击/聚焦编辑区时加载。
 - Vditor JS/CSS 仅在预览内容非空时动态加载，空文档启动不加载预览引擎。
+- 预览前通过 `markdownFeatureDetector` 做内部特征探测：当文档只包含 Mermaid、math、Graphviz、Markmap 等由 Vditor 自渲染的 fenced code 时，禁用普通代码高亮脚本加载；检测到普通代码块时仍启用 highlight.js。
 - Settings 页面、Word 导出链路、docx 预览组件与转换链路均按需加载。
 - “重新打开上次文件”延迟到启动后的空闲时段执行，避免大文件读取/转换阻塞冷启动。
 

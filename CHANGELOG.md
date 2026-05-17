@@ -17,10 +17,12 @@ All notable changes to this project will be documented in this file.
 - Markdown / Word 预览统一使用设计系统变量，修正白底、蓝色链接等硬编码样式。
 - Word 导出、docx 预览、Vditor 预览改为按需加载，降低首屏主包压力。
 - 启动路径进一步瘦身：空文档不加载 Vditor JS/CSS，CodeMirror 编辑器、Tauri 文件服务、Settings 与 docx 预览均改为按需加载，上次文件恢复延迟到启动后的空闲时段。
+- Vditor 预览增加内部内容特征探测：仅包含 Mermaid、数学公式、Graphviz 等由 Vditor 自渲染代码块时，不再加载普通代码高亮脚本；普通代码块仍保持高亮。
 
 ### Added
 
 - 新增 Vitest 测试脚本与服务层测试，覆盖 HTML 清洗和设置持久化/迁移。
+- 新增 Markdown 渲染特征探测测试，覆盖普通文档、普通代码块、Mermaid/数学公式等高级块的资源触发判断。
 - 新增 `package-lock.json` 固定前端依赖版本。
 
 ### Removed
