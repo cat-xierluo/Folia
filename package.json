@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
+    "test": "vitest run",
     "preview": "vite preview",
     "tauri": "tauri"
   },
@@ -22,8 +23,8 @@
     "@uiw/react-codemirror": "4.25.9",
     "docx": "9.6.1",
     "dompurify": "3.4.3",
+    "lucide-react": "1.16.0",
     "mammoth": "1.12.0",
-    "markdown-it": "14.1.1",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "vditor": "3.11.2"
@@ -39,8 +40,10 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.6.0",
+    "jsdom": "29.1.1",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.59.2",
-    "vite": "^8.0.12"
+    "vite": "^8.0.12",
+    "vitest": "4.1.6"
   }
 }
