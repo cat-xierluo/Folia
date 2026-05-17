@@ -1,7 +1,8 @@
-import { useDeferredValue, useEffect, useRef } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef } from 'react';
 import '../styles/preview.css';
 import type { TocItem } from '../types/document';
 import { useSettings } from '../hooks/useSettings';
+import { detectMarkdownRenderFeatures } from '../services/markdownFeatureDetector';
 
 type PreviewPaneProps = {
   source: string;
@@ -13,6 +14,10 @@ export function PreviewPane({ source, tocIds }: PreviewPaneProps) {
   const deferredSource = useDeferredValue(source);
   const deferredTocIds = useDeferredValue(tocIds);
   const settings = useSettings();
+  const renderFeatures = useMemo(
+    () => detectMarkdownRenderFeatures(deferredSource),
+    [deferredSource],
+  );
   const previewFontFamily = settings.previewFontFamily === 'System Default'
     ? 'var(--font-body)'
     : `'${settings.previewFontFamily}', var(--font-body)`;
@@ -38,7 +43,7 @@ export function PreviewPane({ source, tocIds }: PreviewPaneProps) {
         cdn: '/vditor',
         hljs: {
           style: 'github',
-          enable: true,
+          enable: renderFeatures.hasHighlightableCode,
           lineNumber: false,
         },
         markdown: {
@@ -60,7 +65,7 @@ export function PreviewPane({ source, tocIds }: PreviewPaneProps) {
     return () => {
       cancelled = true;
     };
-  }, [deferredSource, deferredTocIds]);
+  }, [deferredSource, deferredTocIds, renderFeatures.hasHighlightableCode]);
 
   return (
     <div
