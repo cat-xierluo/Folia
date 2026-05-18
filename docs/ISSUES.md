@@ -75,18 +75,44 @@
 
 ## 待处理
 
-### 技术债
+### 自动更新发布流程
 
 | # | 状态 | 问题 | 严重度 | 推进建议 |
 |---|------|------|--------|----------|
-| ISS-028 | 🟡 | 继续优化高级 Markdown 渲染资源策略。当前冷启动已不加载 Vditor/CodeMirror，本次已完成第一步：新增内部 Markdown 特征探测，只有普通代码块才启用 highlight.js；仅包含 Mermaid、math、Graphviz、Markmap 等由 Vditor 自渲染的 fenced code 时不加载普通高亮脚本。后续仍不应增加“极速/完整”用户设置，而应继续内部动态判断；若某类资源只影响安装包体积、不影响启动速度，则默认保留完整能力，避免用户打开文档时内容缺失。 | 中 | 下一步继续 `L1 subagent`：审计是否可安全跳过 Vditor preview 的 i18n/icon 资源，或为高级资源触发行为补充 Playwright 回归用例；如需构建期资源拆分再升级为 `L2 worktree` |
+| ISS-041 | 🔴 | `createUpdaterArtifacts` 为 false，构建时不生成 `.tar.gz` + `.sig` 签名产物 | 高 | `L1 subagent` |
+| ISS-042 | 🔴 | Updater endpoint URL 格式错误（`{{target}}-{{arch}}.json`），应改为统一的 `latest.json` | 高 | `L1 subagent` |
+| ISS-043 | 🔴 | 缺少 GitHub Actions 发布工作流：tag 触发 → 构建 → 签名 → 生成 `latest.json` → 创建 Release | 高 | `L2 worktree` |
 
 ## 已修复 / 已归档
+
+### 2026-05-18 v0.3.6 Word 预览与导出预设修正
+
+| # | 状态 | 问题 | 严重度 | 推进建议 |
+|---|------|------|--------|----------|
+| ISS-041 | 🟢 | 用户反馈 Word 预览仍像单张长页面，拖动右侧面板后排版会变化，缺少第 1 页 / 第 2 页区分；同时“导出 Word”不应常驻一级工具栏，导出预设也不应只靠代码内置。已修复：Word 预览改为多页 A4 纸张栈并显示页标，面板拖动只改变缩放；导出按钮和预设选择移入 Word 预览面板；Settings / 导出新增 JSON 预设导入、模板复制和删除自定义预设。 | 中 | 已完成 |
+
+### 2026-05-18 v0.3 桌面体验修正
+
+| # | 状态 | 问题 | 严重度 | 推进建议 |
+|---|------|------|--------|----------|
+| ISS-040 | 🟢 | 用户反馈切换到源码页面后无法下滑，只能看到文档开头。已修复：CodeMirror 外层 wrapper 纳入 flex 高度链路，`.cm-scroller` 作为内部滚动容器承载长文档滚动，并新增 E2E 回归测试覆盖 140 行源码滚动到底部。 | 中 | 已完成 |
+| ISS-039 | 🟢 | 用户反馈顶部“标题栏/工具栏”区域点击或拖动时窗口仍无响应。已修复：保留 `data-tauri-drag-region`，同时在 Toolbar 非交互区域增加 Tauri JS `startDragging()` fallback，双击空白区域调用 `toggleMaximize()`。按钮、链接等交互元素不触发拖动。 | 中 | 已完成 |
+| ISS-038 | 🟢 | HTML Markdown 在默认 WYSIWYG 界面中的渲染出现明显回归。已修复：新增内部文档视图判断，检测到原生 `<table>` 或 `.html` 文件时自动使用 `Vditor.preview()` 稳定阅读预览；源码模式仍可编辑，普通 Markdown 仍默认 WYSIWYG。 | 高 | 已完成 |
+| ISS-037 | 🟢 | 大纲侧栏默认宽度偏窄、标题与条目字号偏小。已修复：默认宽度增至 224px，标题与条目字号、行距和缩进同步放大，并增加 E2E 尺度回归测试。 | 低 | 已完成 |
+| ISS-036 | 🟢 | 用户希望 Folia 参考 Funes 增加自动更新，并吸收其 Settings / 关于页组织方式。已完成：接入 Tauri updater / process 插件、启动后延迟自动检查、Settings / 关于手动检查、安装重启对话框、签名 updater artifact 脚本和 GitHub Release manifest 生成脚本。 | 中 | 已完成 |
+| ISS-035 | 🟢 | 用户反馈工具栏图标仍像普通按钮标签、缺少设计感。已修复：换成统一的文件流转图标体系（file input / file check / files / file output / file search 等），并微调按钮尺寸、圆角、线条和 hover 反馈。 | 低 | 已完成 |
+| ISS-034 | 🟢 | 用户反馈 overlay 标题栏仍有部分区域无法拖动窗口、工具栏图标语义不够清晰、拖拽 Markdown 到窗口无法打开、WYSIWYG 中间出现白色画布、Word 预览不像 `md2word` 的 A4 版式、默认窗口偏大且主界面不应显示 Folia 名称。已修复：控件间空白恢复为 Tauri 拖拽区域，工具栏去掉应用名并替换更明确图标，拖入文件使用 Tauri 原生拖放事件，WYSIWYG 背景统一为暖底，Word 预览按真实 A4 页面整体缩放并读取更多导出预设样式，默认窗口调小为 `980×680`。 | 中 | 已完成 |
 
 ### 2026-05-17 稳定性与设计优化
 
 | # | 状态 | 问题 | 严重度 | 推进建议 |
 |---|------|------|--------|----------|
+| ISS-033 | 🟢 | 应用图标上一版只把左上角背景转成透明，右上、左下、右下仍保留实色奶油背景，导致 Dock / Finder 中看起来只有局部圆角。已修复：全局移除外层背景色并重新生成 PNG / ICNS / ICO / Windows tile 图标，`.icns` 提取出的所有尺寸四角均为透明 alpha。 | 中 | 已完成 |
+| ISS-032 | 🟢 | macOS 原生窗口标题栏仍显示为独立黑色条，与 Folia 主界面奶油色 UI 不融合。已修复：Tauri 主窗口改为 overlay 标题栏、隐藏原生标题、设置窗口背景色，并在前端 Toolbar 中为红黄绿按钮预留空间和拖拽区域。 | 中 | 已完成 |
+| ISS-031 | 🟢 | 用户反馈工具栏图标/字号偏小、Settings 二级菜单切换导致弹窗尺寸跳动、select 原生渐变光泽突兀、长 HTML 证据目录表格横向撑出预览区，且缺少编辑/预览隐藏与分栏拖拽能力。已修复：放大工具栏与 Settings 层级、固定 Settings 弹窗尺寸、重置 select 样式、覆盖 Vditor 表格 nowrap，并新增三种视图模式与中间拖拽 resizer。 | 中 | 已完成 |
+| ISS-030 | 🟢 | Node 25 测试环境暴露不完整的全局 `localStorage`，覆盖 jsdom 存储后导致 `settingsService` 单元测试失败。已修复：Vitest 显式使用 jsdom，并在测试启动时安装隔离的内存版浏览器存储。 | 中 | 已完成 |
+| ISS-029 | 🟢 | 执行 Tauri 生产打包后，`npm run lint` 会扫描 `src-tauri/target` 下的生成资产并误报解析错误。已修复：ESLint 全局忽略 Tauri / Playwright 生成目录。 | 中 | 已完成 |
+| ISS-028 | 🟢 | 高级 Markdown 渲染资源策略优化。已完成：冷启动不加载 Vditor/CodeMirror；内部 Markdown 特征探测按需启用 highlight.js；纯预览链路跳过 Vditor i18n/icon/content-theme 运行时请求；新增 Playwright 回归测试覆盖空文档、普通 Markdown、Mermaid-only、普通代码块的资源加载行为。 | 中 | 已完成 |
 | ISS-022 | 🟢 | `npm run build` 当前失败，集中在 Word 导出相关类型错误、未使用导入、`markdown-it` 类型声明缺失，导致 Tauri 生产构建无法通过。已修复：类型与未使用导入清理，生产构建通过。 | 高 | 已完成 |
 | ISS-023 | 🟢 | `npm run lint` 当前失败：ESLint 会扫描 `public/vditor/dist/` 的第三方静态资源，同时项目源码存在 React Hooks 与 unused 规则错误。已修复：忽略第三方静态资源并修复源码 lint。 | 中 | 已完成 |
 | ISS-024 | 🟢 | `.docx` 预览使用 `mammoth.convertToHtml()` 输出后直接 `dangerouslySetInnerHTML` 注入；Mammoth 官方说明不负责清洗源文档，打开不可信 Word 文件时存在 HTML/XSS 风险。已修复：docx HTML 输出接入 DOMPurify。 | 高 | 已完成 |
@@ -114,8 +140,22 @@
 
 ## 进度日志
 
+- **2026-05-18** 修复并归档 ISS-041：Word 预览从单张长页面升级为多页 A4 纸张栈，导出按钮和预设选择跟随 Word 预览面板显示；自定义导出预设通过 JSON 文件导入，不在应用内暴露复杂调参表单。
+- **2026-05-18** 修复并归档 ISS-040：源码模式 CodeMirror wrapper 高度不受主内容区约束，导致内部 scroller 无滚动空间；现已固定 flex/min-height 链路并补充 E2E 长文档滚动测试。
+- **2026-05-18** 修复并归档 ISS-039：Toolbar 非交互区域新增手动 `startDragging()` fallback，双击空白区域触发 `toggleMaximize()`，补充标题栏拖动服务单元测试和 E2E 标记检查。
+- **2026-05-18** 修复并归档 ISS-037、ISS-038：原生 HTML 表格文档默认走稳定阅读预览，源码模式保留编辑能力；大纲栏默认宽度和文字尺度同步放大，并补充单元/E2E 回归测试。
+- **2026-05-18** 新增 ISS-037、ISS-038：记录用户反馈的大纲栏尺寸偏小，以及默认 WYSIWYG 改造后 HTML 表格阅读预览严重退化的问题。ISS-038 标为高优先级，后续修复应优先恢复复杂 HTML 表格的可靠阅读路径。
+- **2026-05-18** 修复并归档 ISS-036：参考 Funes 接入自动更新、Settings / 关于页、签名打包和 manifest 生成
+- **2026-05-18** 修复并归档 ISS-035：Toolbar 图标换成统一文件流转语义，并微调按钮视觉反馈
+- **2026-05-18** 修复并归档 ISS-034：标题栏拖动、工具栏识别、拖拽打开、WYSIWYG 背景、Word A4 缩放预览和默认窗口尺寸已完成
 - **2026-05-17** 新增 ISS-028：后续高级 Markdown 资源优化应走内部动态判断，不暴露“极速/完整”模式，默认保护内容完整性
 - **2026-05-17** 推进 ISS-028 第一阶段：新增 Markdown 特征探测与测试，Mermaid/math 等自渲染块不再触发普通 highlight.js 脚本；普通代码块仍保留高亮
+- **2026-05-17** 推进 ISS-028 第二阶段：纯预览链路跳过 Vditor i18n/icon/content-theme 运行时请求，保留内联中文文案与 Folia 自有预览样式
+- **2026-05-17** 完成 ISS-028：新增 Playwright 端到端回归测试，资源加载策略不再依赖人工验证
+- **2026-05-17** 修复并归档 ISS-029 ~ ISS-030：打包后 lint 误扫生成目录、Node 25 下 Vitest `localStorage` 环境不稳定
+- **2026-05-17** 修复并归档 ISS-031：工具栏与 Settings 视觉比例、Settings 固定尺寸、证据目录表格压缩换行、编辑/预览视图切换和分栏拖拽
+- **2026-05-17** 修复并归档 ISS-032：macOS 标题栏改为 overlay，移除独立黑色系统标题条并与 Folia 顶部工具区融合
+- **2026-05-17** 修复并归档 ISS-033：重新处理应用图标外层背景，四个角全部透明并重新生成平台图标
 - **2026-05-17** 修复并归档 ISS-022 ~ ISS-027；验证 `npm run build`、`npm run lint`、`npm test`、`cargo check`、`npm audit --json` 通过
 - **2026-05-17** 完成稳定性与设计审查，录入 ISS-022 ~ ISS-027：构建失败、lint 失败、docx 预览安全边界、设置未接入运行时、设计系统落差、缺少锁文件和自动化测试
 - **2026-05-16** ISS-021（Settings 页面预设选择器）通过 PR #3 完成并合并。ISS-021（图片嵌入导出）通过 PR #4 完成并合并。全部 v0.6 任务已完成，无剩余 🔴 issue
