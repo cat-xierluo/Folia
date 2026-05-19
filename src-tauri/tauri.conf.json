@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Folia",
-  "version": "0.1.0",
-  "identifier": "com.folia.app",
+  "version": "0.3.7",
+  "identifier": "com.folia.reader",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
@@ -13,19 +13,36 @@
     "windows": [
       {
         "title": "Folia",
-        "width": 1280,
-        "height": 800,
+        "width": 980,
+        "height": 680,
         "resizable": true,
-        "fullscreen": false
+        "fullscreen": false,
+        "theme": "Light",
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": {
+          "x": 16,
+          "y": 14
+        },
+        "backgroundColor": "#f8f2e9"
       }
     ],
     "security": {
       "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-eval'; img-src 'self' data:; font-src 'self'; connect-src 'self'; media-src 'self'"
     }
   },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/cat-xierluo/Folia/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDMxNEI4NzA3NjM0NUZFREQKUldUZC9rVmpCNGRMTWFQQ0xaUTNTV2U5RFhGcWxpeUZTVG9LajJ4ZDdZOHhqUHBxUDB5b095cG4K"
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
