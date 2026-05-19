@@ -34,6 +34,7 @@
   "plugins": {
     "updater": {
       "endpoints": [
+        "https://gitee.com/cat-xierluo/Folia/releases/latest/download/latest.json",
         "https://github.com/cat-xierluo/Folia/releases/latest/download/latest.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDMxNEI4NzA3NjM0NUZFREQKUldUZC9rVmpCNGRMTWFQQ0xaUTNTV2U5RFhGcWxpeUZTVG9LajJ4ZDdZOHhqUHBxUDB5b095cG4K"
