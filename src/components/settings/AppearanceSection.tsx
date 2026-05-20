@@ -25,7 +25,7 @@ export function AppearanceSection() {
           onChange={(e) => handleChange({ theme: e.target.value as AppSettings['theme'] })}
         >
           <option value="light">亮色</option>
-          <option value="dark" disabled>暗色（即将推出）</option>
+          <option value="dark">暗色</option>
         </select>
       </div>
 

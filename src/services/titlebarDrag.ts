@@ -21,8 +21,10 @@ export async function handleTitlebarMouseDown(
   event: MouseEvent,
   appWindow: TitlebarWindow,
 ): Promise<boolean> {
-  if (event.button !== 0 || event.buttons !== 1) return false;
+  if (event.button !== 0) return false;
   if (isInteractiveTarget(event.target)) return false;
+
+  event.preventDefault();
 
   if (event.detail === 2) {
     await appWindow.toggleMaximize();

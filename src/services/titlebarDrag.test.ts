@@ -8,12 +8,13 @@ function makeWindow() {
   };
 }
 
-function eventFor(target: Element, detail = 1): MouseEvent {
+function eventFor(target: Element, detail = 1, buttons = 1): MouseEvent {
   return {
-    buttons: 1,
+    buttons,
     button: 0,
     detail,
     target,
+    preventDefault: vi.fn(),
   } as MouseEvent;
 }
 
@@ -23,6 +24,17 @@ describe('handleTitlebarMouseDown', () => {
     const target = document.createElement('div');
 
     const handled = await handleTitlebarMouseDown(eventFor(target), appWindow);
+
+    expect(handled).toBe(true);
+    expect(appWindow.startDragging).toHaveBeenCalledTimes(1);
+    expect(appWindow.toggleMaximize).not.toHaveBeenCalled();
+  });
+
+  it('starts dragging when the desktop webview reports no pressed buttons on mousedown', async () => {
+    const appWindow = makeWindow();
+    const target = document.createElement('div');
+
+    const handled = await handleTitlebarMouseDown(eventFor(target, 1, 0), appWindow);
 
     expect(handled).toBe(true);
     expect(appWindow.startDragging).toHaveBeenCalledTimes(1);

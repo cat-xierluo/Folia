@@ -27,6 +27,13 @@ describe('prefersStableHtmlPreview', () => {
 `, 'markdown')).toBe(false);
   });
 
+  it('does not route documents to stable preview for hidden table markup only', () => {
+    expect(prefersStableHtmlPreview(`
+<!-- <table><tr><td>注释示例</td></tr></table> -->
+<script>const html = '<table><tr><td>脚本示例</td></tr></table>';</script>
+`, 'markdown')).toBe(false);
+  });
+
   it('routes opened HTML files to the stable reading preview', () => {
     expect(prefersStableHtmlPreview('<h1>证据目录</h1>', 'html')).toBe(true);
   });

@@ -1,8 +1,11 @@
 import { RefreshCw } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { getSettings, updateSettings, type AppSettings } from '../../services/settingsService';
+import { useSettings } from '../../hooks/useSettings';
+import { translate } from '../../services/i18n';
+import { updateSettings } from '../../services/settingsService';
 import {
   checkForAppUpdate,
+  FALLBACK_APP_VERSION,
   getCurrentAppVersion,
   type UpdateCheckResult,
 } from '../../services/updateService';
@@ -15,99 +18,136 @@ type AboutSectionProps = {
 
 type CheckState = 'idle' | 'checking' | 'latest' | 'available' | 'unsupported' | 'error';
 
+const appIconUrl = new URL('../../assets/folia-icon.png', import.meta.url).href;
+const wechatQrUrl = new URL('../../../docs/wechat-qr.png', import.meta.url).href;
+
 export function AboutSection({ onUpdateAvailable }: AboutSectionProps) {
-  const [settings, setSettings] = useState(() => getSettings());
-  const [version, setVersion] = useState('0.1.0');
+  const settings = useSettings();
+  const t = (key: Parameters<typeof translate>[1]) => translate(settings.locale, key);
+  const [version, setVersion] = useState(FALLBACK_APP_VERSION);
   const [checkState, setCheckState] = useState<CheckState>('idle');
-  const [message, setMessage] = useState('自动检查会在启动后延迟进行，不影响打开速度。');
+  const [message, setMessage] = useState<string | null>(null);
+  const displayMessage = checkState === 'idle' ? t('updateIdle') : message ?? t('updateIdle');
 
   useEffect(() => {
     void getCurrentAppVersion().then(setVersion);
   }, []);
 
-  const handleChange = (patch: Partial<AppSettings>) => {
-    updateSettings(patch);
-    setSettings(getSettings());
+  const handleAutoUpdateToggle = () => {
+    updateSettings({ autoUpdateCheck: !settings.autoUpdateCheck });
   };
 
   const handleCheckUpdate = async () => {
     setCheckState('checking');
-    setMessage('正在检查 GitHub Releases 更新...');
+    setMessage(t('updateCheckingRemote'));
 
     const result = await checkForAppUpdate();
     if (result.status === 'available') {
       setCheckState('available');
-      setMessage(`发现新版本 ${result.version}`);
+      setMessage(`${t('updateAvailable')} ${result.version}`);
       onUpdateAvailable(result);
       return;
     }
 
     if (result.status === 'not-available') {
       setCheckState('latest');
-      setMessage('当前已经是最新版本。');
+      setMessage(t('updateLatest'));
       return;
     }
 
     if (result.status === 'unsupported') {
       setCheckState('unsupported');
-      setMessage('浏览器开发预览中不检查更新，打包后的桌面应用会启用。');
+      setMessage(t('updateUnsupported'));
       return;
     }
 
     setCheckState('error');
-    setMessage(result.message || '检查更新失败，请稍后再试。');
+    setMessage(result.message || t('updateError'));
   };
 
   return (
     <div className="settings-section">
-      <h3 className="settings-section-title">关于</h3>
+      <h3 className="settings-section-title">{t('aboutTitle')}</h3>
 
-      <div className="settings-row">
-        <div>
-          <div className="settings-label">版本</div>
-          <div className="settings-desc">Folia {version}</div>
-        </div>
-        <span className="settings-value">轻量 Markdown 阅读器</span>
-      </div>
-
-      <div className="settings-row">
-        <div>
-          <div className="settings-label">自动检查更新</div>
-          <div className="settings-desc">启动后延迟检查，不进入冷启动路径</div>
-        </div>
-        <button
-          className={`toggle-switch ${settings.autoUpdateCheck ? 'on' : ''}`}
-          onClick={() => handleChange({ autoUpdateCheck: !settings.autoUpdateCheck })}
-          aria-label="自动检查更新"
+      <div className="about-product">
+        <img
+          className="about-app-icon"
+          src={appIconUrl}
+          alt=""
+          width={54}
+          height={54}
         />
-      </div>
-
-      <div className="settings-row settings-row-stacked">
         <div>
-          <div className="settings-label">软件更新</div>
-          <div className={`settings-desc update-check-message ${checkState}`}>{message}</div>
+          <div className="about-product-name">
+            Folia
+          </div>
+          <div className="settings-desc about-product-positioning">
+            {t('appPositioning')}
+          </div>
         </div>
-        <button
-          type="button"
-          className="settings-action-button"
-          onClick={handleCheckUpdate}
-          disabled={checkState === 'checking'}
-        >
-          <RefreshCw size={14} className={checkState === 'checking' ? 'spinning' : ''} />
-          {checkState === 'checking' ? '检查中' : '检查更新'}
-        </button>
       </div>
 
-      <div className="about-links">
-        <div className="about-link-row">
-          <span className="about-link-label">更新源</span>
-          <span className="about-value">GitHub Releases</span>
+      <div className="about-info-panel">
+        <div className="about-info-row">
+          <span className="about-info-label">{t('versionLabel')}</span>
+          <span className="about-info-value">{version}</span>
         </div>
-        <div className="about-link-row">
-          <span className="about-link-label">项目地址</span>
-          <a href="https://github.com/cat-xierluo/Folia" target="_blank" rel="noreferrer">
+
+        <div className="about-info-row about-update-row">
+          <div>
+            <div className="about-info-label">{t('updateLabel')}</div>
+            <div className={`settings-desc update-check-message ${checkState}`}>{displayMessage}</div>
+          </div>
+          <div className="about-update-actions">
+            <span className="about-auto-update">
+              <span>{t('autoUpdateLabel')}</span>
+              <button
+                type="button"
+                className={`toggle-switch ${settings.autoUpdateCheck ? 'on' : ''}`}
+                onClick={handleAutoUpdateToggle}
+                aria-label={t('autoUpdateLabel')}
+                aria-pressed={settings.autoUpdateCheck}
+              />
+            </span>
+            <button
+              type="button"
+              className="settings-action-button"
+              onClick={handleCheckUpdate}
+              disabled={checkState === 'checking'}
+            >
+              <RefreshCw size={14} className={checkState === 'checking' ? 'spinning' : ''} />
+              {checkState === 'checking' ? t('updateChecking') : t('updateButton')}
+            </button>
+          </div>
+        </div>
+
+        <div className="about-info-row">
+          <span className="about-info-label">{t('projectUrlLabel')}</span>
+          <a className="about-info-value" href="https://github.com/cat-xierluo/Folia" target="_blank" rel="noreferrer">
             github.com/cat-xierluo/Folia
           </a>
+        </div>
+      </div>
+
+      <div className="about-author-card">
+        <div className="settings-label about-author-title">{t('authorTitle')}</div>
+        <div className="about-author-body">
+          <div className="about-author-info">
+            <div className="about-info-row compact">
+              <span className="about-info-label">{t('authorNameLabel')}</span>
+              <span className="about-info-value">{t('authorName')}</span>
+            </div>
+            <div className="about-info-row compact">
+              <span className="about-info-label">{t('authorGithubLabel')}</span>
+              <a className="about-info-value" href="https://github.com/cat-xierluo" target="_blank" rel="noreferrer">
+                {t('authorGithub')}
+              </a>
+            </div>
+          </div>
+          <div className="about-wechat-block">
+            <img className="about-wechat-qr" src={wechatQrUrl} alt={t('authorWechatQrAlt')} />
+            <span>{t('authorWechatQrAlt')}</span>
+          </div>
         </div>
       </div>
     </div>
