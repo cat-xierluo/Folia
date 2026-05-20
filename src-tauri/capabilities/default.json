@@ -7,6 +7,10 @@
   ],
   "permissions": [
     "core:default",
+    "core:window:default",
+    "core:window:allow-set-title",
+    "core:window:allow-start-dragging",
+    "core:window:allow-toggle-maximize",
     "dialog:default",
     "dialog:allow-open",
     "dialog:allow-save",
@@ -16,6 +20,7 @@
     "fs:allow-read-file",
     "fs:allow-write-file",
     "opener:default",
+    "process:allow-restart",
     "updater:default"
   ]
 }
