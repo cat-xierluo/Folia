@@ -1,5 +1,5 @@
 /** 内置预设 ID */
-export type BuiltInPresetId = 'legal' | 'academic' | 'report' | 'service-plan' | 'minimal';
+export type BuiltInPresetId = 'legal' | 'academic' | 'report' | 'minimal';
 
 /** 用户导入的自定义预设 ID */
 export type CustomPresetId = `custom:${string}`;
@@ -169,7 +169,7 @@ export interface PresetConfig {
   horizontal_rule: HorizontalRuleConfig;
   lists: ListsConfig;
 
-  /** service-plan 预设特有的配色方案 */
+  /** 可选配色方案 */
   colors?: {
     primary: string;
     secondary: string;

@@ -28,6 +28,7 @@ import {
   createMermaidFallback,
   createCodeFallback,
 } from './chart-handler';
+import { findHtmlTableBlocks } from '../htmlTableBlockService';
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -98,9 +99,31 @@ export async function markdownToDocx(
 // State machine
 // ---------------------------------------------------------------------------
 
-type ParserState = 'normal' | 'code_block' | 'mermaid_block' | 'html_table';
+type ParserState = 'normal' | 'code_block' | 'mermaid_block';
 
-async function parseLines(content: string, config: PresetConfig): Promise<FileChild[]> {
+// Exported for Word export parser regression tests.
+export async function parseLines(content: string, config: PresetConfig): Promise<FileChild[]> {
+  const paragraphs: FileChild[] = [];
+  const tableBlocks = findHtmlTableBlocks(content);
+  let cursor = 0;
+
+  for (const block of tableBlocks) {
+    if (block.start > cursor) {
+      paragraphs.push(...await parseMarkdownLines(content.slice(cursor, block.start), config));
+    }
+
+    paragraphs.push(createHtmlTable(block.html, config));
+    cursor = block.end;
+  }
+
+  if (cursor < content.length) {
+    paragraphs.push(...await parseMarkdownLines(content.slice(cursor), config));
+  }
+
+  return paragraphs;
+}
+
+async function parseMarkdownLines(content: string, config: PresetConfig): Promise<FileChild[]> {
   const paragraphs: FileChild[] = [];
   const lines = content.split('\n');
 
@@ -121,7 +144,17 @@ async function parseLines(content: string, config: PresetConfig): Promise<FileCh
 
   const flushTable = () => {
     if (tableBuffer.length > 0) {
-      paragraphs.push(createMarkdownTable(tableBuffer, config));
+      const hasSeparator = tableBuffer.some((l) => isMarkdownSeparator(l));
+      const dataRows = tableBuffer.filter(
+        (l) => isMarkdownTableRow(l) && !isMarkdownSeparator(l),
+      );
+      if (hasSeparator && dataRows.length >= 1) {
+        paragraphs.push(createMarkdownTable(tableBuffer, config));
+      } else {
+        for (const tl of tableBuffer) {
+          paragraphs.push(addParagraph(tl, config));
+        }
+      }
       tableBuffer = [];
     }
   };
@@ -153,27 +186,7 @@ async function parseLines(content: string, config: PresetConfig): Promise<FileCh
       continue;
     }
 
-    // ---- html_table ----
-    if (state === 'html_table') {
-      buffer.push(line);
-      if (line.includes('</table>')) {
-        paragraphs.push(createHtmlTable(buffer.join('\n'), config));
-        buffer = [];
-        state = 'normal';
-      }
-      continue;
-    }
-
     // ---- normal ----
-
-    // HTML 表格开始
-    if (line.includes('<table')) {
-      flushQuote();
-      flushTable();
-      buffer = [line];
-      state = 'html_table';
-      continue;
-    }
 
     // Mermaid 代码块
     if (line.trimStart().startsWith('```mermaid')) {
@@ -269,20 +282,7 @@ async function parseLines(content: string, config: PresetConfig): Promise<FileCh
     }
     // 如果之前在收集表格但当前行不是表格行，先输出表格
     if (tableBuffer.length > 0) {
-      // 检查最后一行是否是分隔符（只有分隔符不算有效表格）
-      const hasSeparator = tableBuffer.some((l) => isMarkdownSeparator(l));
-      const dataRows = tableBuffer.filter(
-        (l) => isMarkdownTableRow(l) && !isMarkdownSeparator(l),
-      );
-      if (hasSeparator && dataRows.length >= 1) {
-        flushTable();
-      } else {
-        // 不够成有效表格，当作普通段落
-        for (const tl of tableBuffer) {
-          paragraphs.push(addParagraph(tl, config));
-        }
-        tableBuffer = [];
-      }
+      flushTable();
     }
 
     // 10. 普通段落
@@ -294,8 +294,6 @@ async function parseLines(content: string, config: PresetConfig): Promise<FileCh
     paragraphs.push(...addCodeBlock(buffer, codeLanguage, config));
   } else if (state === 'mermaid_block') {
     paragraphs.push(...createMermaidFallback(buffer.join('\n'), config));
-  } else if (state === 'html_table') {
-    paragraphs.push(createHtmlTable(buffer.join('\n'), config));
   }
 
   flushQuote();

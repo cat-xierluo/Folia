@@ -1,10 +1,10 @@
 [package]
 name = "folia"
-version = "0.1.0"
+version = "0.3.7"
 description = "A lightweight Markdown reader with HTML support"
 authors = ["you"]
-license = ""
-repository = ""
+license = "Apache-2.0"
+repository = "https://github.com/cat-xierluo/Folia"
 edition = "2021"
 rust-version = "1.77.2"
 

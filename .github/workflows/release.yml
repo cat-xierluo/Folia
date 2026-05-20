@@ -47,6 +47,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'Folia ${{ github.ref_name }}'
@@ -72,44 +73,20 @@ jobs:
           TAG="${{ github.ref_name }}"
           VERSION="${{ steps.version.outputs.VERSION }}"
           REPO="${{ github.repository }}"
-          BASE_URL="https://github.com/$REPO/releases/download/$TAG"
-          PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
           # Download all signature files from draft release
           mkdir -p sigs
-          gh release download "$TAG" --repo "$REPO" --pattern "*.sig" --dir sigs 2>/dev/null || true
+          gh release download "$TAG" --repo "$REPO" --pattern "*.sig" --dir sigs
 
-          # Build latest.json with Node for reliable JSON handling
-          node -e "
-          const fs = require('fs');
-          const path = require('path');
-          const sigs = fs.readdirSync('sigs');
-          const platforms = {};
-
-          for (const sig of sigs) {
-            const signature = fs.readFileSync(path.join('sigs', sig), 'utf8').trim();
-            const base = sig.replace(/\.sig$/, '');
-
-            if (sig.includes('aarch64')) {
-              platforms['darwin-aarch64'] = { signature, url: '$BASE_URL/' + base };
-            } else if (sig.includes('x64') && sig.includes('.app.')) {
-              platforms['darwin-x86_64'] = { signature, url: '$BASE_URL/' + base };
-            } else if (sig.includes('x64') && sig.includes('.nsis.')) {
-              platforms['windows-x86_64'] = { signature, url: '$BASE_URL/' + base };
-            } else if (sig.includes('x64') && sig.includes('.msi.')) {
-              platforms['windows-x86_64'] = { signature, url: '$BASE_URL/' + base };
-            }
-          }
-
-          const manifest = {
-            version: '$VERSION',
-            notes: 'Folia $VERSION',
-            pub_date: '$PUB_DATE',
-            platforms
-          };
-          fs.writeFileSync('latest.json', JSON.stringify(manifest, null, 2) + '\n');
-          console.log(JSON.stringify(Object.keys(platforms)));
-          "
+          FOLIA_SIGNATURE_DIR=sigs \
+          FOLIA_UPDATE_VERSION="$VERSION" \
+          FOLIA_UPDATE_TAG="$TAG" \
+          FOLIA_UPDATE_NOTES="Folia $VERSION" \
+          FOLIA_UPDATE_REPO="https://github.com/$REPO" \
+          FOLIA_MANIFEST_OUTPUT=latest.json \
+          FOLIA_GITEE_MANIFEST_OUTPUT=latest-gitee.json \
+          FOLIA_REQUIRE_PLATFORMS="darwin-aarch64,darwin-x86_64,windows-x86_64" \
+          npm run updater:manifest
 
       - name: Upload latest.json and publish release
         env:
@@ -126,13 +103,17 @@ jobs:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
           GITEE_OWNER: ${{ secrets.GITEE_OWNER }}
         run: |
+          if [ -z "${GITEE_TOKEN}" ] || [ -z "${GITEE_OWNER}" ]; then
+            echo "Gitee secrets are not configured, skipping sync"
+            exit 0
+          fi
+
           TAG="${{ github.ref_name }}"
           VERSION="${{ steps.version.outputs.VERSION }}"
           REPO="${GITEE_OWNER}/Folia"
-          GITEE_BASE="https://gitee.com/${REPO}/releases/download/${TAG}"
 
           # Create Gitee release
-          RELEASE_ID=$(curl -s -X POST \
+          RELEASE_RESPONSE=$(curl -s -X POST \
             "https://gitee.com/api/v5/repos/${REPO}/releases" \
             -H "Content-Type: application/json" \
             -d "{
@@ -142,7 +123,17 @@ jobs:
               \"body\": \"Folia ${VERSION} - 自动同步自 GitHub\",
               \"target_commitish\": \"main\",
               \"prerelease\": false
-            }" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))")
+            }")
+          RELEASE_ID=$(RELEASE_RESPONSE="$RELEASE_RESPONSE" python3 - <<'PY'
+          import json
+          import os
+
+          try:
+              print(json.loads(os.environ.get("RELEASE_RESPONSE", "")).get("id", ""))
+          except Exception:
+              print("")
+          PY
+          )
 
           if [ -z "$RELEASE_ID" ]; then
             echo "Failed to create Gitee release, skipping sync"
@@ -165,37 +156,16 @@ jobs:
               -F "file=@${FILE}" > /dev/null
           done
 
-          # Generate Gitee-specific latest.json with Gitee download URLs
-          GITEE_PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          node -e "
-          const fs = require('fs');
-          const path = require('path');
-          const sigs = fs.readdirSync('sigs');
-          const platforms = {};
-
-          for (const sig of sigs) {
-            const signature = fs.readFileSync(path.join('sigs', sig), 'utf8').trim();
-            const base = sig.replace(/\.sig$/, '');
-
-            if (sig.includes('aarch64')) {
-              platforms['darwin-aarch64'] = { signature, url: '${GITEE_BASE}/' + base };
-            } else if (sig.includes('x64') && sig.includes('.app.')) {
-              platforms['darwin-x86_64'] = { signature, url: '${GITEE_BASE}/' + base };
-            } else if (sig.includes('x64') && sig.includes('.nsis.')) {
-              platforms['windows-x86_64'] = { signature, url: '${GITEE_BASE}/' + base };
-            } else if (sig.includes('x64') && sig.includes('.msi.')) {
-              platforms['windows-x86_64'] = { signature, url: '${GITEE_BASE}/' + base };
-            }
-          }
-
-          const manifest = {
-            version: '${VERSION}',
-            notes: 'Folia ${VERSION}',
-            pub_date: '${GITEE_PUB_DATE}',
-            platforms
-          };
-          fs.writeFileSync('latest-gitee.json', JSON.stringify(manifest, null, 2) + '\n');
-          "
+          # Generate Gitee-specific latest.json with exact tag download URLs.
+          FOLIA_SIGNATURE_DIR=sigs \
+          FOLIA_UPDATE_VERSION="$VERSION" \
+          FOLIA_UPDATE_TAG="$TAG" \
+          FOLIA_UPDATE_NOTES="Folia $VERSION" \
+          FOLIA_UPDATE_GITEE_REPO="https://gitee.com/${REPO}" \
+          FOLIA_MANIFEST_OUTPUT=/tmp/latest-github.json \
+          FOLIA_GITEE_MANIFEST_OUTPUT=latest-gitee.json \
+          FOLIA_REQUIRE_PLATFORMS="darwin-aarch64,darwin-x86_64,windows-x86_64" \
+          npm run updater:manifest
 
           # Upload Gitee latest.json (named latest.json on Gitee)
           curl -s -X POST \

@@ -29,7 +29,7 @@ export function WysiwygEditorPane({ source, onChange }: WysiwygEditorPaneProps) 
 
       const editor = new Vditor(hostRef.current, {
         value: latestSource.current,
-        mode: 'wysiwyg',
+        mode: 'ir',
         height: '100%',
         width: '100%',
         cdn: '/vditor',
@@ -84,7 +84,7 @@ export function WysiwygEditorPane({ source, onChange }: WysiwygEditorPaneProps) 
   }, [source]);
 
   return (
-    <div className="wysiwyg-editor-pane" aria-label="所见即所得编辑器">
+    <div className="wysiwyg-editor-pane" aria-label="即时渲染编辑器">
       <div ref={hostRef} className="wysiwyg-editor-host" />
     </div>
   );

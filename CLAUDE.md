@@ -2,7 +2,7 @@
 
 ## 项目简介
 
-Folia 是一个轻量 Markdown 阅读器，专为法律文档设计。稳定渲染包含 `rowspan`、`colspan` 等复杂 HTML 表格的 Markdown 文件。
+Folia 是一个轻量 Markdown 阅读器，为知识工作者设计——尤其适合法律、财税等领域需要处理复杂 HTML 表格的 Markdown 文档。稳定渲染包含 `rowspan`、`colspan` 等合并单元格的表格，并提供所见即所得的 Word 纸张预览与 `.docx` 导出。
 
 技术栈：Tauri v2 + React 19 + TypeScript + Vite 8 + Vditor + CodeMirror 6
 

@@ -1,14 +1,23 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import type { OpenedFile, TocItem } from '../types/document';
 import { createEmptyFile } from '../types/document';
 import { getExportPresetConfig, getLastOpenedPath, setLastOpenedPath } from '../services/settingsService';
 import { firstOpenableDocumentPath, isOpenableDocumentPath } from '../services/fileDrop';
 import { prefersStableHtmlPreview } from '../services/documentViewMode';
 import { useSettings } from '../hooks/useSettings';
-import { checkForAppUpdate, type UpdateCheckResult, type UpdateSource } from '../services/updateService';
+import {
+  checkForAppUpdate,
+  type UpdateCheckResult,
+  type UpdateSource,
+} from '../services/updateService';
+import { scheduleDelayedAutoUpdateCheck } from '../services/autoUpdateScheduler';
+import { translate } from '../services/i18n';
+import { findHtmlTableBlocks } from '../services/htmlTableBlockService';
 import { Toolbar, type EditorMode } from '../components/Toolbar';
 import { StatusBar } from '../components/StatusBar';
 import { UpdateDialog } from '../components/UpdateDialog';
+import { FloatingToc } from '../components/FloatingToc';
 
 const EditorPane = lazy(() =>
   import('../components/EditorPane').then((module) => ({ default: module.EditorPane })),
@@ -34,6 +43,10 @@ const WordPaperPreviewPane = lazy(() =>
   import('../components/WordPaperPreviewPane').then((module) => ({ default: module.WordPaperPreviewPane })),
 );
 
+const HtmlTableEditor = lazy(() =>
+  import('../components/HtmlTableEditor').then((module) => ({ default: module.HtmlTableEditor })),
+);
+
 type AvailableUpdate = Extract<UpdateCheckResult, { status: 'available' }>;
 
 function extractToc(content: string): TocItem[] {
@@ -52,18 +65,26 @@ function extractToc(content: string): TocItem[] {
 
 export function AppLayout() {
   const settings = useSettings();
+  const t = (key: Parameters<typeof translate>[1]) => translate(settings.locale, key);
   const reopenAttempted = useRef(false);
   const autoUpdateCheckStarted = useRef(false);
   const mainContentRef = useRef<HTMLDivElement>(null);
   const [file, setFile] = useState<OpenedFile>(createEmptyFile());
   const [toc, setToc] = useState<TocItem[]>([]);
-  const [tocVisible, setTocVisible] = useState(false);
+  const [tocPinned, setTocPinned] = useState(false);
+  const [activeTocIndex, setActiveTocIndex] = useState(0);
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [editorMode, setEditorMode] = useState<EditorMode>('wysiwyg');
   const [wordPreviewVisible, setWordPreviewVisible] = useState(false);
   const [wordPreviewWidth, setWordPreviewWidth] = useState(460);
   const [resizing, setResizing] = useState(false);
+  const [htmlTableEditorVisible, setHtmlTableEditorVisible] = useState(false);
   const [updateDialog, setUpdateDialog] = useState<{ source: UpdateSource; update: AvailableUpdate } | null>(null);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = settings.theme;
+    document.documentElement.style.colorScheme = settings.theme;
+  }, [settings.theme]);
 
   const handleOpen = useCallback(async () => {
     const { openFile } = await import('../services/fileService');
@@ -205,12 +226,12 @@ export function AppLayout() {
     let unlisten: (() => void) | undefined;
     let cancelled = false;
 
-    void import('@tauri-apps/api/window')
-      .then(({ getCurrentWindow }) => getCurrentWindow().onDragDropEvent((event) => {
+    void getCurrentWindow()
+      .onDragDropEvent((event) => {
         if (event.payload.type !== 'drop') return;
         const path = firstOpenableDocumentPath(event.payload.paths);
         if (path) void handleOpenPath(path);
-      }))
+      })
       .then((fn) => {
         if (cancelled) {
           fn();
@@ -256,21 +277,15 @@ export function AppLayout() {
 
   useEffect(() => {
     if (!settings.autoUpdateCheck || autoUpdateCheckStarted.current || !('__TAURI_INTERNALS__' in window)) return;
-    autoUpdateCheckStarted.current = true;
 
-    let cancelled = false;
-    const timeout = window.setTimeout(() => {
-      void checkForAppUpdate().then((result) => {
-        if (!cancelled && result.status === 'available') {
-          setUpdateDialog({ source: 'auto', update: result });
-        }
-      });
-    }, 2600);
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timeout);
-    };
+    return scheduleDelayedAutoUpdateCheck({
+      hasStarted: () => autoUpdateCheckStarted.current,
+      markStarted: () => {
+        autoUpdateCheckStarted.current = true;
+      },
+      checkForAppUpdate,
+      onUpdateAvailable: (result) => setUpdateDialog({ source: 'auto', update: result }),
+    });
   }, [settings.autoUpdateCheck]);
 
   useEffect(() => {
@@ -284,32 +299,20 @@ export function AppLayout() {
     return () => window.clearTimeout(timeout);
   }, [file, settings.autoSave]);
 
-  const tocPane = useMemo(() => {
-    if (!tocVisible || toc.length === 0) return null;
-    return (
-      <div className="toc-pane">
-        <div className="toc-header">大纲</div>
-        <nav className="toc-list">
-          {toc.map((item, i) => (
-            <a
-              key={i}
-              className={`toc-item toc-h${item.level}`}
-              href={`#${item.id}`}
-              onClick={(e) => {
-                e.preventDefault();
-                document.getElementById(item.id)?.scrollIntoView({ behavior: 'smooth' });
-              }}
-            >
-              {item.text}
-            </a>
-          ))}
-        </nav>
-      </div>
-    );
-  }, [toc, tocVisible]);
+  useEffect(() => {
+    if (!('__TAURI_INTERNALS__' in window)) return;
+    const title = file.dirty ? `* ${file.name}` : file.name;
+    void getCurrentWindow()
+      .setTitle(title)
+      .catch((error) => console.warn('Failed to update window title:', error));
+  }, [file.dirty, file.name]);
 
   const isDocx = file.fileType === 'docx';
   const shouldUseStableHtmlPreview = prefersStableHtmlPreview(file.content, file.fileType);
+  const htmlTableBlocks = useMemo(
+    () => shouldUseStableHtmlPreview && !isDocx ? findHtmlTableBlocks(file.content) : [],
+    [file.content, isDocx, shouldUseStableHtmlPreview],
+  );
   const mainContentClassName = [
     'main-content',
     isDocx ? 'docx-layout' : 'writing-layout',
@@ -317,6 +320,76 @@ export function AppLayout() {
     wordPreviewVisible && !isDocx ? 'word-preview-open' : '',
     resizing ? 'is-resizing' : '',
   ].filter(Boolean).join(' ');
+
+  const resolveTocHeading = useCallback((item: TocItem, index: number): HTMLElement | null => {
+    const byId = document.getElementById(item.id);
+    if (byId instanceof HTMLElement) return byId;
+
+    const root = mainContentRef.current;
+    if (!root) return null;
+
+    const headings = root.querySelectorAll<HTMLElement>(
+      '.vditor-ir h1, .vditor-ir h2, .vditor-ir h3, .vditor-ir h4, .vditor-ir h5, .vditor-ir h6, .vditor-wysiwyg h1, .vditor-wysiwyg h2, .vditor-wysiwyg h3, .vditor-wysiwyg h4, .vditor-wysiwyg h5, .vditor-wysiwyg h6, .html-preview-pane h1, .html-preview-pane h2, .html-preview-pane h3, .html-preview-pane h4, .html-preview-pane h5, .html-preview-pane h6',
+    );
+    return headings[index] ?? null;
+  }, []);
+
+  const handleTocNavigate = useCallback((item: TocItem, index: number) => {
+    const target = resolveTocHeading(item, index);
+    target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setActiveTocIndex(index);
+  }, [resolveTocHeading]);
+
+  const handleHtmlTableEditorSave = useCallback((nextSource: string) => {
+    handleContentChange(nextSource);
+    setHtmlTableEditorVisible(false);
+    setEditorMode('wysiwyg');
+  }, [handleContentChange]);
+
+  useEffect(() => {
+    if (toc.length === 0) return;
+
+    const updateActiveHeading = () => {
+      const rootRect = mainContentRef.current?.getBoundingClientRect();
+      const anchorTop = (rootRect?.top ?? 0) + 96;
+      let nextActive = 0;
+
+      toc.forEach((item, index) => {
+        const heading = resolveTocHeading(item, index);
+        if (!heading) return;
+        if (heading.getBoundingClientRect().top <= anchorTop) {
+          nextActive = index;
+        }
+      });
+
+      setActiveTocIndex((current) => current === nextActive ? current : nextActive);
+    };
+
+    const root = mainContentRef.current;
+    let frame: number | null = null;
+    const scheduleUpdate = () => {
+      if (frame !== null) return;
+      frame = window.requestAnimationFrame(() => {
+        frame = null;
+        updateActiveHeading();
+      });
+    };
+    const observer = new MutationObserver(scheduleUpdate);
+
+    root?.addEventListener('scroll', scheduleUpdate, { capture: true, passive: true });
+    window.addEventListener('resize', scheduleUpdate);
+    if (root) {
+      observer.observe(root, { childList: true, subtree: true });
+    }
+    scheduleUpdate();
+
+    return () => {
+      if (frame !== null) window.cancelAnimationFrame(frame);
+      root?.removeEventListener('scroll', scheduleUpdate, true);
+      window.removeEventListener('resize', scheduleUpdate);
+      observer?.disconnect();
+    };
+  }, [editorMode, file.content, resolveTocHeading, shouldUseStableHtmlPreview, toc, wordPreviewVisible]);
 
   const editorPane = isDocx ? (
     <div className="editor-pane readonly-pane">
@@ -327,9 +400,34 @@ export function AppLayout() {
       <EditorPane source={file.content} onChange={handleContentChange} />
     </Suspense>
   ) : shouldUseStableHtmlPreview ? (
-    <Suspense fallback={<div className="preview-shell html-preview-pane" aria-label="HTML 阅读预览" />}>
-      <PreviewPane source={file.content} tocIds={toc} wideTables />
-    </Suspense>
+    <div className="html-reading-pane" aria-label={t('htmlReadingTitle')}>
+      <div className="html-reading-toolbar">
+        <div className="html-reading-toolbar-copy">
+          <span>{t('htmlReadingTitle')}</span>
+          <small>{t('htmlReadingDesc')}</small>
+        </div>
+        <div className="html-reading-toolbar-actions">
+          <button
+            type="button"
+            className="settings-action-button html-reading-table-button"
+            disabled={htmlTableBlocks.length === 0}
+            onClick={() => setHtmlTableEditorVisible(true)}
+          >
+            {t('editTableLabel')}
+          </button>
+          <button
+            type="button"
+            className="settings-action-button html-reading-edit-button"
+            onClick={() => setEditorMode('source')}
+          >
+            {t('editSourceLabel')}
+          </button>
+        </div>
+      </div>
+      <Suspense fallback={<div className="preview-shell html-preview-pane" aria-label={t('htmlReadingTitle')} />}>
+        <PreviewPane source={file.content} tocIds={toc} wideTables />
+      </Suspense>
+    </div>
   ) : (
     <Suspense fallback={<div className="wysiwyg-editor-pane lazy-pane"><span>所见即所得编辑器加载中</span></div>}>
       <WysiwygEditorPane source={file.content} onChange={handleContentChange} />
@@ -357,15 +455,13 @@ export function AppLayout() {
   );
 
   return (
-    <div className="app-layout" style={{ fontSize: `${settings.zoomLevel}%` }}>
+    <div className="app-layout" data-theme={settings.theme} style={{ fontSize: `${settings.zoomLevel}%` }}>
       <Toolbar
         dirty={file.dirty}
         fileName={file.name}
-        tocVisible={tocVisible}
         editorMode={editorMode}
         wordPreviewVisible={wordPreviewVisible}
         editingDisabled={isDocx}
-        onToggleToc={() => setTocVisible(v => !v)}
         onToggleEditorMode={handleToggleEditorMode}
         onToggleWordPreview={handleToggleWordPreview}
         onOpen={handleOpen}
@@ -380,8 +476,14 @@ export function AppLayout() {
       >
         {isDocx ? docxPane : (
           <>
-            {tocPane}
             {editorPane}
+            <FloatingToc
+              items={toc}
+              activeIndex={activeTocIndex}
+              pinned={tocPinned}
+              onPinnedChange={setTocPinned}
+              onNavigate={handleTocNavigate}
+            />
           </>
         )}
         {wordPreviewVisible && !isDocx && (
@@ -406,6 +508,15 @@ export function AppLayout() {
           <SettingsPage
             onClose={() => setSettingsVisible(false)}
             onUpdateAvailable={(update) => setUpdateDialog({ source: 'manual', update })}
+          />
+        </Suspense>
+      )}
+      {htmlTableEditorVisible && (
+        <Suspense fallback={<div className="settings-overlay" />}>
+          <HtmlTableEditor
+            source={file.content}
+            onSave={handleHtmlTableEditorSave}
+            onClose={() => setHtmlTableEditorVisible(false)}
           />
         </Suspense>
       )}

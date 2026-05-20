@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { checkForAppUpdate, getCurrentAppVersion, isTauriRuntime } from './updateService';
+import {
+  FALLBACK_APP_VERSION,
+  checkForAppUpdate,
+  getCurrentAppVersion,
+  isTauriRuntime,
+} from './updateService';
 
 describe('updateService', () => {
   it('detects browser test runtime as unsupported for Tauri updater', async () => {
@@ -8,6 +13,7 @@ describe('updateService', () => {
   });
 
   it('returns the bundled app version fallback outside Tauri', async () => {
-    await expect(getCurrentAppVersion()).resolves.toBe('0.1.0');
+    await expect(getCurrentAppVersion()).resolves.toBe(FALLBACK_APP_VERSION);
   });
+
 });

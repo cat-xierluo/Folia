@@ -2,27 +2,44 @@ import {
   Table, TableRow, TableCell, Paragraph, TextRun,
   WidthType, AlignmentType, VerticalAlign, BorderStyle,
   type IBorderOptions,
+  type IRunOptions,
   type ITableBordersOptions,
 } from 'docx';
+import {
+  parseHtmlTableModel,
+  type HtmlTableCellModel,
+  type HtmlTableModel,
+  type HtmlTableRowModel,
+} from '../htmlTableModel';
 import type { PresetConfig } from './types';
-import { createFormattedRuns, ptToHalfPt } from './formatter';
+import { convertQuotesToChinese, createFormattedRuns, ptToHalfPt } from './formatter';
+
+type MutableRunOptions = {
+  -readonly [K in keyof IRunOptions]: IRunOptions[K];
+};
 
 // --- Markdown table ---
 
 export function isMarkdownTableRow(line: string): boolean {
-  const trimmed = line.trim();
-  return trimmed.startsWith('|') && trimmed.endsWith('|');
+  return line.trimStart().startsWith('|') && splitMarkdownRow(line).length >= 2;
 }
 
 export function isMarkdownSeparator(line: string): boolean {
-  return /^\|[\s\-:]+\|$/.test(line.trim());
+  const cells = splitMarkdownRow(line);
+  return cells.length >= 2 && cells.every((cell) => /^:?-{3,}:?$/.test(cell.trim()));
+}
+
+export function parseMarkdownTableRows(lines: string[]): string[][] {
+  return lines
+    .filter((line) => !isMarkdownSeparator(line))
+    .map((line) => splitMarkdownRow(line));
 }
 
 export function createMarkdownTable(
   lines: string[],
   config: PresetConfig,
 ): Table {
-  const rows = splitMarkdownRows(lines);
+  const rows = parseMarkdownTableRows(lines);
   if (rows.length === 0) return emptyTable(config);
 
   const colCount = rows[0].length;
@@ -57,51 +74,16 @@ export function createHtmlTable(
   html: string,
   config: PresetConfig,
 ): Table {
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(html, 'text/html');
-  const tableEl = doc.querySelector('table');
-  if (!tableEl) return emptyTable(config);
+  const model = parseHtmlTableModel(html);
+  if (model.rows.length === 0) return emptyTable(config);
 
-  const grid = buildOccupationGrid(tableEl);
-  const colCount = grid.colCount;
+  const colCount = model.colCount;
   const colWidths = evenWidths(colCount);
 
-  const rows: TableRow[] = [];
-  for (let r = 0; r < grid.rowCount; r++) {
-    const cells: TableCell[] = [];
-    const tr = grid.rows[r];
-    if (!tr) { rows.push(new TableRow({ children: evenCells(colCount, config) })); continue; }
-
-    const tds = tr.querySelectorAll(':scope > td, :scope > th');
-    let colIdx = 0;
-    for (const td of tds) {
-      while (colIdx < colCount && grid.occupied[r]?.[colIdx]) colIdx++;
-      if (colIdx >= colCount) break;
-
-      const colspan = parseInt(td.getAttribute('colspan') || '1', 10);
-      const rowspan = parseInt(td.getAttribute('rowspan') || '1', 10);
-      const isHeader = td.tagName === 'TH';
-
-      // mark occupation
-      for (let dr = 0; dr < rowspan; dr++) {
-        for (let dc = 0; dc < colspan; dc++) {
-          if (!grid.occupied[r + dr]) grid.occupied[r + dr] = [];
-          grid.occupied[r + dr][colIdx + dc] = true;
-        }
-      }
-
-      const text = td.textContent?.trim() || '';
-      cells.push(makeCell(text, colWidths[colIdx], config, isHeader, colspan, rowspan));
-      colIdx += colspan;
-    }
-
-    // pad remaining columns
-    while (cells.length < colCount) {
-      cells.push(makeCell('', colWidths[cells.length], config, false));
-    }
-
-    rows.push(new TableRow({ children: cells }));
-  }
+  const rows = model.rows.map((row) => new TableRow({
+    children: makeHtmlRowCells(row, model, colWidths, config),
+    tableHeader: row.section === 'thead',
+  }));
 
   return new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
@@ -112,12 +94,39 @@ export function createHtmlTable(
 
 // --- helpers ---
 
-function splitMarkdownRows(lines: string[]): string[][] {
-  return lines
-    .filter((l) => !isMarkdownSeparator(l))
-    .map((line) =>
-      line.trim().split('|').slice(1, -1).map((c) => c.trim()),
-    );
+function splitMarkdownRow(line: string): string[] {
+  const cells: string[] = [];
+  let current = '';
+  let escaped = false;
+
+  for (const char of line.trim()) {
+    if (escaped) {
+      current += char === '|' ? '|' : `\\${char}`;
+      escaped = false;
+      continue;
+    }
+
+    if (char === '\\') {
+      escaped = true;
+      continue;
+    }
+
+    if (char === '|') {
+      cells.push(current.trim());
+      current = '';
+      continue;
+    }
+
+    current += char;
+  }
+
+  if (escaped) current += '\\';
+  cells.push(current.trim());
+
+  if (line.trimStart().startsWith('|')) cells.shift();
+  if (line.trimEnd().endsWith('|')) cells.pop();
+
+  return cells;
 }
 
 function padRow(row: string[], count: number): string[] {
@@ -176,6 +185,212 @@ function makeCell(
   });
 }
 
+function makeHtmlCell(
+  cell: HtmlTableCellModel,
+  _widthPct: number,
+  config: PresetConfig,
+): TableCell {
+  const paragraphs = htmlToParagraphs(cell.html, config, cell.isHeader);
+
+  return new TableCell({
+    columnSpan: cell.colSpan,
+    rowSpan: cell.rowSpan,
+    verticalAlign: VerticalAlign.CENTER,
+    children: paragraphs.length > 0 ? paragraphs : [
+      makeParagraph([fallbackRun('', config, cell.isHeader)], config, cell.isHeader),
+    ],
+  });
+}
+
+function makeHtmlRowCells(
+  row: HtmlTableRowModel,
+  model: HtmlTableModel,
+  colWidths: number[],
+  config: PresetConfig,
+): TableCell[] {
+  const cells: TableCell[] = [];
+
+  for (let col = 0; col < model.colCount;) {
+    const slot = model.grid[row.rowIndex]?.[col];
+
+    if (!slot) {
+      cells.push(makeCell('', colWidths[col] ?? colWidths[0] ?? 100, config, row.section === 'thead'));
+      col += 1;
+      continue;
+    }
+
+    if (!slot.origin) {
+      col += 1;
+      continue;
+    }
+
+    cells.push(makeHtmlCell(slot.cell, colWidths[col] ?? colWidths[0] ?? 100, config));
+    col += slot.cell.colSpan;
+  }
+
+  return cells;
+}
+
+interface HtmlRunFormat {
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  code?: boolean;
+}
+
+function htmlToParagraphs(html: string, config: PresetConfig, isHeader: boolean): Paragraph[] {
+  const template = document.createElement('template');
+  template.innerHTML = html;
+
+  const paragraphs: Paragraph[] = [];
+  let inlineNodes: Node[] = [];
+
+  const flushInline = () => {
+    if (inlineNodes.length === 0) return;
+    const runs = runsFromNodes(inlineNodes, config, isHeader, {});
+    if (runs.length > 0) {
+      paragraphs.push(makeParagraph(runs, config, isHeader));
+    }
+    inlineNodes = [];
+  };
+
+  Array.from(template.content.childNodes).forEach((node) => {
+    if (isBlockNode(node)) {
+      flushInline();
+      paragraphs.push(...paragraphsFromBlock(node, config, isHeader));
+      return;
+    }
+
+    inlineNodes.push(node);
+  });
+
+  flushInline();
+
+  return paragraphs;
+}
+
+function paragraphsFromBlock(node: Node, config: PresetConfig, isHeader: boolean): Paragraph[] {
+  if (!(node instanceof Element)) {
+    const runs = runsFromNodes([node], config, isHeader, {});
+    return runs.length > 0 ? [makeParagraph(runs, config, isHeader)] : [];
+  }
+
+  const tag = node.tagName.toLowerCase();
+  if (tag === 'ul' || tag === 'ol') {
+    return Array.from(node.children)
+      .filter((child) => child.tagName.toLowerCase() === 'li')
+      .map((li, index) => {
+        const marker = tag === 'ol' ? `${index + 1}. ` : '- ';
+        return makeParagraph([
+          fallbackRun(marker, config, isHeader),
+          ...runsFromNodes(Array.from(li.childNodes), config, isHeader, {}),
+        ], config, isHeader);
+      });
+  }
+
+  if (tag === 'br') {
+    return [makeParagraph([new TextRun({ break: 1 })], config, isHeader)];
+  }
+
+  const runs = runsFromNodes(Array.from(node.childNodes), config, isHeader, formatForTag(tag, {}));
+  return runs.length > 0 ? [makeParagraph(runs, config, isHeader)] : [];
+}
+
+function runsFromNodes(
+  nodes: Node[],
+  config: PresetConfig,
+  isHeader: boolean,
+  format: HtmlRunFormat,
+): TextRun[] {
+  return nodes.flatMap((node) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const text = normalizeInlineText(node.textContent ?? '', format.code);
+      return text ? [textRun(text, config, isHeader, format)] : [];
+    }
+
+    if (!(node instanceof Element)) return [];
+
+    const tag = node.tagName.toLowerCase();
+    if (tag === 'br') return [new TextRun({ break: 1 })];
+
+    const nextFormat = formatForTag(tag, format);
+    return runsFromNodes(Array.from(node.childNodes), config, isHeader, nextFormat);
+  });
+}
+
+function isBlockNode(node: Node): boolean {
+  if (!(node instanceof Element)) return false;
+  return new Set(['p', 'div', 'section', 'article', 'ul', 'ol', 'li', 'blockquote', 'pre']).has(
+    node.tagName.toLowerCase(),
+  );
+}
+
+function formatForTag(tag: string, current: HtmlRunFormat): HtmlRunFormat {
+  return {
+    ...current,
+    bold: current.bold || tag === 'strong' || tag === 'b' || tag === 'th',
+    italic: current.italic || tag === 'em' || tag === 'i',
+    underline: current.underline || tag === 'u' || tag === 'a',
+    code: current.code || tag === 'code' || tag === 'pre',
+  };
+}
+
+function normalizeInlineText(text: string, preserveWhitespace = false): string {
+  if (preserveWhitespace) return text;
+  const collapsed = text.replace(/\s+/g, ' ');
+  return collapsed.trim() === '' ? '' : collapsed;
+}
+
+function textRun(
+  text: string,
+  config: PresetConfig,
+  isHeader: boolean,
+  format: HtmlRunFormat,
+): TextRun {
+  const fontCfg = isHeader ? config.table.header_font : config.table.body_font;
+  const runText = config.quotes.convert_to_chinese ? convertQuotesToChinese(text) : text;
+  const options: MutableRunOptions = {
+    text: runText,
+    font: { eastAsia: fontCfg.name, ascii: fontCfg.ascii },
+    size: ptToHalfPt(fontCfg.size),
+    bold: isHeader || format.bold || undefined,
+    italics: format.italic || undefined,
+    underline: format.underline ? {} : undefined,
+  };
+
+  if (format.code) {
+    options.font = {
+      eastAsia: config.inline_code.font,
+      ascii: config.inline_code.font,
+    };
+    options.size = ptToHalfPt(config.inline_code.size);
+    options.shading = {
+      type: 'clear',
+      fill: config.inline_code.color,
+    };
+  }
+
+  return new TextRun(options);
+}
+
+function fallbackRun(text: string, config: PresetConfig, isHeader: boolean): TextRun {
+  const fontCfg = isHeader ? config.table.header_font : config.table.body_font;
+  return new TextRun({
+    text: text || ' ',
+    font: { eastAsia: fontCfg.name, ascii: fontCfg.ascii },
+    size: ptToHalfPt(fontCfg.size),
+    bold: isHeader,
+  });
+}
+
+function makeParagraph(runs: TextRun[], config: PresetConfig, isHeader: boolean): Paragraph {
+  return new Paragraph({
+    alignment: isHeader ? AlignmentType.CENTER : AlignmentType.LEFT,
+    spacing: { line: config.table.line_spacing * 240 },
+    children: runs.length > 0 ? runs : [fallbackRun('', config, isHeader)],
+  });
+}
+
 function tableBorders(config: PresetConfig): ITableBordersOptions {
   if (!config.table.border_enabled) {
     return {
@@ -204,34 +419,4 @@ function emptyTable(config: PresetConfig): Table {
     rows: [new TableRow({ children: [makeCell('', 100, config, false)] })],
     borders: tableBorders(config),
   });
-}
-
-function evenCells(count: number, config: PresetConfig): TableCell[] {
-  return Array.from({ length: count }, () => makeCell('', 100 / count, config, false));
-}
-
-interface OccupationGrid {
-  rowCount: number;
-  colCount: number;
-  rows: (HTMLTableRowElement | null)[];
-  occupied: (boolean | undefined)[][];
-}
-
-function buildOccupationGrid(tableEl: HTMLTableElement): OccupationGrid {
-  const trs = tableEl.querySelectorAll(':scope > thead > tr, :scope > tbody > tr, :scope > tr');
-  let maxCols = 0;
-  const rows: (HTMLTableRowElement | null)[] = [];
-
-  trs.forEach((tr) => {
-    if (!(tr instanceof HTMLTableRowElement)) return;
-    rows.push(tr);
-    let cols = 0;
-    for (const td of tr.querySelectorAll(':scope > td, :scope > th')) {
-      const cs = parseInt(td.getAttribute('colspan') || '1', 10);
-      cols += cs;
-    }
-    if (cols > maxCols) maxCols = cols;
-  });
-
-  return { rowCount: rows.length, colCount: maxCols || 1, rows, occupied: [] };
 }

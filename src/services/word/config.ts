@@ -77,28 +77,6 @@ const report = {
   },
 } as const satisfies PresetConfig;
 
-const servicePlan = {
-  ...legal,
-  name: '法律服务方案',
-  description: '深蓝+棕色配色，专业法律服务方案格式',
-  colors: {
-    primary: '1E3A5F',
-    secondary: '927F76',
-    background: 'F5F0ED',
-    table_header_bg: '1E3A5F',
-    table_header_fg: 'FFFFFF',
-    table_alt_row_bg: 'F5F0ED',
-  },
-  fonts: {
-    default: { name: '仿宋_GB2312', ascii: 'Times New Roman', size: 12 },
-  },
-  titles: {
-    ...legal.titles,
-    level1: { size: 16, bold: true, align: 'center', space_before: 6, space_after: 18, color: '1E3A5F' },
-    level2: { size: 14, bold: true, align: 'left', space_before: 12, space_after: 6, color: '1E3A5F' },
-  },
-} as const satisfies PresetConfig;
-
 const minimal = {
   ...legal,
   name: '简约通用',
@@ -111,7 +89,7 @@ const minimal = {
   paragraph: { line_spacing: 1.5, first_line_indent: 0, align: 'left' },
 } as const satisfies PresetConfig;
 
-export const PRESETS: Record<BuiltInPresetId, PresetConfig> = { legal, academic, report, 'service-plan': servicePlan, minimal };
+export const PRESETS: Record<BuiltInPresetId, PresetConfig> = { legal, academic, report, minimal };
 
 export const DEFAULT_PRESET_ID: BuiltInPresetId = 'legal';
 

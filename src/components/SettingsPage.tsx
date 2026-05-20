@@ -7,6 +7,8 @@ import { ShortcutsSection } from './settings/ShortcutsSection';
 import { ExportSection } from './settings/ExportSection';
 import { AboutSection } from './settings/AboutSection';
 import type { UpdateCheckResult } from '../services/updateService';
+import { useSettings } from '../hooks/useSettings';
+import { translate } from '../services/i18n';
 
 type AvailableUpdate = Extract<UpdateCheckResult, { status: 'available' }>;
 type SettingsSection = 'general' | 'editor' | 'preview' | 'appearance' | 'shortcuts' | 'export' | 'about';
@@ -16,18 +18,20 @@ interface SettingsPageProps {
   onUpdateAvailable: (update: AvailableUpdate) => void;
 }
 
-const NAV_ITEMS: { id: SettingsSection; label: string }[] = [
-  { id: 'general', label: '通用' },
-  { id: 'editor', label: '编辑器' },
-  { id: 'preview', label: '预览' },
-  { id: 'appearance', label: '外观' },
-  { id: 'shortcuts', label: '快捷键' },
-  { id: 'export', label: '导出' },
-  { id: 'about', label: '关于' },
+const NAV_ITEMS: { id: SettingsSection; labelKey: Parameters<typeof translate>[1] }[] = [
+  { id: 'general', labelKey: 'navGeneral' },
+  { id: 'editor', labelKey: 'navEditor' },
+  { id: 'preview', labelKey: 'navPreview' },
+  { id: 'appearance', labelKey: 'navAppearance' },
+  { id: 'shortcuts', labelKey: 'navShortcuts' },
+  { id: 'export', labelKey: 'navExport' },
+  { id: 'about', labelKey: 'navAbout' },
 ];
 
 export function SettingsPage({ onClose, onUpdateAvailable }: SettingsPageProps) {
   const [activeSection, setActiveSection] = useState<SettingsSection>('general');
+  const settings = useSettings();
+  const t = (key: Parameters<typeof translate>[1]) => translate(settings.locale, key);
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (e.key === 'Escape') {
@@ -51,7 +55,7 @@ export function SettingsPage({ onClose, onUpdateAvailable }: SettingsPageProps) 
     <div className="settings-overlay" onClick={handleOverlayClick}>
       <div className="settings-modal">
         <div className="settings-modal-sidebar">
-          <h2 className="settings-title">Settings</h2>
+          <h2 className="settings-title">{t('settingsTitle')}</h2>
           <nav className="settings-nav">
             {NAV_ITEMS.map((item) => (
               <button
@@ -59,7 +63,7 @@ export function SettingsPage({ onClose, onUpdateAvailable }: SettingsPageProps) 
                 className={`settings-nav-item ${activeSection === item.id ? 'active' : ''}`}
                 onClick={() => setActiveSection(item.id)}
               >
-                {item.label}
+                {t(item.labelKey)}
               </button>
             ))}
           </nav>
