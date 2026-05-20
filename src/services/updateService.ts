@@ -1,6 +1,7 @@
 import type { DownloadEvent, Update } from '@tauri-apps/plugin-updater';
 
 const UPDATE_CHECK_TIMEOUT_MS = 12_000;
+export const FALLBACK_APP_VERSION = '0.3.7';
 
 export type UpdateSource = 'auto' | 'manual';
 
@@ -28,12 +29,12 @@ function toErrorMessage(error: unknown): string {
 }
 
 export async function getCurrentAppVersion(): Promise<string> {
-  if (!isTauriRuntime()) return '0.1.0';
+  if (!isTauriRuntime()) return FALLBACK_APP_VERSION;
   try {
     const { getVersion } = await import('@tauri-apps/api/app');
     return await getVersion();
   } catch {
-    return '0.1.0';
+    return FALLBACK_APP_VERSION;
   }
 }
 
