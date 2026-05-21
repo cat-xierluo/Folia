@@ -25,18 +25,28 @@ import {
   type HtmlExportPreset,
   type HtmlExportPresetId,
 } from './htmlExportPresets';
+import {
+  DEFAULT_LICENSE_STATE,
+  STANDARD_PRESET_SLOT_LIMIT,
+  activateBetaLicenseCode,
+  getLicenseCustomExportPresetLimit,
+  getLicenseCustomHtmlExportPresetLimit,
+  normalizeLicenseState,
+  type LicenseActivationResult,
+  type LicenseState,
+} from './licenseService';
 
 const STORAGE_KEY = 'folia-settings';
 const LEGACY_KEY = 'folia-export-settings';
 const LAST_FILE_KEY = 'folia-last-opened-file';
 
 export const SETTINGS_CHANGED_EVENT = 'folia-settings-changed';
-export const STANDARD_CUSTOM_EXPORT_PRESET_LIMIT = 2;
+export const STANDARD_CUSTOM_EXPORT_PRESET_LIMIT = STANDARD_PRESET_SLOT_LIMIT;
 export const CUSTOM_EXPORT_PRESET_LIMIT_MESSAGE =
-  '常规版本最多可保存 2 个自定义导出预设。受邀内测授权可使用更多自定义槽位。';
-export const STANDARD_CUSTOM_HTML_EXPORT_PRESET_LIMIT = 2;
+  '当前 Word 自定义槽位已用完。可在授权页面输入内测码获得更多自定义槽位。';
+export const STANDARD_CUSTOM_HTML_EXPORT_PRESET_LIMIT = STANDARD_PRESET_SLOT_LIMIT;
 export const CUSTOM_HTML_EXPORT_PRESET_LIMIT_MESSAGE =
-  '常规版本最多可保存 2 个自定义 HTML 导出预设。受邀内测授权可使用更多自定义槽位。';
+  '当前 HTML 自定义槽位已用完。可在授权页面输入内测码获得更多自定义槽位。';
 
 export class CustomExportPresetLimitError extends Error {
   constructor() {
@@ -72,6 +82,7 @@ export interface AppSettings {
   htmlExportPresetId: HtmlExportPresetId;
   customHtmlExportPresets: CustomHtmlExportPresetRegistry;
   disabledHtmlExportPresetIds: HtmlExportPresetId[];
+  license: LicenseState;
   /**
    * @deprecated Migrated to customHtmlExportPresets. Kept so old settings do not lose data.
    */
@@ -105,6 +116,7 @@ const defaults: AppSettings = {
   htmlExportPresetId: DEFAULT_HTML_EXPORT_PRESET_ID,
   customHtmlExportPresets: {} as CustomHtmlExportPresetRegistry,
   disabledHtmlExportPresetIds: [],
+  license: DEFAULT_LICENSE_STATE,
   wechatCustomCss: '',
   editorFontFamily: 'IBM Plex Mono',
   editorFontSize: 13,
@@ -301,6 +313,7 @@ export function getSettings(): AppSettings {
       customHtmlExportPresets,
       disabledHtmlExportPresetIds,
     );
+    const license = normalizeLicenseState(stored.license);
 
     return {
       ...defaults,
@@ -312,6 +325,7 @@ export function getSettings(): AppSettings {
       htmlExportPresetId,
       customHtmlExportPresets,
       disabledHtmlExportPresetIds,
+      license,
       wechatCustomCss: normalizeWechatCustomCss(stored.wechatCustomCss),
     };
   } catch {
@@ -335,6 +349,7 @@ export function updateSettings(patch: Partial<AppSettings>): AppSettings {
     customHtmlExportPresets,
   );
   const requestedHtmlExportPresetId = patch.htmlExportPresetId ?? current.htmlExportPresetId;
+  const license = normalizeLicenseState(patch.license ?? current.license);
   const merged = {
     ...current,
     ...patch,
@@ -350,6 +365,7 @@ export function updateSettings(patch: Partial<AppSettings>): AppSettings {
       customHtmlExportPresets,
       disabledHtmlExportPresetIds,
     ),
+    license,
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
   emitSettingsChanged(merged);
@@ -404,9 +420,13 @@ export function getCustomExportPresetCount(settings: AppSettings = getSettings()
   return Object.keys(settings.customExportPresets).length;
 }
 
+export function getCustomExportPresetLimit(settings: AppSettings = getSettings()): number {
+  return getLicenseCustomExportPresetLimit(settings.license);
+}
+
 export function canAddCustomExportPreset(id: CustomPresetId, settings: AppSettings = getSettings()): boolean {
   return Boolean(settings.customExportPresets[id])
-    || getCustomExportPresetCount(settings) < STANDARD_CUSTOM_EXPORT_PRESET_LIMIT;
+    || getCustomExportPresetCount(settings) < getCustomExportPresetLimit(settings);
 }
 
 export function addCustomExportPreset(id: CustomPresetId, config: PresetConfig): AppSettings {
@@ -495,12 +515,16 @@ export function getCustomHtmlExportPresetCount(settings: AppSettings = getSettin
   return Object.keys(settings.customHtmlExportPresets).length;
 }
 
+export function getCustomHtmlExportPresetLimit(settings: AppSettings = getSettings()): number {
+  return getLicenseCustomHtmlExportPresetLimit(settings.license);
+}
+
 export function canAddCustomHtmlExportPreset(
   id: CustomHtmlExportPresetId,
   settings: AppSettings = getSettings(),
 ): boolean {
   return Boolean(settings.customHtmlExportPresets[id])
-    || getCustomHtmlExportPresetCount(settings) < STANDARD_CUSTOM_HTML_EXPORT_PRESET_LIMIT;
+    || getCustomHtmlExportPresetCount(settings) < getCustomHtmlExportPresetLimit(settings);
 }
 
 export function addCustomHtmlExportPreset(
@@ -568,4 +592,16 @@ export function removeHtmlExportPreset(id: HtmlExportPresetId): AppSettings {
   }
 
   return getSettings();
+}
+
+export function activateLicenseCode(code: string): LicenseActivationResult {
+  const result = activateBetaLicenseCode(code);
+  if (result.ok) {
+    updateSettings({ license: result.license });
+  }
+  return result;
+}
+
+export function clearLicense(): AppSettings {
+  return updateSettings({ license: DEFAULT_LICENSE_STATE });
 }

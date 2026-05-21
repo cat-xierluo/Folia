@@ -119,7 +119,7 @@ word/table-handler.ts 输出 docx Table；Markdown 管道表格使用专用 pars
 | `updateService.ts` | 封装 Tauri updater 检查、下载、安装和重启；浏览器预览下返回 unsupported |
 | `settingsService.ts` | 管理 localStorage 设置、旧配置迁移、Word / HTML 导出预设启用停用、自定义预设、语言设置、设置变更广播、上次打开文件路径 |
 | `i18n.ts` | 轻量多语言字典，第一阶段覆盖设置导航、关于页、顶部栏和 Word 预览核心文案 |
-| `licenseService.ts`（计划） | 高级槽位授权抽象层：邀请制内测激活码、本地签名验证、在线激活、在线校验、撤销/停用均通过该层封装；合规确认前不接公开购买流程，避免把支付平台密钥或发码私钥写入桌面端 |
+| `licenseService.ts` | 高级槽位授权抽象层：本地内测码验证、本地授权缓存、未来在线激活、在线校验、撤销/停用均通过该层封装；合规确认前不接公开购买流程，避免把支付平台密钥或发码私钥写入桌面端 |
 | `sanitizeService.ts` | DOMPurify HTML 清洗；当前用于 docx 预览 HTML 安全边界 |
 | `docxPreviewService.ts` | 按需加载 mammoth，将 docx 转换为已清洗 HTML |
 | `wordExportService.ts` | 按需加载 Word 导出转换链路并写入 .docx 文件 |
@@ -137,7 +137,7 @@ word/table-handler.ts 输出 docx Table；Markdown 管道表格使用专用 pars
 | `UpdateDialog.tsx` | 发现新版本后的安装确认与下载进度对话框 |
 | `Toolbar.tsx` | 工具栏：打开 / 保存 / 另存为 / 源码模式 / Word 预览 / HTML 预览 / 设置 |
 | `FloatingToc.tsx` | 默认浮动大纲：标题层级刻度、hover 展开、轨道点击固定/取消固定、点击跳转和当前标题高亮 |
-| `LicenseSection.tsx`（计划） | Settings / 授权页面：输入内测激活码 / 邀请码、显示授权状态和可用自定义预设槽位数 |
+| `LicenseSection.tsx` | Settings / 授权页面：输入内测码、显示授权状态和可用自定义预设槽位数 |
 | `StatusBar.tsx` | 底部状态栏：文件路径 + dirty 标记 |
 
 ### app/

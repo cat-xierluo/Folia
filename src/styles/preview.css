@@ -9,7 +9,7 @@
 .preview-content {
   max-width: var(--preview-width, 680px);
   margin: 0 auto;
-  padding: 18px 40px 22px;
+  padding: 10px 40px 12px;
   line-height: var(--preview-line-height, 1.7);
   font-size: var(--preview-font-size, 15px);
   font-family: var(--preview-font-family, var(--font-body));
@@ -19,7 +19,7 @@
 .html-table-preview-content {
   width: 100%;
   max-width: min(1120px, calc(100% - 72px));
-  padding: 16px 28px 22px;
+  padding: 10px 28px 12px;
 }
 
 /* Override Vditor defaults with legal-document-friendly styles */

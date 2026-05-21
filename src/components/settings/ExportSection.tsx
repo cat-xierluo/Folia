@@ -6,8 +6,8 @@ import {
   canAddCustomExportPreset,
   CustomExportPresetLimitError,
   CUSTOM_EXPORT_PRESET_LIMIT_MESSAGE,
-  STANDARD_CUSTOM_EXPORT_PRESET_LIMIT,
   getCustomExportPresetCount,
+  getCustomExportPresetLimit,
   isExportPresetEnabled,
   listEnabledExportPresets,
   removeExportPreset,
@@ -15,7 +15,7 @@ import {
   setExportPresetEnabled,
 } from '../../services/settingsService';
 import { getPreset, listPresets } from '../../services/word/config';
-import { createPresetTemplateText, importPresetFromJson, isCustomPresetId, PresetImportError } from '../../services/word';
+import { createPresetTemplateText, importPresetFromJson, PresetImportError } from '../../services/word';
 import type { PresetId } from '../../services/word/types';
 import { createWordPreviewStyle } from '../../services/wordPreviewStyle';
 
@@ -57,7 +57,11 @@ const PRESET_PAGES: { id: ExportPresetPage; label: string }[] = [
   { id: 'json', label: 'JSON 示例' },
 ];
 
-export function ExportSection() {
+interface ExportSectionProps {
+  onOpenLicense?: () => void;
+}
+
+export function ExportSection({ onOpenLicense }: ExportSectionProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const settings = useSettings();
   const [message, setMessage] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
@@ -68,17 +72,19 @@ export function ExportSection() {
   const customPresets = presets.filter((preset) => preset.source === 'custom');
   const enabledPresets = listEnabledExportPresets(settings);
   const selected = settings.exportPresetId;
-  const selectedIsCustom = isCustomPresetId(selected);
   const selectedPreset = getPreset(selected, settings.customExportPresets);
   const selectedStyle = createWordPreviewStyle(selectedPreset);
-  const canRemoveSelected = selectedIsCustom || enabledPresets.length > 1;
   const templateText = createPresetTemplateText();
   const customPresetCount = getCustomExportPresetCount(settings);
-  const displayedCustomSlotCount = Math.max(STANDARD_CUSTOM_EXPORT_PRESET_LIMIT, customPresets.length);
+  const customPresetLimit = getCustomExportPresetLimit(settings);
+  const licenseActive = settings.license.status === 'active';
+  const displayedCustomSlotCount = Math.max(customPresetLimit, customPresets.length);
   const customSlotRows = Array.from({ length: displayedCustomSlotCount }, (_, index) => customPresets[index] ?? null);
-  const slotHint = customPresetCount > STANDARD_CUSTOM_EXPORT_PRESET_LIMIT
-    ? `已保存 ${customPresetCount} 个自定义预设，前 ${STANDARD_CUSTOM_EXPORT_PRESET_LIMIT} 个为常规槽位，超出部分作为历史预设继续可用；新增更多槽位需要内测授权。`
-    : `已使用 ${customPresetCount}/${STANDARD_CUSTOM_EXPORT_PRESET_LIMIT} 个常规自定义槽位。空槽位可导入 JSON；受邀内测授权可使用更多槽位。`;
+  const slotHint = customPresetCount > customPresetLimit
+    ? `已保存 ${customPresetCount} 个自定义预设，当前可用 ${customPresetLimit} 个内测授权槽位，超出部分作为历史预设继续可用。`
+    : licenseActive
+      ? `已使用 ${customPresetCount}/${customPresetLimit} 个内测授权自定义槽位。空槽位可导入 JSON。`
+      : `已使用 ${customPresetCount}/${customPresetLimit} 个常规自定义槽位。空槽位可导入 JSON；输入内测码可使用更多槽位。`;
 
   useEffect(() => {
     if (!previewExpanded) return undefined;
@@ -128,16 +134,6 @@ export function ExportSection() {
     } catch {
       setMessage({ tone: 'error', text: '无法复制示例 JSON' });
     }
-  };
-
-  const handleRemoveSelected = () => {
-    if (!canRemoveSelected) {
-      setMessage({ tone: 'error', text: '至少需要保留一个可用预设。' });
-      return;
-    }
-
-    removeExportPreset(selected);
-    setMessage({ tone: 'ok', text: selectedIsCustom ? '已删除自定义预设' : '已停用内置预设' });
   };
 
   const handleTogglePreset = (id: PresetId, enabled: boolean) => {
@@ -201,6 +197,20 @@ export function ExportSection() {
             <RotateCcw size={13} />
           </button>
         )}
+        {preset.source === 'custom' && (
+          <button
+            type="button"
+            className="settings-icon-button"
+            onClick={() => {
+              removeExportPreset(preset.id);
+              setMessage({ tone: 'ok', text: '已删除自定义预设' });
+            }}
+            aria-label={`删除${preset.name}`}
+            title="删除"
+          >
+            <Trash2 size={13} />
+          </button>
+        )}
       </div>
     );
   };
@@ -212,14 +222,14 @@ export function ExportSection() {
           <div className="settings-preset-group-title">自定义预设槽位</div>
           <p className="settings-preset-desc">{slotHint}</p>
         </div>
-        <span className="settings-preset-count">{customPresetCount}/{STANDARD_CUSTOM_EXPORT_PRESET_LIMIT}</span>
+        <span className="settings-preset-count">{customPresetCount}/{customPresetLimit}</span>
       </div>
       {customSlotRows.map((preset, index) => (
         preset ? renderPresetItem(preset, {
-          slotLabel: index < STANDARD_CUSTOM_EXPORT_PRESET_LIMIT
+          slotLabel: index < customPresetLimit
             ? `槽位 ${index + 1}`
             : `历史槽位 ${index + 1}`,
-          history: index >= STANDARD_CUSTOM_EXPORT_PRESET_LIMIT,
+          history: index >= customPresetLimit,
         }) : (
           <div key={`empty-slot-${index}`} className="settings-preset-item settings-preset-slot-empty">
             <button
@@ -243,8 +253,14 @@ export function ExportSection() {
           </div>
         )
       ))}
-      <div className="settings-preset-item settings-preset-slot-locked" aria-disabled="true">
-        <div className="settings-preset-select-button static">
+      {!licenseActive && (
+      <div className="settings-preset-item settings-preset-slot-locked">
+        <button
+          type="button"
+          className="settings-preset-select-button"
+          onClick={onOpenLicense}
+          aria-label="前往内测授权"
+        >
           <span className="settings-preset-empty-icon">
             <Lock size={14} />
           </span>
@@ -252,12 +268,13 @@ export function ExportSection() {
             <span className="settings-preset-slot-label">内测授权</span>
             <span className="settings-preset-name">
               使用更多自定义槽位
-              <span className="settings-preset-badge">受邀可用</span>
+              <span className="settings-preset-badge">输入内测码</span>
             </span>
-            <span className="settings-preset-desc">朋友或内测用户可通过授权使用更多团队或个人 Word 导出预设。</span>
+            <span className="settings-preset-desc">前往授权页输入内测码后，可使用更多团队或个人 Word 导出预设。</span>
           </span>
-        </div>
+        </button>
       </div>
+      )}
     </div>
   );
 
@@ -294,15 +311,6 @@ export function ExportSection() {
             复制示例 JSON
           </button>
         )}
-        <button
-          type="button"
-          className="settings-action-button"
-          onClick={handleRemoveSelected}
-          disabled={!canRemoveSelected}
-        >
-          <Trash2 size={14} />
-          删除/停用
-        </button>
         <input
           ref={inputRef}
           className="settings-file-input"

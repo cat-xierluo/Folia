@@ -119,8 +119,10 @@ test('editor and preview panes keep compact vertical reading space', async ({ pa
     };
   });
 
-  expect(editorPadding.top).toBeLessThanOrEqual(22);
-  expect(editorPadding.bottom).toBeLessThanOrEqual(30);
+  expect(editorPadding.top).toBeLessThanOrEqual(12);
+  expect(editorPadding.bottom).toBeLessThanOrEqual(12);
+  expect(editorPadding.top).toBeGreaterThanOrEqual(8);
+  expect(editorPadding.bottom).toBeGreaterThanOrEqual(8);
 });
 
 test('toolbar toggles source mode without showing Word preview', async ({ page }) => {
@@ -234,22 +236,38 @@ test('HTML export settings switch subpages and save a custom CSS slot', async ({
 
   await expect(page.getByRole('heading', { name: 'HTML 导出预设' })).toBeVisible();
   await expect(page.getByRole('tab', { name: '预设库' })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('button', { name: '删除/停用' })).toHaveCount(0);
+  const htmlSubnav = page.locator('.settings-subnav');
+  const htmlSubnavMetrics = await htmlSubnav.evaluate((el) => ({
+    width: el.getBoundingClientRect().width,
+    tabs: Array.from(el.querySelectorAll('[role="tab"]')).map((tab) => tab.getBoundingClientRect().width),
+  }));
+  expect(htmlSubnavMetrics.tabs).toHaveLength(3);
+  expect(htmlSubnavMetrics.tabs.every((width) => width > htmlSubnavMetrics.width / 4)).toBe(true);
   await expect(page.getByLabel('HTML 导出预设列表')).toContainText('简洁图文');
+  await expect(page.getByText(/来源：/)).toHaveCount(0);
   await expect(page.getByLabel(/HTML 文章预览/)).toBeVisible();
 
   await page.locator('.settings-preset-select-button').filter({ hasText: '清爽正文' }).click();
   await expect(page.getByLabel(/清爽正文 HTML 文章预览/)).toBeVisible();
+  await page.getByRole('button', { name: /放大查看 .* HTML 预览/ }).click();
+  await expect(page.getByRole('dialog', { name: /HTML 预览放大/ })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: /HTML 预览放大/ }).locator('.settings-html-preview-article')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog', { name: /HTML 预览放大/ })).toHaveCount(0);
 
   await page.getByRole('tab', { name: '自定义槽位' }).click();
   await expect(page.getByText('自定义 HTML CSS 槽位', { exact: true })).toBeVisible();
   await expect(page.getByText('0/2', { exact: true })).toBeVisible();
+  await expect(page.getByLabel(/HTML 文章预览/)).toHaveCount(0);
+  await expect(page.locator('.settings-preset-workbench--full')).toBeVisible();
   await page.getByLabel('自定义 HTML 预设名称').fill('团队 HTML 样式');
   await page.getByLabel('自定义 HTML 预设说明').fill('团队统一 HTML 预设');
   await page.getByLabel('自定义 HTML CSS').fill('.folia-html-article p { color: rgb(9, 8, 7); }');
   await page.getByRole('button', { name: '保存 CSS 预设' }).click();
   await expect(page.getByText('已保存「团队 HTML 样式」')).toBeVisible();
   await expect(page.getByText('1/2', { exact: true })).toBeVisible();
-  await expect(page.getByText('团队 HTML 样式', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: /槽位 1 团队 HTML 样式/ })).toBeVisible();
   await expect(page.getByRole('button', { name: '导出当前 CSS 预设' })).toBeVisible();
   await page.getByRole('button', { name: '导出当前 CSS 预设' }).click();
   await expect(page.getByText('当前 CSS 预设 JSON 已复制')).toBeVisible();
@@ -267,7 +285,7 @@ test('HTML export settings switch subpages and save a custom CSS slot', async ({
   await page.getByRole('button', { name: '导入粘贴的 CSS 预设' }).click();
   await expect(page.getByText('已保存「E2E JSON 样式」')).toBeVisible();
   await expect(page.getByText('2/2', { exact: true })).toBeVisible();
-  await expect(page.getByText('E2E JSON 样式', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: /槽位 2 E2E JSON 样式/ })).toBeVisible();
 
   await page.getByRole('tab', { name: 'CSS 示例' }).click();
   await expect(page.locator('.settings-json-example pre').first()).toContainText('.folia-html-article h2');
@@ -373,8 +391,10 @@ test('raw HTML tables use the stable reading preview instead of WYSIWYG editing'
       bottom: parseFloat(style.paddingBottom),
     };
   });
-  expect(previewPadding.top).toBeLessThanOrEqual(20);
-  expect(previewPadding.bottom).toBeLessThanOrEqual(30);
+  expect(previewPadding.top).toBeLessThanOrEqual(12);
+  expect(previewPadding.bottom).toBeLessThanOrEqual(12);
+  expect(previewPadding.top).toBeGreaterThanOrEqual(8);
+  expect(previewPadding.bottom).toBeGreaterThanOrEqual(8);
 
   await page.getByRole('button', { name: '编辑源码' }).click();
   await expect(page.locator('.cm-editor')).toBeVisible();
@@ -492,6 +512,14 @@ test('Word export settings make the paper preview expandable', async ({ page }) 
   await expect(page.getByRole('tab', { name: '预设库' })).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByRole('tab', { name: '自定义槽位' })).toBeVisible();
   await expect(page.getByRole('tab', { name: 'JSON 示例' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '删除/停用' })).toHaveCount(0);
+  const wordSubnav = page.locator('.settings-subnav');
+  const wordSubnavMetrics = await wordSubnav.evaluate((el) => ({
+    width: el.getBoundingClientRect().width,
+    tabs: Array.from(el.querySelectorAll('[role="tab"]')).map((tab) => tab.getBoundingClientRect().width),
+  }));
+  expect(wordSubnavMetrics.tabs).toHaveLength(3);
+  expect(wordSubnavMetrics.tabs.every((width) => width > wordSubnavMetrics.width / 4)).toBe(true);
   const presetList = page.getByLabel('Word 导出预设列表');
   await expect(presetList).toBeVisible();
   await expect(presetList.getByText('预设库', { exact: true })).toBeVisible();
@@ -516,6 +544,38 @@ test('Word export settings make the paper preview expandable', async ({ page }) 
   await expect(page.getByRole('button', { name: /放大查看 .* Word 预览/ })).toHaveCount(0);
   await expect(page.locator('.settings-preset-workbench--full')).toBeVisible();
   await expect(page.locator('.settings-modal')).toBeVisible();
+});
+
+test('license settings activate beta slots for Word and HTML presets', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: '设置' }).click();
+  await page.getByRole('button', { name: 'Word 导出', exact: true }).click();
+  await page.getByRole('tab', { name: '自定义槽位' }).click();
+
+  await expect(page.getByText('0/2', { exact: true })).toBeVisible();
+  await expect(page.getByText('内测授权', { exact: true })).toBeVisible();
+  await expect(page.getByText(/朋友/)).toHaveCount(0);
+
+  await page.getByRole('button', { name: '前往内测授权' }).click();
+  await expect(page.getByRole('heading', { name: '内测授权' })).toBeVisible();
+  await page.getByLabel('内测码').fill('FOLIA-BETA-2026');
+  await page.getByRole('button', { name: '激活内测授权' }).click();
+
+  await expect(page.getByText('内测授权已启用。')).toBeVisible();
+  await expect(page.getByText('已启用', { exact: true })).toBeVisible();
+  await expect(page.getByText('Word 自定义预设槽位')).toBeVisible();
+  await expect(page.getByText('8 个')).toHaveCount(2);
+
+  await page.getByRole('button', { name: 'Word 导出', exact: true }).click();
+  await page.getByRole('tab', { name: '自定义槽位' }).click();
+  await expect(page.getByText('0/8', { exact: true })).toBeVisible();
+  await expect(page.getByText('受邀可用')).toHaveCount(0);
+  await expect(page.getByText(/朋友/)).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'HTML 导出', exact: true }).click();
+  await page.getByRole('tab', { name: '自定义槽位' }).click();
+  await expect(page.getByText('0/8', { exact: true })).toBeVisible();
+  await expect(page.getByText(/朋友/)).toHaveCount(0);
 });
 
 test('settings about section exposes update controls', async ({ page }) => {
@@ -688,6 +748,39 @@ test('floating toc tracks WYSIWYG scroll after the editor mounts', async ({ page
   });
 
   await expect(page.locator('.floating-toc-item.active')).toContainText('第 10 节');
+});
+
+test('floating toc stays bounded with many headings', async ({ page }) => {
+  await page.goto('/');
+  await openEditor(page);
+  await page.keyboard.insertText(
+    Array.from({ length: 160 }, (_, index) => `## 第 ${index + 1} 节\n\n正文`).join('\n\n'),
+  );
+  await page.getByRole('button', { name: '源码模式' }).click();
+  await expect(liveEditor(page)).toBeVisible();
+
+  await page.locator('.floating-toc-rail').hover();
+  await expect(page.locator('.floating-toc-panel')).toBeVisible();
+
+  const tocMetrics = await page.locator('.floating-toc').evaluate((el) => {
+    const rail = el.querySelector('.floating-toc-rail') as HTMLElement | null;
+    const panel = el.querySelector('.floating-toc-panel') as HTMLElement | null;
+    const list = el.querySelector('.floating-toc-list') as HTMLElement | null;
+    const railRect = rail?.getBoundingClientRect();
+    const panelRect = panel?.getBoundingClientRect();
+    const statusRect = document.querySelector('.status-bar')?.getBoundingClientRect();
+    return {
+      railOverflows: rail ? rail.scrollHeight > rail.clientHeight : false,
+      listOverflows: list ? list.scrollHeight > list.clientHeight : false,
+      railBottomGap: railRect && statusRect ? statusRect.top - railRect.bottom : 0,
+      panelBottomGap: panelRect && statusRect ? statusRect.top - panelRect.bottom : 0,
+    };
+  });
+
+  expect(tocMetrics.railOverflows).toBe(true);
+  expect(tocMetrics.listOverflows).toBe(true);
+  expect(tocMetrics.railBottomGap).toBeGreaterThanOrEqual(0);
+  expect(tocMetrics.panelBottomGap).toBeGreaterThanOrEqual(0);
 });
 
 test('appearance settings switch the app into dark theme', async ({ page }) => {

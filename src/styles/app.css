@@ -314,11 +314,12 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 
 .floating-toc {
   position: absolute;
-  top: 64px;
+  top: 48px;
   left: 20px;
   z-index: 14;
   width: 20px;
-  max-height: calc(100% - 96px);
+  max-height: calc(100% - 72px);
+  overflow: visible;
   color: var(--muted);
   pointer-events: none;
 }
@@ -333,12 +334,19 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   align-items: flex-start;
   gap: 6px;
   width: 18px;
+  max-height: calc(100vh - 116px);
   padding: 8px 10px 8px 0;
+  overflow-y: auto;
+  scrollbar-width: none;
   border: 0;
   background: transparent;
   color: inherit;
   cursor: pointer;
   pointer-events: auto;
+}
+
+.floating-toc-rail::-webkit-scrollbar {
+  display: none;
 }
 
 .floating-toc::after {
@@ -402,7 +410,7 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   top: 0;
   left: 22px;
   width: min(260px, 32vw);
-  max-height: calc(100vh - 176px);
+  max-height: calc(100vh - 116px);
   overflow: hidden;
   border: 1px solid var(--border-soft);
   border-radius: 5px;
@@ -458,7 +466,7 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 }
 
 .floating-toc-list {
-  max-height: min(460px, calc(100vh - 220px));
+  max-height: calc(100vh - 164px);
   overflow-y: auto;
   padding: 6px 0;
 }
@@ -618,7 +626,7 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 .wysiwyg-editor-pane .vditor-ir,
 .wysiwyg-editor-pane .vditor-wysiwyg {
   height: 100%;
-  padding: 18px clamp(24px, 7vw, 104px) 22px;
+  padding: 10px clamp(24px, 7vw, 104px);
   background: var(--bg);
   color: var(--fg);
   font-family: var(--font-body);
@@ -1612,26 +1620,33 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 }
 
 .settings-subnav {
-  display: inline-flex;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   align-items: center;
-  gap: 3px;
-  margin: -4px 0 14px;
-  padding: 3px;
+  width: 100%;
+  gap: 4px;
+  margin: -4px 0 18px;
+  padding: 4px;
   border: 1px solid var(--border-soft);
   border-radius: 6px;
   background: var(--surface);
 }
 
 .settings-subnav-item {
-  min-height: 28px;
-  padding: 0 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 34px;
+  padding: 0 12px;
   border: none;
   border-radius: 4px;
   background: transparent;
   color: var(--muted);
   font-family: var(--font-body);
-  font-size: 12px;
+  font-size: 13px;
   cursor: pointer;
+  text-align: center;
 }
 
 .settings-subnav-item:hover {
@@ -2152,6 +2167,13 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   margin-top: 8px;
 }
 
+.settings-html-custom-editor .settings-row-stacked,
+.settings-html-import-row {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+}
+
 .settings-html-form-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -2168,6 +2190,32 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   min-height: 220px;
 }
 
+.settings-license-status,
+.settings-license-limit {
+  flex-shrink: 0;
+  min-width: 72px;
+  text-align: right;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.settings-license-status.active {
+  color: var(--accent);
+}
+
+.settings-license-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  width: 100%;
+}
+
+.settings-license-activate-row {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+}
+
 .settings-html-preview {
   position: sticky;
   top: 0;
@@ -2175,6 +2223,29 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   flex-direction: column;
   gap: 10px;
   min-width: 0;
+}
+
+.settings-html-preview-viewport {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: zoom-in;
+  text-align: left;
+}
+
+.settings-html-preview-viewport:hover .settings-html-preview-article,
+.settings-html-preview-viewport:focus-visible .settings-html-preview-article {
+  border-color: var(--border-hover);
+}
+
+.settings-html-preview-viewport:focus-visible {
+  outline: 2px solid color-mix(in oklch, var(--accent) 24%, transparent);
+  outline-offset: 3px;
+  border-radius: 5px;
 }
 
 .settings-html-preview-article {
@@ -2206,12 +2277,61 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   white-space: pre-wrap;
 }
 
+.settings-html-preview-zoom {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px;
+  background: var(--overlay-bg);
+}
+
+.settings-html-preview-zoom-shell {
+  width: min(760px, calc(100vw - 56px));
+  max-height: calc(100vh - 56px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  background: var(--bg);
+  box-shadow: 0 16px 56px var(--shadow-soft);
+}
+
+.settings-html-preview-zoom-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.settings-html-preview-zoom-stage {
+  overflow: auto;
+  padding: 22px;
+  background: var(--surface);
+}
+
+.settings-html-preview-article--zoom {
+  max-height: none;
+  width: min(620px, 100%);
+  margin: 0 auto;
+  box-shadow: 0 2px 14px var(--paper-shadow);
+}
+
 @media (max-width: 860px) {
   .settings-html-preview {
     position: static;
   }
 
   .settings-html-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-license-form {
     grid-template-columns: 1fr;
   }
 }
