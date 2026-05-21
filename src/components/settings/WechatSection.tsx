@@ -16,16 +16,14 @@ import {
 import {
   HtmlExportPresetImportError,
   createHtmlExportArticleStyles,
-  createHtmlExportPresetTemplateText,
+  importHtmlExportPresetFromCss,
   importHtmlExportPresetFromJson,
-  sanitizeHtmlExportCss,
 } from '../../services/wechatPreviewService';
 import {
   DEFAULT_HTML_EXPORT_PRESET_ID,
   getHtmlExportPresetDefinition,
   isCustomHtmlExportPresetId,
   listHtmlExportPresets,
-  normalizeCustomHtmlExportPresetId,
   type CustomHtmlExportPresetId,
   type HtmlExportPreset,
 } from '../../services/htmlExportPresets';
@@ -64,10 +62,6 @@ function presetToJson(preset: HtmlExportPreset): string {
     base: preset.base ?? DEFAULT_HTML_EXPORT_PRESET_ID,
     css: preset.css,
   }, null, 2);
-}
-
-function addPreviewHint(description: string): string {
-  return `${description.replace(/[。.!！?？]+$/, '')}。点击文章放大查看。`;
 }
 
 function HtmlPreviewArticle({ zoomed = false }: { zoomed?: boolean }) {
@@ -111,7 +105,6 @@ function HtmlPreviewSample({ preset, onExpand }: { preset: HtmlExportPreset; onE
       <style>{styles}</style>
       <div className="settings-preset-preview-meta">
         <span>{preset.name}</span>
-        <small>{addPreviewHint(preset.description)}</small>
       </div>
       <button
         type="button"
@@ -146,7 +139,6 @@ function HtmlPreviewZoom({
         <div className="settings-html-preview-zoom-header">
           <div>
             <div className="settings-label">{preset.name}</div>
-            <div className="settings-desc">{preset.description}</div>
           </div>
           <button type="button" className="settings-action-button" onClick={onClose}>
             关闭
@@ -170,10 +162,6 @@ export function HtmlExportSection({ onOpenLicense }: HtmlExportSectionProps) {
   const settings = useSettings();
   const [activePage, setActivePage] = useState<HtmlExportPage>('library');
   const [message, setMessage] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
-  const [draftName, setDraftName] = useState('');
-  const [draftDescription, setDraftDescription] = useState('');
-  const [draftCss, setDraftCss] = useState('');
-  const [importJson, setImportJson] = useState('');
   const [previewExpanded, setPreviewExpanded] = useState(false);
 
   const presets = listHtmlExportPresets(settings.customHtmlExportPresets);
@@ -193,10 +181,10 @@ export function HtmlExportSection({ onOpenLicense }: HtmlExportSectionProps) {
   const showPreview = activePage === 'library';
 
   const slotHint = customPresetCount > customPresetLimit
-    ? `已保存 ${customPresetCount} 个自定义 HTML 预设，当前可用 ${customPresetLimit} 个内测授权槽位，超出部分作为历史预设继续可用。`
+    ? `已保存 ${customPresetCount} 个自定义 HTML 预设；当前可用 ${customPresetLimit} 个。`
     : licenseActive
-      ? `已使用 ${customPresetCount}/${customPresetLimit} 个内测授权自定义槽位。`
-      : `已使用 ${customPresetCount}/${customPresetLimit} 个常规自定义槽位。输入内测码可使用更多槽位。`;
+      ? `已使用 ${customPresetCount}/${customPresetLimit} 个内测槽位。`
+      : `已使用 ${customPresetCount}/${customPresetLimit} 个常规槽位。输入内测码可扩展。`;
 
   const handleSelectPreset = (id: HtmlExportPreset['id']) => {
     if (!isHtmlExportPresetEnabled(id, settings)) {
@@ -228,36 +216,9 @@ export function HtmlExportSection({ onOpenLicense }: HtmlExportSectionProps) {
     setMessage({ tone: 'ok', text: `已保存「${preset.name}」` });
   };
 
-  const handleSaveDraft = () => {
-    const id = normalizeCustomHtmlExportPresetId(draftName);
-    if (!id) {
-      setMessage({ tone: 'error', text: '请先填写预设名称。' });
-      return;
-    }
-
-    const name = draftName.trim();
-    const description = draftDescription.trim() || '自定义 HTML CSS 预设';
-    try {
-      const preset = importHtmlExportPresetFromJson(JSON.stringify({
-        id,
-        name,
-        description,
-        base: DEFAULT_HTML_EXPORT_PRESET_ID,
-        css: draftCss,
-      }));
-      saveImportedPreset(preset);
-    } catch (error) {
-      const text = error instanceof HtmlExportPresetImportError
-        ? error.message
-        : '保存失败，请检查 CSS。';
-      setMessage({ tone: 'error', text });
-    }
-  };
-
   const handleImportJson = (raw: string) => {
     try {
       saveImportedPreset(importHtmlExportPresetFromJson(raw));
-      setImportJson('');
     } catch (error) {
       const text = error instanceof HtmlExportPresetImportError
         ? error.message
@@ -267,7 +228,20 @@ export function HtmlExportSection({ onOpenLicense }: HtmlExportSectionProps) {
   };
 
   const handleImportFile = async (file: File) => {
-    handleImportJson(await file.text());
+    const raw = await file.text();
+    if (/\.css$/i.test(file.name) || file.type === 'text/css') {
+      try {
+        saveImportedPreset(importHtmlExportPresetFromCss(raw, { fileName: file.name }));
+      } catch (error) {
+        const text = error instanceof HtmlExportPresetImportError
+          ? error.message
+          : '导入失败，请检查 CSS 预设文件。';
+        setMessage({ tone: 'error', text });
+      }
+      return;
+    }
+
+    handleImportJson(raw);
   };
 
   const handleCopyText = async (text: string, okText: string) => {
@@ -355,7 +329,7 @@ export function HtmlExportSection({ onOpenLicense }: HtmlExportSectionProps) {
     <div className="settings-preset-page">
       <div className="settings-preset-page-header">
         <div>
-          <div className="settings-preset-group-title">自定义 HTML CSS 槽位</div>
+          <div className="settings-preset-group-title">自定义 CSS 槽位</div>
           <p className="settings-preset-desc">{slotHint}</p>
         </div>
         <span className="settings-preset-count">{customPresetCount}/{customPresetLimit}</span>
@@ -366,8 +340,8 @@ export function HtmlExportSection({ onOpenLicense }: HtmlExportSectionProps) {
             <button
               type="button"
               className="settings-preset-select-button"
-              onClick={() => setActivePage('custom')}
-              aria-label={`HTML 自定义空槽位 ${index + 1}`}
+              onClick={() => inputRef.current?.click()}
+              aria-label={`导入 CSS 预设文件到槽位 ${index + 1}`}
             >
               <span className="settings-preset-empty-icon">
                 <FileUp size={14} />
@@ -378,7 +352,7 @@ export function HtmlExportSection({ onOpenLicense }: HtmlExportSectionProps) {
                   空槽位
                   <span className="settings-preset-badge">可用</span>
                 </span>
-                <span className="settings-preset-desc">保存 CSS 预设或导入 CSS 预设文件后会占用这个槽位。</span>
+                <span className="settings-preset-desc">导入 CSS 文件后占用此槽位。</span>
               </span>
             </button>
           </div>
@@ -401,44 +375,11 @@ export function HtmlExportSection({ onOpenLicense }: HtmlExportSectionProps) {
                 使用更多自定义槽位
                 <span className="settings-preset-badge">输入内测码</span>
               </span>
-              <span className="settings-preset-desc">前往授权页输入内测码后，可使用更多 HTML / CSS 导出预设。</span>
+              <span className="settings-preset-desc">输入内测码后可使用更多槽位。</span>
             </span>
           </button>
         </div>
       )}
-
-      <div className="settings-html-custom-editor">
-        <div className="settings-row settings-row-stacked">
-          <div>
-            <div className="settings-label">保存 CSS 预设</div>
-            <div className="settings-desc">基于“简洁图文”追加 CSS；保存后可设为默认 HTML 导出预设。</div>
-          </div>
-          <div className="settings-html-form-grid">
-            <input
-              className="settings-input"
-              aria-label="自定义 HTML 预设名称"
-              value={draftName}
-              onChange={(event) => setDraftName(event.target.value)}
-              placeholder="团队 HTML 样式"
-            />
-            <input
-              className="settings-input"
-              aria-label="自定义 HTML 预设说明"
-              value={draftDescription}
-              onChange={(event) => setDraftDescription(event.target.value)}
-              placeholder="用于团队公众号复制和 HTML 导出"
-            />
-          </div>
-          <textarea
-            className="settings-textarea settings-wechat-css-textarea"
-            aria-label="自定义 HTML CSS"
-            value={draftCss}
-            onChange={(event) => setDraftCss(event.target.value)}
-            placeholder={CSS_EXAMPLE}
-            spellCheck={false}
-          />
-        </div>
-      </div>
     </div>
   );
 
@@ -465,29 +406,12 @@ export function HtmlExportSection({ onOpenLicense }: HtmlExportSectionProps) {
 
       <div className="settings-section-actions">
         {activePage === 'custom' && (
-          <>
-            <button type="button" className="primary-action-button" onClick={handleSaveDraft}>
-              保存 CSS 预设
-            </button>
-            <button type="button" className="settings-action-button" onClick={() => inputRef.current?.click()}>
-              <FileUp size={14} />
-              导入 CSS 预设
-            </button>
-          </>
+          <button type="button" className="primary-action-button" onClick={() => inputRef.current?.click()}>
+            <FileUp size={14} />
+            导入 CSS 预设文件
+          </button>
         )}
-        {activePage === 'examples' && (
-          <>
-            <button type="button" className="settings-action-button" onClick={() => void handleCopyText(CSS_EXAMPLE, 'CSS 示例已复制')}>
-              <Clipboard size={14} />
-              复制 CSS 示例
-            </button>
-            <button type="button" className="settings-action-button" onClick={() => void handleCopyText(createHtmlExportPresetTemplateText(), 'CSS 预设 JSON 已复制')}>
-              <Clipboard size={14} />
-              复制 CSS 预设 JSON
-            </button>
-          </>
-        )}
-        {selectedIsCustom && (
+        {selectedIsCustom && activePage !== 'examples' && (
           <button type="button" className="settings-action-button" onClick={() => void handleCopyText(presetToJson(selectedPreset), '当前 CSS 预设 JSON 已复制')}>
             <Clipboard size={14} />
             导出当前 CSS 预设
@@ -497,7 +421,7 @@ export function HtmlExportSection({ onOpenLicense }: HtmlExportSectionProps) {
           ref={inputRef}
           className="settings-file-input"
           type="file"
-          accept=".json,application/json"
+          accept=".json,.css,application/json,text/css,text/plain"
           onChange={(event) => {
             const file = event.target.files?.[0];
             if (file) void handleImportFile(file);
@@ -514,66 +438,23 @@ export function HtmlExportSection({ onOpenLicense }: HtmlExportSectionProps) {
               <div className="settings-preset-page-header">
                 <div>
                   <div className="settings-preset-group-title">预设库</div>
-                  <p className="settings-preset-desc">选择默认 HTML 导出样式；内置预设保持简单通用，适合文章复制和 HTML 文件导出。</p>
                 </div>
               </div>
               {builtInPresets.map((preset) => renderPresetItem(preset))}
             </div>
           )}
           {activePage === 'custom' && (
-            <>
-              {renderCustomSlots()}
-              <div className="settings-row settings-row-stacked settings-html-import-row">
-                <div>
-                  <div className="settings-label">导入 CSS 预设</div>
-                  <div className="settings-desc">粘贴 CSS 预设交换 JSON，格式包含 id、name、description、css，可选 base。</div>
-                </div>
-                <textarea
-                  className="settings-textarea settings-html-json-textarea"
-                  aria-label="CSS 预设交换 JSON"
-                  value={importJson}
-                  onChange={(event) => setImportJson(event.target.value)}
-                  placeholder={createHtmlExportPresetTemplateText()}
-                  spellCheck={false}
-                />
-                <button
-                  type="button"
-                  className="settings-action-button"
-                  onClick={() => handleImportJson(importJson)}
-                  disabled={!importJson.trim()}
-                >
-                  导入粘贴的 CSS 预设
-                </button>
-              </div>
-            </>
+            renderCustomSlots()
           )}
           {activePage === 'examples' && (
             <div className="settings-preset-page settings-json-example">
               <div className="settings-preset-page-header">
                 <div>
                   <div className="settings-preset-group-title">CSS 示例</div>
-                  <p className="settings-preset-desc">支持 .folia-html-article 下的标题、段落、引用、列表、表格、代码和图片选择器；旧 .folia-wechat-article 会自动归一化。</p>
+                  <p className="settings-preset-desc">选中文本即可复制。</p>
                 </div>
               </div>
               <pre>{CSS_EXAMPLE}</pre>
-              <div className="settings-preset-page-header">
-                <div>
-                  <div className="settings-preset-group-title">不支持的写法</div>
-                  <p className="settings-preset-desc">不支持 body、*、应用外 class/id、复杂组合器、at-rule、url()、var()、expression()、javascript: 和 CSS 转义。</p>
-                </div>
-              </div>
-              <pre>{[
-                'body { color: red; }',
-                '@import url("https://example.com/a.css");',
-                '.folia-html-article p > span { color: red; }',
-                '.folia-html-article p { background-image: url("https://example.com/a.png"); }',
-              ].join('\n')}</pre>
-              <div className="settings-preset-page-header">
-                <div>
-                  <div className="settings-preset-group-title">安全预检结果</div>
-                  <p className="settings-preset-desc">当前示例可生成 {sanitizeHtmlExportCss(CSS_EXAMPLE).split('}').filter(Boolean).length} 条安全规则。</p>
-                </div>
-              </div>
             </div>
           )}
         </div>

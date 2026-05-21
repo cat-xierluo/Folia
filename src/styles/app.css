@@ -1301,9 +1301,98 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 }
 
 .word-paper-content p {
-  margin: 0 0 0.75em;
+  margin: 0;
   text-align: var(--word-paragraph-align);
   text-indent: var(--word-paragraph-indent);
+}
+
+.word-paper-content ul,
+.word-paper-content ol,
+.word-paper-content.vditor-reset ul,
+.word-paper-content.vditor-reset ol {
+  margin: 0;
+  padding-left: var(--word-list-indent);
+  line-height: var(--word-line-height);
+  text-align: var(--word-paragraph-align);
+}
+
+.word-paper-content li,
+.word-paper-content.vditor-reset li {
+  margin: 0;
+  padding-left: 0;
+}
+
+.word-paper-content li p,
+.word-paper-content.vditor-reset li p {
+  margin: 0;
+  text-indent: 0;
+}
+
+.word-paper-content blockquote,
+.word-paper-content.vditor-reset blockquote {
+  margin: 0;
+  padding: 0 0 0 var(--word-quote-indent);
+  border: none;
+  background: var(--word-quote-bg);
+  color: var(--fg);
+  font-size: var(--word-quote-font-size);
+  line-height: var(--word-quote-line-height);
+}
+
+.word-paper-content blockquote p,
+.word-paper-content.vditor-reset blockquote p {
+  margin: 0;
+  text-indent: 0;
+  line-height: var(--word-quote-line-height);
+}
+
+.word-paper-content pre,
+.word-paper-content.vditor-reset pre {
+  margin: 0;
+  padding: 0 0 0 var(--word-code-indent);
+  border: none;
+  background: transparent !important;
+  color: var(--word-code-color);
+  font-family: var(--word-code-font-family);
+  font-size: var(--word-code-font-size);
+  line-height: var(--word-code-line-height);
+  white-space: pre-wrap;
+}
+
+.word-paper-content pre code,
+.word-paper-content.vditor-reset pre code {
+  padding: 0;
+  background: transparent !important;
+  color: var(--word-code-color);
+  font-family: var(--word-code-font-family);
+  font-size: var(--word-code-font-size);
+  line-height: var(--word-code-line-height);
+}
+
+.word-paper-content :not(pre) > code,
+.word-paper-content.vditor-reset :not(pre) > code {
+  padding: 0;
+  border: none;
+  background: transparent !important;
+  color: var(--word-inline-code-color);
+  font-family: var(--word-inline-code-font-family);
+  font-size: var(--word-inline-code-font-size);
+}
+
+.word-paper-content hr,
+.word-paper-content.vditor-reset hr {
+  height: auto;
+  margin: 6pt 0;
+  border: none;
+  text-align: var(--word-hr-align);
+}
+
+.word-paper-content hr::before,
+.word-paper-content.vditor-reset hr::before {
+  content: var(--word-hr-content);
+  color: var(--word-hr-color);
+  font-family: var(--word-hr-font-family);
+  font-size: var(--word-hr-size);
 }
 
 .word-paper-content table {
@@ -1315,6 +1404,11 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   font-size: var(--word-table-font-size);
   line-height: var(--word-table-line-height);
   font-family: var(--word-table-body-font-family);
+}
+
+.word-paper-content tr,
+.word-paper-content.vditor-reset tr {
+  height: var(--word-table-row-height);
 }
 
 .word-paper-content th,
@@ -1580,6 +1674,7 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   align-items: center;
   justify-content: center;
   z-index: 2000;
+  animation: settings-overlay-in 120ms ease-out both;
 }
 
 .settings-modal {
@@ -1591,6 +1686,95 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   border-radius: 5px;
   overflow: hidden;
   box-shadow: 0 6px 32px var(--shadow-soft);
+  animation: settings-modal-in 140ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  will-change: opacity, transform;
+}
+
+.settings-overlay--loading {
+  pointer-events: none;
+}
+
+.settings-modal-skeleton {
+  box-shadow: 0 6px 32px var(--shadow-soft);
+}
+
+.settings-skeleton-sidebar,
+.settings-skeleton-content {
+  pointer-events: none;
+}
+
+.settings-skeleton-title,
+.settings-skeleton-line,
+.settings-skeleton-heading,
+.settings-skeleton-row {
+  border-radius: 4px;
+  background: color-mix(in oklch, var(--muted) 14%, transparent);
+}
+
+.settings-skeleton-title {
+  width: 84px;
+  height: 24px;
+  margin: 0 24px 22px;
+}
+
+.settings-skeleton-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0 24px;
+}
+
+.settings-skeleton-line {
+  width: 108px;
+  height: 13px;
+}
+
+.settings-skeleton-line:nth-child(2n) {
+  width: 82px;
+}
+
+.settings-skeleton-heading {
+  width: 180px;
+  height: 24px;
+  margin-bottom: 30px;
+}
+
+.settings-skeleton-row {
+  width: min(520px, 86%);
+  height: 38px;
+  margin-bottom: 16px;
+}
+
+.settings-skeleton-row.short {
+  width: min(360px, 62%);
+}
+
+@keyframes settings-overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes settings-modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-overlay,
+  .settings-modal {
+    animation: none;
+    will-change: auto;
+  }
 }
 
 .settings-modal-sidebar {
@@ -2007,15 +2191,8 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 .settings-preset-preview-meta {
   display: flex;
   flex-direction: column;
-  gap: 2px;
   font-size: 13px;
   color: var(--fg);
-}
-
-.settings-preset-preview-meta small {
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 1.45;
 }
 
 .settings-preset-preview-viewport {
@@ -2208,43 +2385,12 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   border-color: var(--accent);
 }
 
-.settings-wechat-css-textarea {
-  min-height: 320px;
-}
-
 .settings-html-workbench {
   grid-template-columns: minmax(300px, 1fr) 300px;
 }
 
 .settings-html-workbench.settings-preset-workbench--full {
   grid-template-columns: minmax(0, 1fr);
-}
-
-.settings-html-custom-editor {
-  margin-top: 8px;
-}
-
-.settings-html-custom-editor .settings-row-stacked,
-.settings-html-import-row {
-  flex-direction: column;
-  align-items: stretch;
-  gap: 12px;
-}
-
-.settings-html-form-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  width: 100%;
-}
-
-.settings-html-import-row {
-  margin-top: 14px;
-  border-bottom: none;
-}
-
-.settings-html-json-textarea {
-  min-height: 220px;
 }
 
 .settings-license-status,
@@ -2382,10 +2528,6 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 @media (max-width: 860px) {
   .settings-html-preview {
     position: static;
-  }
-
-  .settings-html-form-grid {
-    grid-template-columns: 1fr;
   }
 
   .settings-license-form {

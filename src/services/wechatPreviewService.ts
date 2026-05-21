@@ -849,6 +849,55 @@ export function importHtmlExportPresetFromJson(raw: string): HtmlExportPreset {
   };
 }
 
+function createCssPresetId(seed: string, css: string): CustomHtmlExportPresetId {
+  const normalized = normalizeCustomHtmlExportPresetId(seed);
+  if (normalized) return normalized;
+
+  let hash = 0;
+  for (const character of `${seed}:${css}`) {
+    hash = Math.imul(hash, 31) + character.charCodeAt(0);
+  }
+
+  const fallback = normalizeCustomHtmlExportPresetId(`css-${(hash >>> 0).toString(36)}`);
+  if (!fallback) throw new HtmlExportPresetImportError('CSS 预设文件名无效。');
+  return fallback;
+}
+
+function createCssPresetName(fileName?: string): string {
+  const withoutExtension = fileName?.replace(/\.[^.]+$/, '').trim();
+  return withoutExtension || '自定义 CSS 预设';
+}
+
+export function importHtmlExportPresetFromCss(
+  raw: string,
+  options: {
+    fileName?: string;
+    id?: string;
+    name?: string;
+    description?: string;
+    base?: BuiltInHtmlExportPresetId;
+  } = {},
+): HtmlExportPreset {
+  const css = raw.trim();
+  const name = options.name?.trim() || createCssPresetName(options.fileName);
+  const idSeed = options.id || options.fileName?.replace(/\.[^.]+$/, '') || name;
+  const unsupportedReason = findUnsupportedHtmlExportCssReason(css);
+
+  if (!css || unsupportedReason) {
+    throw new HtmlExportPresetImportError(`CSS 不支持：${unsupportedReason ?? '没有可用的安全文章样式规则。'}`);
+  }
+
+  return {
+    id: createCssPresetId(idSeed, css),
+    name,
+    description: options.description?.trim() || '从 CSS 文件导入',
+    css,
+    source: options.fileName ? `user css file: ${options.fileName}` : 'user css',
+    kind: 'custom',
+    base: options.base ?? DEFAULT_HTML_EXPORT_PRESET_ID,
+  };
+}
+
 export function createHtmlExportInlineArticleHtml(
   articleHtml: string,
   preset: HtmlExportPreset = defaultHtmlExportPreset(),

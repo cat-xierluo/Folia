@@ -16,6 +16,7 @@ import { getPreset, DEFAULT_PRESET_ID } from './config';
 import {
   createFormattedRuns,
   ptToHalfPt,
+  ptToTwip,
   parseAlignment,
 } from './formatter';
 import {
@@ -457,19 +458,19 @@ function calculateImageSize(
   config: PresetConfig,
 ): { width: number; height: number } {
   const ic = config.image;
-  // max_width_cm 转换为像素（1 cm = target_dpi / 2.54 px）
-  const maxWidthPx = Math.round(ic.max_width_cm * ic.target_dpi / 2.54);
+  const availableWidthCm = Math.max(1, config.page.width - config.page.margin_left - config.page.margin_right);
+  const targetDisplayCm = Math.min(availableWidthCm * ic.display_ratio, ic.max_width_cm);
+  const maxWidthPx = Math.round(targetDisplayCm * ic.target_dpi / 2.54);
 
   if (dimensions.width > 0 && dimensions.height > 0) {
-    const ratio = ic.display_ratio;
-    const scale = Math.min(1, maxWidthPx / (dimensions.width * ratio));
+    const scale = Math.min(1, maxWidthPx / dimensions.width);
     return {
-      width: Math.round(dimensions.width * ratio * scale),
-      height: Math.round(dimensions.height * ratio * scale),
+      width: Math.round(dimensions.width * scale),
+      height: Math.round(dimensions.height * scale),
     };
   }
 
-  // 尺寸未知：使用最大宽度，4:3 比例
+  // 尺寸未知：使用预设目标显示宽度，4:3 比例
   return {
     width: maxWidthPx,
     height: Math.round(maxWidthPx * 3 / 4),
@@ -512,10 +513,10 @@ function addParagraph(text: string, config: PresetConfig): Paragraph {
   const pc = config.paragraph;
 
   // 首行缩进：first_line_indent 表示"字符数"
-  // 近似公式：字符数 × 字号(half-pt) × 20 = twips
+  // 近似公式：字符数 × 字号(pt) × 20 = twips
   const firstLineIndent =
     pc.first_line_indent > 0
-      ? pc.first_line_indent * ptToHalfPt(config.fonts.default.size) * 20
+      ? pc.first_line_indent * config.fonts.default.size * 20
       : undefined;
 
   return new Paragraph({
@@ -533,7 +534,7 @@ function addBulletList(line: string, config: PresetConfig): Paragraph {
 
   return new Paragraph({
     spacing: { line: config.paragraph.line_spacing * 240 },
-    indent: { left: indent },
+    indent: { left: ptToTwip(indent) },
     children: [
       new TextRun({
         text: `${marker} `,
@@ -556,7 +557,7 @@ function addNumberedList(line: string, config: PresetConfig): Paragraph {
 
   return new Paragraph({
     spacing: { line: config.paragraph.line_spacing * 240 },
-    indent: { left: indent },
+    indent: { left: ptToTwip(indent) },
     children: [
       new TextRun({
         text: `${prefix} `,
@@ -584,7 +585,7 @@ function addTaskList(line: string, config: PresetConfig): Paragraph {
 
   return new Paragraph({
     spacing: { line: config.paragraph.line_spacing * 240 },
-    indent: { left: indent },
+    indent: { left: ptToTwip(indent) },
     children: [
       new TextRun({
         text: `${symbol} `,
@@ -604,7 +605,8 @@ function addQuote(text: string, config: PresetConfig): Paragraph {
 
   return new Paragraph({
     spacing: { line: qc.line_spacing * 240 },
-    indent: { left: qc.left_indent },
+    indent: { left: ptToTwip(qc.left_indent) },
+    shading: { type: 'clear', fill: qc.background_color },
     children: createFormattedRuns(text, config, { isQuote: true }),
   });
 }

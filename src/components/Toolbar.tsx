@@ -28,12 +28,13 @@ type ToolbarProps = {
   onSave: () => void;
   onSaveAs: () => void;
   onOpenSettings: () => void;
+  onPreloadSettings?: () => void;
 };
 
 export function Toolbar({
   dirty, fileName,
   editorMode, wordPreviewVisible, wechatPreviewVisible, editingDisabled, onToggleEditorMode, onToggleWordPreview, onToggleWechatPreview,
-  onOpen, onSave, onSaveAs, onOpenSettings,
+  onOpen, onSave, onSaveAs, onOpenSettings, onPreloadSettings,
 }: ToolbarProps) {
   const settings = useSettings();
   const t = (key: Parameters<typeof translate>[1]) => translate(settings.locale, key);
@@ -108,7 +109,15 @@ export function Toolbar({
           </button>
         </div>
         <div className="toolbar-group toolbar-navigation-actions" aria-label={t('toolbarNavGroup')}>
-          <button data-no-window-drag="true" className="toolbar-settings-btn" onClick={onOpenSettings} title={t('toolbarSettingsTitle')} aria-label={t('toolbarSettingsLabel')}>
+          <button
+            data-no-window-drag="true"
+            className="toolbar-settings-btn"
+            onPointerEnter={onPreloadSettings}
+            onFocus={onPreloadSettings}
+            onClick={onOpenSettings}
+            title={t('toolbarSettingsTitle')}
+            aria-label={t('toolbarSettingsLabel')}
+          >
             <SlidersHorizontal size={iconSize} strokeWidth={strokeWidth} />
           </button>
         </div>

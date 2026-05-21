@@ -2,9 +2,32 @@
   <img src="docs/icon.png" alt="Folia" width="128" height="128">
 </p>
 
+# Folia
+
 一个面向知识工作者的 Markdown 阅读与 Word 导出工具。
 
 稳定预览包含 HTML 表格的 Markdown 文档，并支持 Word 纸张预览与导出。
+
+## 下载与安装
+
+普通用户建议直接从 [GitHub Releases](https://github.com/cat-xierluo/Folia/releases/latest) 下载最新版本。
+
+- macOS Apple Silicon：下载带 `aarch64` / `arm64` 字样的 `.dmg`
+- macOS Intel：下载带 `x64` / `x86_64` 字样的 `.dmg`
+- Windows：下载 `.exe` 或 `.msi` 安装包
+
+安装后 Folia 会默认检查更新，也可以在“设置 / 关于”中手动检查或关闭自动检查。
+
+### macOS 首次运行
+
+当前版本尚未做 Apple Developer 公证。如果 macOS 提示“无法验证开发者”或“已损坏”，请先把 `Folia.app` 拖到“应用程序”，然后在终端执行一次：
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Folia.app
+open /Applications/Folia.app
+```
+
+如果你把应用放在其他位置，请把命令里的 `/Applications/Folia.app` 换成实际路径。这个命令只应对你信任来源的应用执行。
 
 ## 功能
 
@@ -26,45 +49,66 @@
 - Vite 8
 - Vditor.preview()（Lute 引擎 + 代码高亮 / Mermaid / KaTeX）
 - CodeMirror 6
-- Tauri updater plugin
 
 ## 作者
 
+**杨卫薪律师** - 专注于技术类纠纷领域，包括知识产权、数据与 AI 相关争议，同时长期关注 AI 技术在法律实务、知识管理和专业写作中的应用。
+
+Folia 是我在法律文档处理和 AI 协作实践中沉淀出来的轻量桌面工具：重点解决 Markdown 文档阅读、复杂 HTML 表格稳定预览，以及导出 Word 前的版式确认。
+
 - GitHub: [cat-xierluo](https://github.com/cat-xierluo)
+- 微信：`ywxlaw`
 
 <p>
   <img src="docs/wechat-qr.png" alt="微信二维码" width="160" height="160">
 </p>
 
-## 开发
+## 开发环境
+
+本地开发需要先安装：
+
+- Node.js 与 npm
+- Rust stable toolchain
+- macOS 构建还需要 Xcode 或 Xcode Command Line Tools
+
+Tauri CLI 已作为项目开发依赖安装，不需要额外全局安装。更完整的系统依赖可参考 [Tauri 官方前置条件](https://v2.tauri.app/start/prerequisites/)。
+
+启动桌面开发模式：
 
 ```bash
-cd folia
 npm install
 npm run tauri dev
 ```
 
+只调试前端页面时，也可以运行：
+
+```bash
+npm run dev
+```
+
+常用验证命令：
+
+```bash
+npm test
+npm run lint
+npx tsc --noEmit
+```
+
 ## 构建
 
-```bash
-npm run tauri build
-```
-
-当前 Tauri 配置会生成 updater artifact；完整桌面打包需要提供 Tauri updater 私钥：
+只验证前端构建：
 
 ```bash
-TAURI_SIGNING_PRIVATE_KEY="$(cat ~/.tauri/folia.key)" \
-TAURI_SIGNING_PRIVATE_KEY_PASSWORD="" \
-npm run tauri build
+npm run build
 ```
 
-发布版本推荐推送 `v*` tag 交给 GitHub Actions。工作流会构建 macOS ARM / Intel 与 Windows 包，生成统一 `latest.json`，并同步 Release 产物到 Gitee 镜像。
-
-如需本地生成 manifest，可在签名产物存在后运行：
+本地打包桌面应用：
 
 ```bash
-npm run updater:manifest
+npm run tauri:build:local
 ```
+
+构建产物通常位于 `src-tauri/target/release/bundle/`。
 
 ## 许可
 

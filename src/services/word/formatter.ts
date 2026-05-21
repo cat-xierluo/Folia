@@ -11,6 +11,10 @@ export function ptToHalfPt(pt: number): number {
   return pt * 2;
 }
 
+export function ptToTwip(pt: number): number {
+  return Math.round(pt * 20);
+}
+
 /** Convert hex color string (without #) to RGB tuple. */
 export function hexToRgb(hex: string): [number, number, number] {
   const h = hex.replace('#', '');
@@ -211,10 +215,7 @@ export function createFormattedRuns(
         ascii: ic.font,
       };
       runOptions.size = ptToHalfPt(ic.size);
-      runOptions.shading = {
-        type: 'clear' as const,
-        fill: ic.color,
-      };
+      runOptions.color = ic.color;
     }
 
     if (part.formats.math) {

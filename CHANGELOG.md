@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.3.8]
+## [0.3.9]
 
 ### Added
 
@@ -19,12 +19,13 @@ All notable changes to this project will be documented in this file.
 - 新增暗色模式，覆盖主界面、设置页、Word 预览外壳、Floating TOC 和编辑器容器。
 - 新增 HTML 预览入口与右侧预览面板：当前 Markdown 可渲染为 HTML 文章预览，并提示本地相对图片。
 - HTML 预览面板支持复制到公众号编辑器和导出 HTML：复制写入 `text/html` 与 `text/plain` fallback，导出文件包含完整 HTML 结构；正文节点已按当前 HTML 预设生成内联样式，同时保留文档级 CSS 作为兜底。
-- Settings 新增“HTML 导出”分区，提供 `预设库 / 自定义槽位 / CSS 示例` 二级页、3 套简单通用内置 HTML 主题、2 个常规自定义 CSS 槽位和 CSS 预设交换 JSON 导入 / 导出。
+- Settings 新增“HTML 导出”分区，提供 `预设库 / 自定义槽位 / CSS 示例` 二级页、3 套简单通用内置 HTML 主题、2 个常规自定义 CSS 槽位，支持导入 `.css` 样式文件和 `.json` 预设文件，并可导出当前 CSS 预设 JSON。
 - Settings 新增“授权”分区，可输入内测码并显示 Word / HTML 自定义预设槽位上限；内测授权启用后槽位上限从 2 个提升到 8 个。
 - HTML 文件新增“演示模式”：`.html/.htm` 默认仍使用安全阅读预览，用户点击演示模式后在隔离 iframe 中运行当前 HTML，并提供上一页、下一页和返回阅读预览操作。
 
 ### Changed
 
+- README 补充普通用户下载入口、macOS 首次运行命令、开发/构建说明，并参考 Legal Skills 项目完善作者介绍。
 - 顶部栏按钮按“文件操作 / 视图与导出 / 导航设置”分组，并改用更柔和的 folder/save/braces/book/sliders 图标；tooltip 更明确，同时保持透明、低视觉权重的 icon-only 风格。
 - 顶部栏不再提供“大纲”按钮，TOC 改为内容区左侧浮动导航，不再挤占横向布局。
 - Floating TOC 的固定/取消固定统一由左侧横线轨道触发，展开面板不再显示图钉按钮；折叠刻度按标题层级显示不同长度和粗细。
@@ -34,6 +35,8 @@ All notable changes to this project will be documented in this file.
 - Word 导出设置页改为 `预设库 / 自定义槽位 / JSON 示例` 二级页面；纸张预览只在预设库显示，自定义槽位和 JSON 示例使用全宽内容区。
 - HTML 导出设置页收敛为同构二级页面：CSS 示例页使用全宽内容区，不再常驻文章预览；自定义槽位的导入 / 导出主路径统一表述为 CSS 预设。
 - Word / HTML 导出设置页的三级选项改为等宽铺满横条；顶部“删除/停用”入口移除，HTML 文章预览只在预设库显示并支持点击放大，内置 CSS 预设条目不再展示来源行。
+- Word / JSON 示例页和 HTML / CSS 示例页精简为只展示可选中示例文本；导入、复制、导出当前预设等动作保留在自定义槽位页。
+- HTML 导出自定义槽位页不再提供手写 CSS 表单；空槽位直接导入 CSS 预设文件。Word / HTML 设置页预览侧只显示预设名，不重复展示描述或点击提示。
 - Word / HTML 自定义槽位页的锁定入口统一改为“内测授权 / 输入内测码”，并跳转到授权页。
 - Markdown 主显示区继续扩大可视高度：WYSIWYG / Live Preview、普通预览和稳定 HTML table 阅读预览同步压缩上下留白，内容更贴近底部状态栏路径区域。
 - 自动检查更新恢复为可配置开关，默认开启；关于页只保留开关和手动检查更新入口，不再展示“启动后延迟检查”等技术说明。
@@ -62,6 +65,8 @@ All notable changes to this project will be documented in this file.
 - 精简主界面冗余线条：Word 预设区、分栏拖动区、编辑器 gutter 和预览边界改为更低权重表达。
 - 打开或编辑文件后，文件名与 dirty 标记现在显示在标题栏视觉中心，不再跟随左侧文件按钮偏移。
 - 关于页不再显示更新源，只保留项目地址、软件介绍和作者区域。
+- 修复设置页第一次打开时只先显示变暗遮罩的问题：设置页会在空闲期预加载，懒加载等待时显示完整窗口骨架，并使用更连贯的进入动效。
+- 修复 Word 纸张预览与导出 Word 在首行缩进、列表/引用/代码块缩进、行内代码、分割线、表格行高和图片宽度上的部分不一致。
 - 修复自动检查更新在启动延迟期间被关闭再打开后，本会话不会重新排期检查的问题。
 - 修复设置页 Word 导出预览放大时按 `Esc` 会直接关闭整个设置窗口的问题；现在优先关闭放大预览。
 - 修复 Word 导出遇到单行 HTML table 时可能吞掉表格后续段落的问题；连续紧凑 HTML 表格现在会作为独立文档节点处理。

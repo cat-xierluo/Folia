@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
-import { Clipboard, FileUp, Lock, RotateCcw, Trash2 } from 'lucide-react';
+import { FileUp, Lock, RotateCcw, Trash2 } from 'lucide-react';
 import { useSettings } from '../../hooks/useSettings';
 import {
   addCustomExportPreset,
@@ -81,10 +81,10 @@ export function ExportSection({ onOpenLicense }: ExportSectionProps) {
   const displayedCustomSlotCount = Math.max(customPresetLimit, customPresets.length);
   const customSlotRows = Array.from({ length: displayedCustomSlotCount }, (_, index) => customPresets[index] ?? null);
   const slotHint = customPresetCount > customPresetLimit
-    ? `已保存 ${customPresetCount} 个自定义预设，当前可用 ${customPresetLimit} 个内测授权槽位，超出部分作为历史预设继续可用。`
+    ? `已保存 ${customPresetCount} 个自定义预设；当前可用 ${customPresetLimit} 个。`
     : licenseActive
-      ? `已使用 ${customPresetCount}/${customPresetLimit} 个内测授权自定义槽位。空槽位可导入 JSON。`
-      : `已使用 ${customPresetCount}/${customPresetLimit} 个常规自定义槽位。空槽位可导入 JSON；输入内测码可使用更多槽位。`;
+      ? `已使用 ${customPresetCount}/${customPresetLimit} 个内测槽位。`
+      : `已使用 ${customPresetCount}/${customPresetLimit} 个常规槽位。输入内测码可扩展。`;
 
   useEffect(() => {
     if (!previewExpanded) return undefined;
@@ -124,15 +124,6 @@ export function ExportSection({ onOpenLicense }: ExportSectionProps) {
         ? error.message
         : '导入失败，请检查 JSON 文件。';
       setMessage({ tone: 'error', text });
-    }
-  };
-
-  const handleCopyTemplate = async () => {
-    try {
-      await navigator.clipboard.writeText(createPresetTemplateText());
-      setMessage({ tone: 'ok', text: '示例 JSON 已复制' });
-    } catch {
-      setMessage({ tone: 'error', text: '无法复制示例 JSON' });
     }
   };
 
@@ -247,7 +238,7 @@ export function ExportSection({ onOpenLicense }: ExportSectionProps) {
                   空槽位
                   <span className="settings-preset-badge">可用</span>
                 </span>
-                <span className="settings-preset-desc">导入 JSON 后会占用这个自定义预设槽位。</span>
+                <span className="settings-preset-desc">导入 JSON 后占用此槽位。</span>
               </span>
             </button>
           </div>
@@ -270,7 +261,7 @@ export function ExportSection({ onOpenLicense }: ExportSectionProps) {
               使用更多自定义槽位
               <span className="settings-preset-badge">输入内测码</span>
             </span>
-            <span className="settings-preset-desc">前往授权页输入内测码后，可使用更多团队或个人 Word 导出预设。</span>
+            <span className="settings-preset-desc">输入内测码后可使用更多槽位。</span>
           </span>
         </button>
       </div>
@@ -299,16 +290,10 @@ export function ExportSection({ onOpenLicense }: ExportSectionProps) {
         ))}
       </div>
       <div className="settings-section-actions">
-        {activePage !== 'library' && (
+        {activePage === 'custom' && (
           <button type="button" className="primary-action-button" onClick={() => inputRef.current?.click()}>
             <FileUp size={15} />
             导入 JSON
-          </button>
-        )}
-        {activePage === 'json' && (
-          <button type="button" className="settings-action-button" onClick={handleCopyTemplate}>
-            <Clipboard size={14} />
-            复制示例 JSON
           </button>
         )}
         <input
@@ -332,7 +317,6 @@ export function ExportSection({ onOpenLicense }: ExportSectionProps) {
               <div className="settings-preset-page-header">
                 <div>
                   <div className="settings-preset-group-title">预设库</div>
-                  <p className="settings-preset-desc">选择默认 Word 导出样式；内置预设可停用，至少保留一个可用预设。</p>
                 </div>
               </div>
               {builtInPresets.map((preset) => renderPresetItem(preset))}
@@ -344,7 +328,7 @@ export function ExportSection({ onOpenLicense }: ExportSectionProps) {
               <div className="settings-preset-page-header">
                 <div>
                   <div className="settings-preset-group-title">示例 JSON</div>
-                  <p className="settings-preset-desc">复制模板后可按需改名、改字体、改页边距，再导入为自定义预设。</p>
+                  <p className="settings-preset-desc">选中文本即可复制。</p>
                 </div>
               </div>
               <pre>{templateText}</pre>
@@ -356,7 +340,6 @@ export function ExportSection({ onOpenLicense }: ExportSectionProps) {
           <div className="settings-preset-preview" aria-label={`${selectedPreset.name} Word 单页纸预览`}>
             <div className="settings-preset-preview-meta">
               <span>{selectedPreset.name}</span>
-              <small>{selectedPreset.description}。点击纸张放大查看。</small>
             </div>
             <button
               type="button"
@@ -389,7 +372,6 @@ export function ExportSection({ onOpenLicense }: ExportSectionProps) {
             <div className="settings-preset-preview-zoom-header">
               <div>
                 <div className="settings-label">{selectedPreset.name}</div>
-                <div className="settings-desc">{selectedPreset.description}</div>
               </div>
               <button
                 type="button"

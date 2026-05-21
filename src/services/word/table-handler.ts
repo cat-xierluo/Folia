@@ -364,10 +364,7 @@ function textRun(
       ascii: config.inline_code.font,
     };
     options.size = ptToHalfPt(config.inline_code.size);
-    options.shading = {
-      type: 'clear',
-      fill: config.inline_code.color,
-    };
+    options.color = config.inline_code.color;
   }
 
   return new TextRun(options);

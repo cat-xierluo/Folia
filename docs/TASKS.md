@@ -30,6 +30,64 @@
 
 ## 待处理
 
+### 文档与发布说明
+
+#### ISS-108 README 下载、首次运行、开发构建与作者信息完善
+
+- **优先级:** P1
+- **类型:** L1
+- **状态:** 已完成，待归档。
+- **问题:** README 的作者介绍偏简略，未体现作者律师身份与 LegalTech / AI 法律实务背景；下载说明没有明确指向 GitHub Releases；开发与构建部分过短，未区分普通用户下载、开发调试和本地构建；macOS 首次运行未说明隔离属性处理命令。后续复验确认 README 不需要面向普通读者展示发布流程或 Tauri updater 细节。
+- **建议实现:**
+  - 参考 Legal Skills README 的作者介绍方式，补充作者姓名、律师身份、技术类纠纷 / 知识产权 / 数据与 AI 方向，以及 AI 技术应用于法律实务的背景。
+  - README 新增“下载与安装”说明，普通用户统一从 GitHub Releases 下载最新版本。
+  - README 新增 macOS 首次运行命令，说明复制到 `/Applications` 后可移除 quarantine 属性。
+  - 梳理开发、验证与构建说明，区分 `npm run tauri dev`、`npm run build` 和本地桌面打包命令；不展示发布、签名、manifest 或 updater 内部流程。
+- **验收:** README 能同时服务普通下载用户和开发者；macOS 首次运行命令可直接复制；作者介绍比当前 GitHub 链接更完整；CHANGELOG 与工作日志同步记录。
+- **实现:** README 新增下载与安装、macOS 首次运行、开发环境、验证命令和构建分区；普通用户下载指向 GitHub Releases；macOS 首次运行提供 `xattr -dr com.apple.quarantine /Applications/Folia.app`；作者区补充杨卫薪律师身份、技术类纠纷 / 知识产权 / 数据与 AI 背景、GitHub 与微信；新增 `npm run tauri:build:local` 作为本地桌面打包命令，README 不再展示发布、签名、manifest 或 Tauri updater 内部说明；CHANGELOG 与 DECISIONS 已同步记录。
+
+### 设置与导出体验
+
+#### ISS-109 HTML 导出自定义槽位与预览说明继续减法
+
+- **优先级:** P1
+- **类型:** L1
+- **状态:** 已完成，待复验。
+- **问题:** HTML 导出自定义槽位页仍提供手写 CSS 并保存为预设的表单，要求用户在设置页直接撰写 CSS，负担过重；Word / HTML 预览侧又重复展示预设描述和点击说明，与预设列表中的说明重复。用户同时确认软件图标和微信二维码应随应用本地打包，不能依赖远程图片。
+- **建议实现:**
+  - HTML 导出自定义槽位只保留“导入 CSS 预设文件”和已有自定义预设导出，不再提供手写 CSS 表单。
+  - 空槽位点击直接触发 CSS 预设文件导入。
+  - Word / HTML 设置页右侧预览只显示预设名，不重复展示描述和“点击放大”说明；放大预览标题也保持简洁。
+  - 核对 About 页图标与二维码是否使用本地打包资源。
+- **验收:** HTML 自定义槽位页不再出现名称、说明、CSS textarea 和“保存 CSS 预设”；预览侧文字明显减少；图标和二维码确认来自本地 bundle。
+- **实现:** HTML 导出自定义槽位页移除手写 CSS 表单和粘贴 JSON 导入区，只保留文件导入与当前自定义预设导出；文件导入支持 `.css` 纯样式文件和 `.json` 预设文件。Word / HTML 预览卡片与放大预览只显示预设名，示例页说明压缩为“选中文本即可复制”。About 页继续通过 `new URL(...)` 引入本地图标和微信二维码，构建时随前端资源一起打包。
+
+#### ISS-106 设置页首次打开动效与导出示例页精简
+
+- **优先级:** P1
+- **类型:** L1
+- **状态:** 已完成，待复验。
+- **问题:** 设置页第一次打开时会先显示变暗遮罩，再弹出设置窗口，观感不流畅；Word 导出的 JSON 示例页和 HTML 导出的 CSS 示例页仍保留复制/导入等冗余按钮，CSS 示例页还展示“不支持的写法”和“安全预检结果”，超出用户查看示例的主路径。
+- **建议实现:**
+  - 设置页懒加载时使用完整窗口骨架占位，并在应用启动空闲期或设置按钮 hover/focus 时预加载 Settings 组件。
+  - Word / JSON 示例页仅展示可选中文本的 JSON 示例，不提供“导入 JSON / 复制示例 JSON”顶部按钮。
+  - HTML / CSS 示例页仅展示可选中文本的 CSS 示例，不提供复制 CSS、复制 CSS 预设 JSON 或当前 CSS 预设导出按钮，也不展示“不支持的写法”和安全预检结果。
+- **验收:** 首次打开设置页不再出现只有遮罩的空白阶段；两个示例页只保留示例内容本身；现有自定义槽位导入/保存能力不回退。
+- **实现:** `AppLayout` 对 Settings 组件增加启动空闲预加载和设置按钮 hover/focus 预加载，懒加载 fallback 改为完整设置窗口骨架并补轻量进入动效；Word / JSON 示例页移除顶部“导入 JSON / 复制示例 JSON”，HTML / CSS 示例页移除复制 CSS、复制 CSS 预设 JSON、当前 CSS 预设导出、“不支持的写法”和“安全预检结果”，示例页只保留可选中文本。
+
+#### ISS-107 Word 导出与纸张预览样式一致性复核
+
+- **优先级:** P1
+- **类型:** L1
+- **状态:** 已完成，待复验。
+- **问题:** Word 纸张预览和真实 `.docx` 导出在部分元素上不一致。初步对照 md2word skill 后，差异集中在段落首行缩进单位、列表/引用/代码块缩进、行内代码颜色、引用背景、代码块和分割线等预览样式映射。
+- **建议实现:**
+  - 修正导出段落首行缩进的字符单位换算，使 `2` 个字符对应 12pt 字号下的 24pt 缩进，而不是双倍缩进。
+  - 将列表、引用、代码块的 `24` 缩进按 pt 换算到 docx twips，并让预览使用同一单位。
+  - 让行内代码使用字体颜色而非背景填充；预览补齐行内代码、代码块、引用、列表、分割线、表格行高等样式变量。
+- **验收:** Word 预览中的普通段落、列表、引用、代码块、行内代码、分割线和表格密度更接近导出的 Word；相关单元测试通过。
+- **实现:** 对照 md2word skill 修正 `.docx` 导出单位：正文首行缩进按“字符数 × 字号”换算，列表/引用/代码块缩进按 pt 换算为 twips，图片最大宽度按正文可用宽度与预设比例共同约束；行内代码改为字体颜色，引用块补背景。Word 纸张预览新增列表、引用、代码块、行内代码、分割线、表格行高等 CSS 变量和样式映射，并补充回归测试。
+
 ### HTML 演示预览
 
 > 背景：用户经常用 HTML 制作演示文稿，希望 Folia 不仅能把 Markdown 导出为 HTML，也能直接打开一份现成 HTML 演示并运行其翻页交互，减少依赖浏览器打开的割裂感。该能力与现有“HTML 导出 / 复制到公众号编辑器”不是同一功能：前者是受信任 HTML 运行环境，后者是 Markdown 内容的安全导出预览。
@@ -168,10 +226,10 @@
   - Settings / HTML 导出采用二级页：`预设库`、`自定义槽位`、`CSS 示例`。
   - `预设库` 展示内置 HTML 主题，可选择默认预设，可启用 / 停用内置预设。
   - `自定义槽位` 参考 Word 导出的 2 个常规槽位模型，支持保存用户 CSS 预设、删除、恢复、选择默认预设。
-  - `CSS 示例` 提供可复制模板，说明支持的安全选择器范围和不支持的全局选择器 / at-rule / URL 资源。
+  - `CSS 示例` 提供可选中复制的轻量模板；安全选择器范围由导入 / 保存校验承担，不在示例页堆叠规则说明。
   - 小型 HTML 文章预览只在 `预设库` 和 `自定义槽位` 中显示，便于比较不同预设的标题、正文、引用、表格、代码块效果；`CSS 示例` 使用全宽内容区。
 - **验收:** 设置页信息密度接近 Word 导出，不同二级页职责清晰；用户能新建、选择、删除自定义 HTML CSS 预设。
-- **实现:** Settings / HTML 导出新增 `预设库 / 自定义槽位 / CSS 示例` 二级页；支持启用 / 停用内置主题、保存 / 删除 / 选择 2 个常规自定义 CSS 槽位、复制示例 CSS 和 CSS 预设交换 JSON、导入 CSS 预设，并仅在预设库与自定义槽位显示小型 HTML 文章预览。
+- **实现:** Settings / HTML 导出新增 `预设库 / 自定义槽位 / CSS 示例` 二级页；支持启用 / 停用内置主题、导入 / 删除 / 选择 2 个常规自定义 CSS 槽位、导入 CSS 预设文件和导出当前 CSS 预设 JSON，并仅在预设库显示小型 HTML 文章预览；CSS 示例页仅保留可选中示例文本。
 
 #### ISS-098 HTML 导出服务：预设驱动复制与导出
 
@@ -195,10 +253,10 @@
 - **问题:** Word 导出已有 JSON 预设导入思路，HTML 导出也需要可迁移的自定义 CSS 预设格式，便于用户备份和分享。
 - **建议实现:**
   - 设计 HTML CSS 预设 JSON 格式，包含 `id`、`name`、`description`、`css`、可选 `base`。
-  - 支持复制 CSS 预设交换 JSON 示例、导入 CSS 预设到空槽位、导出现有自定义 CSS 预设。
+  - 支持在自定义槽位页导入 CSS 预设到空槽位、导出现有自定义 CSS 预设；CSS 示例页不提供额外复制按钮。
   - 导入时做 schema 校验和 CSS 安全预检，错误信息应能指出是 JSON 格式错误还是 CSS 选择器 / declaration 不支持。
 - **验收:** 用户可把一个 HTML 导出 CSS 预设导出为 JSON，再重新导入到自定义槽位。
-- **实现:** HTML CSS 预设交换 JSON 格式包含 `id`、`name`、`description`、`css` 和可选 `base`；设置页支持复制 CSS 预设 JSON、粘贴或文件导入 CSS 预设、导出当前自定义 CSS 预设。导入错误区分 JSON 格式错误与 CSS 不支持。
+- **实现:** HTML CSS 预设交换 JSON 格式包含 `id`、`name`、`description`、`css` 和可选 `base`；自定义槽位页支持通过 `.css` 样式文件或 `.json` 预设文件导入 CSS 预设、导出当前自定义 CSS 预设。导入错误区分 JSON 格式错误与 CSS 不支持。
 
 #### ISS-100 HTML 导出预设：测试与迁移文档
 
@@ -226,7 +284,7 @@
   - 调整 Settings / Word 导出二级页：`预设库`、`自定义槽位`、`JSON 示例` 各自填满右侧内容区；`预设库` 中显示 Word 纸张预览，`自定义槽位` 和 `JSON 示例` 不显示纸张预览。
   - 调整 Settings / HTML 导出二级页：`预设库`、`自定义槽位`、`CSS 示例` 横向铺开并填满右侧内容区；HTML 文章预览默认只在 `预设库` 显示，必要时可在 `自定义槽位` 显示用于校验 CSS 效果，但不在 `CSS 示例` 中常驻。
   - 收敛内置 HTML 预设库：默认只保留少量简单、通用的内置预设；“刘小排红”“大成紫金”等更强风格主题不作为默认内置项展示，留给用户通过自定义槽位导入 / 配置。
-  - 明确 HTML 自定义槽位语义：用户保存的是 CSS 预设；按钮和导入入口文案应表达“保存 CSS 预设 / 导入 CSS 预设”，避免让用户误以为必须导入 JSON 才能配置 CSS。JSON 可作为高级交换格式或示例，不应抢占主路径。
+  - 明确 HTML 自定义槽位语义：用户管理的是 CSS 预设；按钮和导入入口文案应表达“导入 CSS 预设文件 / 导出当前 CSS 预设”，避免让用户误以为必须在设置页手写 CSS。JSON 保留为高级交换格式，不抢占主路径。
 - **验收:**
   - Word / HTML 两个设置分区的标题、二级导航、页面铺展和操作文案一致；无混用大小写和“Jason”等错误写法。
   - Word 设置页只有 `预设库` 显示纸张预览；HTML 设置页不在 `CSS 示例` 中显示文章预览。
@@ -591,7 +649,7 @@
   - 内测授权槽位只提供“前往授权”入口，不在 Word 导出页内展开商业化说明。
   - 首屏优先让用户完成一个任务，不同时展示全部内置预设、自定义槽位、JSON 示例和大预览；需要减少边框和重复分割线。
 - **验收:** Word 导出设置首屏不再同时堆叠内置预设和自定义槽位；用户能在二级页之间切换；当前预设和纸张预览仍清晰可见；导入 JSON 流程不增加额外步骤。
-- **实现:** Settings / Word 导出内容区新增二级页签：`预设库`、`自定义槽位`、`JSON 示例`。预设库只展示内置预设，自定义页展示 2 个常规槽位、历史兼容和内测授权提示，JSON 页展示可复制模板；右侧 Word 单页纸预览作为共享预览保留并支持点击放大。导入按钮只在自定义槽位和 JSON 示例页显示。
+- **实现:** Settings / Word 导出内容区新增二级页签：`预设库`、`自定义槽位`、`JSON 示例`。预设库只展示内置预设，自定义页展示 2 个常规槽位、历史兼容和内测授权提示，JSON 页展示可选中示例模板；右侧 Word 单页纸预览作为共享预览保留并支持点击放大。导入按钮只在自定义槽位显示。
 
 #### ISS-085 关于作者区重排
 
@@ -729,7 +787,10 @@
 
 ## 进度日志
 
-- **2026-05-21** 完成 ISS-095 ~ ISS-100：将“公众号导出”提升为与 Word 导出并列的“HTML 导出”体系；设置导航、工具栏和右侧面板改为 HTML 导出 / HTML 预览语义，保留“复制到公众号编辑器”动作。新增 3 套简单通用内置 HTML 主题、2 个常规自定义 CSS 槽位、CSS 示例、CSS 预设交换 JSON、旧 `wechatCustomCss` 自动迁移和相关单元 / 组件 / E2E 回归。
+- **2026-05-21** 完成 ISS-109：HTML 导出自定义槽位移除设置页内手写 CSS 表单和粘贴导入区，改为导入 `.css` 样式文件或 `.json` 预设文件；Word / HTML 设置页预览侧只显示预设名，示例页说明压缩为“选中文本即可复制”。关于页图标与微信二维码确认通过本地资源打包，生产构建产物包含 `folia-icon` 与 `wechat-qr` 图片。验证：`npm test -- src/services/wechatPreviewService.test.ts src/services/wordPreviewStyle.test.ts src/services/word/parser.test.ts src/services/word/formatter.test.ts src/services/word/table-handler.test.ts`、`npx tsc --noEmit`、`npm run lint`、`npx playwright test e2e/layout-behavior.spec.ts --grep "HTML export settings|Word export settings|settings modal"`、`npm run build`、`git diff --check` 均通过。
+- **2026-05-21** 完成 ISS-108：README 补充普通用户下载入口、macOS 首次运行 quarantine 处理命令、开发 / 验证 / 构建说明，并参考 Legal Skills 项目完善作者介绍；复验后移除发布流程和 Tauri updater 内部说明。
+- **2026-05-21** 完成 ISS-106 / ISS-107：设置页首次打开改为预加载 + 完整 modal 骨架 fallback，并补轻量进入动效，避免只先变暗；Word / JSON 示例页和 HTML / CSS 示例页精简为只展示可选中示例文本，相关复制/导入/导出按钮回收到自定义槽位页。Word 导出修正首行缩进、列表/引用/代码块缩进、行内代码颜色和图片宽度约束，Word 纸张预览补齐列表、引用、代码块、行内代码、分割线、表格行高等样式映射。验证：`npm test -- src/services/wordPreviewStyle.test.ts src/services/word/parser.test.ts src/services/word/formatter.test.ts src/services/word/table-handler.test.ts`、`npx tsc --noEmit`、`npm run lint`、`npx playwright test e2e/layout-behavior.spec.ts --grep "HTML export settings|Word export settings|settings modal"`、`npm run build`、`git diff --check` 均通过。
+- **2026-05-21** 完成 ISS-095 ~ ISS-100：将“公众号导出”提升为与 Word 导出并列的“HTML 导出”体系；设置导航、工具栏和右侧面板改为 HTML 导出 / HTML 预览语义，保留“复制到公众号编辑器”动作。新增 3 套简单通用内置 HTML 主题、2 个常规自定义 CSS 槽位、CSS 示例、CSS 预设文件导入 / JSON 交换、旧 `wechatCustomCss` 自动迁移和相关单元 / 组件 / E2E 回归。
 - **2026-05-21** 完成 ISS-101：统一 Word / HTML 导出设置页的二级页布局和预览策略；Word 纸张预览只在预设库显示，HTML 文章预览只在预设库和自定义槽位显示；HTML 内置预设收敛为 3 套简单通用主题，自定义槽位主路径改为 CSS 预设语义。验证：`npm test -- src/services/wechatPreviewService.test.ts src/services/settingsService.test.ts src/components/WechatPreviewPane.test.tsx`、`npm run lint`、`npx tsc --noEmit`、`npm run build`、`npx playwright test e2e/layout-behavior.spec.ts --grep "HTML export settings|Word export settings"`、`git diff --check` 均通过。
 - **2026-05-21** 完成 ISS-103：Settings 新增“授权”页面，Word / HTML 自定义槽位页的锁定槽位可跳转输入内测码；`licenseService` 负责本地内测码验证和授权缓存；授权启用后 Word / HTML 自定义槽位上限从 2 提升到 8。可见文案统一为“内测授权 / 内测码”。
 - **2026-05-21** 完成 ISS-104：主 Markdown 显示区域继续压缩上下留白，WYSIWYG / Live Preview 顶底 padding 降至 10px，普通预览和稳定 HTML table 预览同步收紧，Floating TOC 起点上移且长 TOC 可在状态栏上方内部滚动；Playwright 布局回归已收紧到 8px ~ 12px 阈值。

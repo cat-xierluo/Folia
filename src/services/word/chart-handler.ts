@@ -3,6 +3,7 @@ import {
   TextRun,
 } from 'docx';
 import type { PresetConfig } from './types';
+import { ptToTwip } from './formatter';
 
 /**
  * 从 Mermaid 源码创建 Word 段落（文本回退方案）
@@ -70,11 +71,12 @@ export function parseFlowchart(
   }
 
   const { content_font, left_indent, line_spacing } = config.code_block;
+  const leftIndent = ptToTwip(left_indent);
 
   const paragraphs: Paragraph[] = [
     new Paragraph({
       spacing: { after: line_spacing * 20 },
-      indent: { left: left_indent },
+      indent: { left: leftIndent },
       children: [
         new TextRun({
           text: '[流程图]',
@@ -119,7 +121,7 @@ export function parseFlowchart(
         paragraphs.push(
           new Paragraph({
             spacing: { after: line_spacing * 20 },
-            indent: { left: left_indent },
+            indent: { left: leftIndent },
             children: [
               new TextRun({
                 text: path.join(' → '),
@@ -138,7 +140,7 @@ export function parseFlowchart(
     paragraphs.push(
       new Paragraph({
         spacing: { after: line_spacing * 20 },
-        indent: { left: left_indent },
+        indent: { left: leftIndent },
         children: [
           new TextRun({
             text: labelList,
@@ -193,11 +195,12 @@ export function parseSequence(
   }
 
   const { content_font, left_indent, line_spacing } = config.code_block;
+  const leftIndent = ptToTwip(left_indent);
 
   const paragraphs: Paragraph[] = [
     new Paragraph({
       spacing: { after: line_spacing * 20 },
-      indent: { left: left_indent },
+      indent: { left: leftIndent },
       children: [
         new TextRun({
           text: '[时序图]',
@@ -216,7 +219,7 @@ export function parseSequence(
     paragraphs.push(
       new Paragraph({
         spacing: { after: line_spacing * 20 },
-        indent: { left: left_indent },
+        indent: { left: leftIndent },
         children: [
           new TextRun({
             text: `参与者: ${names}`,
@@ -235,7 +238,7 @@ export function parseSequence(
     paragraphs.push(
       new Paragraph({
         spacing: { after: line_spacing * 20 },
-        indent: { left: left_indent },
+        indent: { left: leftIndent },
         children: [
           new TextRun({
             text: `${resolve(msg.from)} → ${resolve(msg.to)}: ${msg.text}`,
@@ -283,11 +286,12 @@ export function parsePie(
   }
 
   const { content_font, left_indent, line_spacing } = config.code_block;
+  const leftIndent = ptToTwip(left_indent);
 
   const paragraphs: Paragraph[] = [
     new Paragraph({
       spacing: { after: line_spacing * 20 },
-      indent: { left: left_indent },
+      indent: { left: leftIndent },
       children: [
         new TextRun({
           text: `[${title}]`,
@@ -304,7 +308,7 @@ export function parsePie(
     paragraphs.push(
       new Paragraph({
         spacing: { after: line_spacing * 20 },
-        indent: { left: left_indent },
+        indent: { left: leftIndent },
         children: [
           new TextRun({
             text: `• ${item.label}: ${item.value}`,
@@ -369,11 +373,12 @@ export function parseGantt(
   }
 
   const { content_font, left_indent, line_spacing } = config.code_block;
+  const leftIndent = ptToTwip(left_indent);
 
   const paragraphs: Paragraph[] = [
     new Paragraph({
       spacing: { after: line_spacing * 20 },
-      indent: { left: left_indent },
+      indent: { left: leftIndent },
       children: [
         new TextRun({
           text: '[甘特图]',
@@ -390,7 +395,7 @@ export function parseGantt(
     paragraphs.push(
       new Paragraph({
         spacing: { after: line_spacing * 20 },
-        indent: { left: left_indent },
+        indent: { left: leftIndent },
         children: [
           new TextRun({
             text: `• ${task.name} (${task.detail})`,
@@ -417,6 +422,7 @@ export function createCodeFallback(
   config: PresetConfig,
 ): Paragraph[] {
   const { content_font, left_indent, line_spacing } = config.code_block;
+  const leftIndent = ptToTwip(left_indent);
   const lines = code.split('\n');
 
   const paragraphs: Paragraph[] = [];
@@ -426,7 +432,7 @@ export function createCodeFallback(
     paragraphs.push(
       new Paragraph({
         spacing: { after: 0 },
-        indent: { left: left_indent },
+        indent: { left: leftIndent },
         children: [
           new TextRun({
             text: language,
@@ -446,7 +452,7 @@ export function createCodeFallback(
     paragraphs.push(
       new Paragraph({
         spacing: { after: line_spacing * 20 },
-        indent: { left: left_indent },
+        indent: { left: leftIndent },
         children: [
           new TextRun({
             text: line || ' ',

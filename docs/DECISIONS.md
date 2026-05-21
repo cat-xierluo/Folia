@@ -2,6 +2,56 @@
 
 ## 第一部分：决策记录
 
+### [DEC-041] - 2026-05-21 - HTML 自定义槽位改为文件导入，导出预览侧保持极简
+
+**背景**
+用户继续复验 HTML 导出设置后指出：让用户在设置页直接撰写 CSS 太累，自定义槽位应改为导入 CSS 预设文件；Word / HTML 设置页右侧预览不应重复显示预设说明或“点击放大”提示；设置页文案整体也应更克制。同时用户确认 Folia 图标和微信二维码不能依赖远程 GitHub 图片。
+
+**决策**
+- HTML 导出自定义槽位不再提供名称、说明、CSS textarea 和保存按钮；空槽位点击即触发文件导入。
+- 导入入口支持 `.css` 纯样式文件和现有 `.json` 预设文件；纯 CSS 文件使用文件名生成预设名和自定义预设 id，仍通过同一套安全 CSS 校验。
+- Word / HTML 设置页预览卡片和放大预览标题只显示预设名，不重复展示预设描述或点击说明。
+- 示例页说明收敛为“选中文本即可复制”，导入、导出等动作留在自定义槽位页。
+- 关于页图标和微信二维码继续通过 `new URL(...)` 引入本地文件：`src/assets/folia-icon.png` 与 `docs/wechat-qr.png`，交由 Vite / Tauri 构建打包。
+
+**验证**
+- `npm test -- src/services/wechatPreviewService.test.ts src/services/wordPreviewStyle.test.ts src/services/word/parser.test.ts src/services/word/formatter.test.ts src/services/word/table-handler.test.ts`
+- `npx tsc --noEmit`
+- `npm run lint`
+- `npx playwright test e2e/layout-behavior.spec.ts --grep "HTML export settings|Word export settings|settings modal"`
+- `npm run build`
+- `git diff --check`
+
+**影响**
+- HTML 自定义预设的主路径从“在设置页写 CSS”改为“导入已有 CSS / JSON 预设文件”。
+- 设置页右侧预览只承担视觉比较职责，文字噪音减少。
+- 应用图标和微信二维码随包分发，离线或弱网环境下关于页仍能显示。
+
+### [DEC-040] - 2026-05-21 - 设置示例页保持只读示例，Word 预览继续贴近导出
+
+**背景**
+用户复验设置页后指出两个问题：第一次打开设置页时会先变暗再弹出窗口，观感不流畅；Word / JSON 示例页和 HTML / CSS 示例页中的复制、导入、预设 JSON、安全预检等按钮和说明过多，不符合“直接选中示例内容复制”的轻量预期。同时用户反馈 Word 导出和纸张预览仍有不一致，需要对照 md2word skill 继续校准。
+
+**决策**
+- Settings 组件继续按需加载，但启动空闲期和设置按钮 hover/focus 时预加载；懒加载 fallback 必须呈现完整设置窗口骨架，避免只显示变暗遮罩。
+- Word / JSON 示例页、HTML / CSS 示例页只承载示例文本，不提供复制、导入、导出当前预设等顶部按钮；导入和导出类动作都回到自定义槽位页。
+- CSS 示例页不再展示“不支持的写法”和“安全预检结果”；安全限制仍由导入/保存服务校验，示例页不承担规则手册职责。
+- Word 预览样式继续以 `PresetConfig` 为唯一来源，补齐列表、引用、代码块、行内代码、分割线、表格行高等映射。
+- `.docx` 导出中的缩进单位按 md2word 约定校准：首行缩进的 `2` 表示两个正文字符，列表/引用/代码块的 `24` 表示 pt，写入 docx 时再换算为 twips。
+
+**验证**
+- `npm test -- src/services/wordPreviewStyle.test.ts src/services/word/parser.test.ts src/services/word/formatter.test.ts src/services/word/table-handler.test.ts`
+- `npx tsc --noEmit`
+- `npm run lint`
+- `npx playwright test e2e/layout-behavior.spec.ts --grep "HTML export settings|Word export settings|settings modal"`
+- `npm run build`
+- `git diff --check`
+
+**影响**
+- 设置页首次打开不再出现单独遮罩先行的视觉断层。
+- 示例页更接近只读代码样例，用户按系统选区复制即可。
+- Word 纸张预览与导出 Word 在常见段落、列表、引用、代码、表格和图片宽度上更一致。
+
 ### [DEC-039] - 2026-05-21 - HTML 演示预览必须与安全阅读预览分离
 
 **背景**
@@ -880,6 +930,19 @@ Vditor.preview() 是纯渲染方法，不需要引入完整编辑器。实测可
 - CSP 需保留 `'unsafe-eval'`（Vditor 动态加载资源需要）
 
 ## 第二部分：工作日志
+
+### 2026-05-21 (Codex)
+
+- **目标:** 按用户反馈完善 README，让普通用户能直接找到下载入口、macOS 首次运行命令，同时让开发者看清开发和本地构建路径。
+- **操作:**
+  1. 参考 Legal Skills README 的作者介绍方式，补充杨卫薪律师身份、技术类纠纷 / 知识产权 / 数据与 AI 方向，以及 AI 技术应用于法律实务的背景。
+  2. README 新增“下载与安装”，普通用户统一指向 GitHub Releases，并区分 macOS Apple Silicon、macOS Intel 与 Windows 安装包。
+  3. README 新增 macOS 首次运行的 `xattr -dr com.apple.quarantine /Applications/Folia.app` 命令，并说明只对可信来源应用执行。
+  4. README 重写开发、验证和构建说明，区分前端构建、桌面开发和本地打包；按复验反馈移除发布流程、签名、manifest 和 Tauri updater 内部说明。
+  5. 新增 `npm run tauri:build:local`，让本地桌面打包不需要在 README 中解释发布签名参数。
+  6. 同步更新 `docs/TASKS.md` 与 `CHANGELOG.md`。
+- **验证:** 文档改动已通过 Markdown 结构检查与 `git diff --check`。
+- **结果:** ISS-108 完成；README 同时覆盖普通下载用户、macOS 首次运行用户和本地构建开发者，不再面向普通读者展示发布维护流程。
 
 ### 2026-05-20 (Codex)
 

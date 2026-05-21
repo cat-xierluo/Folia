@@ -1,7 +1,7 @@
 {
   "name": "folia",
   "private": true,
-  "version": "0.3.8",
+  "version": "0.3.9",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -11,6 +11,7 @@
     "test:e2e": "playwright test",
     "preview": "vite preview",
     "tauri": "tauri",
+    "tauri:build:local": "tauri build --config '{\"bundle\":{\"createUpdaterArtifacts\":false}}'",
     "tauri:build:update": "tauri build --config '{\"bundle\":{\"createUpdaterArtifacts\":true}}'",
     "updater:manifest": "node scripts/create-updater-manifest.mjs"
   },

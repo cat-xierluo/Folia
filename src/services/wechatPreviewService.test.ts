@@ -17,6 +17,7 @@ import {
   detectLocalRelativeImages,
   exportHtmlDocument,
   exportWechatHtmlDocument,
+  importHtmlExportPresetFromCss,
   importHtmlExportPresetFromJson,
   wrapWechatArticleHtml,
 } from './wechatPreviewService';
@@ -324,6 +325,20 @@ describe('wechatPreviewService', () => {
       css: 'body { color: red; }',
     }))).toThrow(/CSS 不支持/);
     expect(createHtmlExportPresetTemplateText()).toContain('"base": "html-wechat-style"');
+  });
+
+  it('creates custom HTML export presets from CSS files', () => {
+    const preset = importHtmlExportPresetFromCss(
+      '.folia-html-article h2 { color: rgb(1, 2, 3); }',
+      { fileName: '团队样式.css' },
+    );
+
+    expect(preset.id).toMatch(/^html-custom:css-/);
+    expect(preset.name).toBe('团队样式');
+    expect(preset.description).toBe('从 CSS 文件导入');
+    expect(preset.base).toBe('html-wechat-style');
+    expect(preset.css).toContain('.folia-html-article h2');
+    expect(() => importHtmlExportPresetFromCss('body { color: red; }', { fileName: 'bad.css' })).toThrow(/CSS 不支持/);
   });
 
   it('creates standalone clipboard HTML with inline article styles and remaining CSS', () => {

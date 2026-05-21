@@ -31,9 +31,17 @@ const PreviewPane = lazy(() =>
   import('../components/PreviewPane').then((module) => ({ default: module.PreviewPane })),
 );
 
-const SettingsPage = lazy(() =>
-  import('../components/SettingsPage').then((module) => ({ default: module.SettingsPage })),
-);
+const loadSettingsPage = () =>
+  import('../components/SettingsPage').then((module) => ({ default: module.SettingsPage }));
+
+let settingsPagePreload: ReturnType<typeof loadSettingsPage> | undefined;
+
+function preloadSettingsPage() {
+  settingsPagePreload ??= loadSettingsPage();
+  return settingsPagePreload;
+}
+
+const SettingsPage = lazy(preloadSettingsPage);
 
 const DocxPreviewPane = lazy(() =>
   import('../components/DocxPreviewPane').then((module) => ({ default: module.DocxPreviewPane })),
@@ -57,6 +65,29 @@ const HtmlTableEditor = lazy(() =>
 
 type AvailableUpdate = Extract<UpdateCheckResult, { status: 'available' }>;
 type RightPanelMode = 'none' | 'word' | 'wechat';
+
+function SettingsPageFallback() {
+  return (
+    <div className="settings-overlay settings-overlay--loading" aria-hidden="true">
+      <div className="settings-modal settings-modal-skeleton">
+        <div className="settings-modal-sidebar settings-skeleton-sidebar">
+          <div className="settings-skeleton-title" />
+          <div className="settings-skeleton-nav">
+            {Array.from({ length: 8 }, (_, index) => (
+              <div key={index} className="settings-skeleton-line" />
+            ))}
+          </div>
+        </div>
+        <div className="settings-modal-content settings-skeleton-content">
+          <div className="settings-skeleton-heading" />
+          <div className="settings-skeleton-row" />
+          <div className="settings-skeleton-row" />
+          <div className="settings-skeleton-row short" />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function extractToc(content: string): TocItem[] {
   const headings: TocItem[] = [];
@@ -95,6 +126,28 @@ export function AppLayout() {
     document.documentElement.dataset.theme = settings.theme;
     document.documentElement.style.colorScheme = settings.theme;
   }, [settings.theme]);
+
+  useEffect(() => {
+    let idleId: number | undefined;
+    const timeout = window.setTimeout(() => {
+      const preload = () => {
+        void preloadSettingsPage();
+      };
+
+      if ('requestIdleCallback' in window) {
+        idleId = window.requestIdleCallback(preload, { timeout: 1200 });
+      } else {
+        preload();
+      }
+    }, 500);
+
+    return () => {
+      window.clearTimeout(timeout);
+      if (idleId !== undefined && 'cancelIdleCallback' in window) {
+        window.cancelIdleCallback(idleId);
+      }
+    };
+  }, []);
 
   const handleOpen = useCallback(async () => {
     const { openFile } = await import('../services/fileService');
@@ -524,7 +577,13 @@ export function AppLayout() {
         onOpen={handleOpen}
         onSave={handleSave}
         onSaveAs={handleSaveAs}
-        onOpenSettings={() => setSettingsVisible(true)}
+        onOpenSettings={() => {
+          void preloadSettingsPage();
+          setSettingsVisible(true);
+        }}
+        onPreloadSettings={() => {
+          void preloadSettingsPage();
+        }}
       />
       <div
         ref={mainContentRef}
@@ -561,7 +620,7 @@ export function AppLayout() {
       </div>
       <StatusBar filePath={file.path} dirty={file.dirty} />
       {settingsVisible && (
-        <Suspense fallback={<div className="settings-overlay" />}>
+        <Suspense fallback={<SettingsPageFallback />}>
           <SettingsPage
             onClose={() => setSettingsVisible(false)}
             onUpdateAvailable={(update) => setUpdateDialog({ source: 'manual', update })}
