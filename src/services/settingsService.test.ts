@@ -2,17 +2,26 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   addCustomExportPreset,
+  addCustomHtmlExportPreset,
   CUSTOM_EXPORT_PRESET_LIMIT_MESSAGE,
+  CUSTOM_HTML_EXPORT_PRESET_LIMIT_MESSAGE,
   getExportPreset,
   getExportPresetConfig,
+  getHtmlExportPreset,
+  getHtmlExportPresetConfig,
   getSettings,
   listEnabledExportPresets,
+  listEnabledHtmlExportPresets,
   removeExportPreset,
   removeCustomExportPreset,
+  removeCustomHtmlExportPreset,
   setExportPreset,
   setExportPresetEnabled,
+  setHtmlExportPreset,
+  setHtmlExportPresetEnabled,
   updateSettings,
 } from './settingsService';
+import type { CustomHtmlExportPresetId, HtmlExportPreset } from './htmlExportPresets';
 import { importPresetFromJson, listPresets, type CustomPresetId, type PresetConfig } from './word';
 
 function customPreset(id: string, name: string) {
@@ -27,6 +36,21 @@ function customPreset(id: string, name: string) {
   }));
 }
 
+function customHtmlPreset(id: string, name: string): { id: CustomHtmlExportPresetId; preset: HtmlExportPreset } {
+  return {
+    id: `html-custom:${id}` as CustomHtmlExportPresetId,
+    preset: {
+      id: `html-custom:${id}` as CustomHtmlExportPresetId,
+      name,
+      description: `${name} HTML 样式`,
+      css: `.folia-html-article p { color: rgb(1, 2, 3); }`,
+      source: 'user',
+      kind: 'custom',
+      base: 'html-wechat-style',
+    },
+  };
+}
+
 describe('settingsService', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -35,11 +59,13 @@ describe('settingsService', () => {
   it('returns defaults when persisted settings are missing or invalid', () => {
     expect(getSettings().exportPresetId).toBe('legal');
     expect(getSettings().autoUpdateCheck).toBe(true);
+    expect(getSettings().wechatCustomCss).toBe('');
 
     localStorage.setItem('folia-settings', '{invalid json');
 
     expect(getSettings().exportPresetId).toBe('legal');
     expect(getSettings().autoUpdateCheck).toBe(true);
+    expect(getSettings().wechatCustomCss).toBe('');
   });
 
   it('migrates legacy export settings without recursive reads', () => {
@@ -54,14 +80,123 @@ describe('settingsService', () => {
 
   it('persists partial updates while preserving existing settings', () => {
     setExportPreset('report');
-    updateSettings({ editorFontSize: 16, locale: 'en-US' });
+    updateSettings({
+      editorFontSize: 16,
+      locale: 'en-US',
+      wechatCustomCss: '.folia-wechat-article p { color: red; }',
+    });
 
     expect(getSettings()).toMatchObject({
       exportPresetId: 'report',
       editorFontSize: 16,
       locale: 'en-US',
+      wechatCustomCss: '.folia-wechat-article p { color: red; }',
       previewWidth: 680,
     });
+  });
+
+  it('keeps old settings compatible with the default empty WeChat custom CSS', () => {
+    localStorage.setItem('folia-settings', JSON.stringify({
+      exportPresetId: 'report',
+      editorFontSize: 15,
+    }));
+
+    expect(getSettings()).toMatchObject({
+      exportPresetId: 'report',
+      editorFontSize: 15,
+      wechatCustomCss: '',
+    });
+  });
+
+  it('defaults HTML export to the built-in WeChat style preset', () => {
+    const settings = getSettings();
+
+    expect(settings.htmlExportPresetId).toBe('html-wechat-style');
+    expect(getHtmlExportPreset()).toBe('html-wechat-style');
+    expect(getHtmlExportPresetConfig().name).toBe('简洁图文');
+    expect(listEnabledHtmlExportPresets().map((preset) => preset.id)).toEqual([
+      'html-wechat-style',
+      'html-liuxiaopai',
+      'html-ai',
+      'html-dacheng',
+      'html-ip',
+    ]);
+  });
+
+  it('migrates legacy WeChat custom CSS into a default custom HTML export preset', () => {
+    localStorage.setItem('folia-settings', JSON.stringify({
+      wechatCustomCss: '.folia-wechat-article p { color: red; }',
+    }));
+
+    const settings = getSettings();
+
+    expect(settings.wechatCustomCss).toBe('.folia-wechat-article p { color: red; }');
+    expect(settings.htmlExportPresetId).toBe('html-custom:wechat-custom');
+    expect(settings.customHtmlExportPresets['html-custom:wechat-custom']).toMatchObject({
+      name: '旧公众号自定义 CSS',
+      base: 'html-wechat-style',
+      css: '.folia-wechat-article p { color: red; }',
+    });
+    expect(JSON.parse(localStorage.getItem('folia-settings') || '{}')).toMatchObject({
+      htmlExportPresetId: 'html-custom:wechat-custom',
+    });
+  });
+
+  it('filters disabled HTML export presets and falls back when the current preset is disabled', () => {
+    setHtmlExportPreset('html-liuxiaopai');
+
+    setHtmlExportPresetEnabled('html-liuxiaopai', false);
+
+    expect(getHtmlExportPreset()).not.toBe('html-liuxiaopai');
+    expect(getSettings().disabledHtmlExportPresetIds).toContain('html-liuxiaopai');
+    expect(listEnabledHtmlExportPresets().map((preset) => preset.id)).not.toContain('html-liuxiaopai');
+  });
+
+  it('keeps at least one enabled HTML export preset when all built-ins are disabled', () => {
+    updateSettings({
+      disabledHtmlExportPresetIds: [
+        'html-wechat-style',
+        'html-liuxiaopai',
+        'html-ai',
+        'html-dacheng',
+        'html-ip',
+      ],
+    });
+
+    expect(getHtmlExportPreset()).toBe('html-wechat-style');
+    expect(getSettings().disabledHtmlExportPresetIds).not.toContain('html-wechat-style');
+    expect(listEnabledHtmlExportPresets()).toHaveLength(1);
+  });
+
+  it('limits standard users to two custom HTML export preset slots', () => {
+    const first = customHtmlPreset('team-a', '团队 HTML A');
+    const second = customHtmlPreset('team-b', '团队 HTML B');
+    const third = customHtmlPreset('team-c', '团队 HTML C');
+
+    addCustomHtmlExportPreset(first.id, first.preset);
+    addCustomHtmlExportPreset(second.id, second.preset);
+
+    expect(() => addCustomHtmlExportPreset(third.id, third.preset)).toThrow(CUSTOM_HTML_EXPORT_PRESET_LIMIT_MESSAGE);
+    expect(Object.keys(getSettings().customHtmlExportPresets)).toEqual(['html-custom:team-a', 'html-custom:team-b']);
+    expect(getHtmlExportPreset()).toBe('html-custom:team-b');
+  });
+
+  it('removes custom HTML presets and falls back to the default built-in preset', () => {
+    const imported = customHtmlPreset('brief', '团队 HTML');
+
+    addCustomHtmlExportPreset(imported.id, imported.preset);
+    removeCustomHtmlExportPreset(imported.id);
+
+    expect(getHtmlExportPreset()).toBe('html-wechat-style');
+    expect(getSettings().customHtmlExportPresets['html-custom:brief']).toBeUndefined();
+  });
+
+  it('normalizes non-string WeChat custom CSS from persisted settings', () => {
+    localStorage.setItem('folia-settings', JSON.stringify({
+      wechatCustomCss: { css: 'bad' },
+    }));
+
+    expect(getSettings().wechatCustomCss).toBe('');
   });
 
   it('persists automatic update check preference while defaulting to enabled', () => {

@@ -17,6 +17,9 @@ All notable changes to this project will be documented in this file.
 - 关于页新增 Folia 图标、项目地址、作者 GitHub 主页和微信二维码。
 - 新增默认浮动 TOC：文档有标题时显示左侧弱刻度，hover 或键盘聚焦展开标题列表，支持轨道点击固定和标题跳转。
 - 新增暗色模式，覆盖主界面、设置页、Word 预览外壳、Floating TOC 和编辑器容器。
+- 新增 HTML 预览入口与右侧预览面板：当前 Markdown 可渲染为 HTML 文章预览，并提示本地相对图片。
+- HTML 预览面板支持复制到公众号编辑器和导出 HTML：复制写入 `text/html` 与 `text/plain` fallback，导出文件包含完整 HTML 结构；正文节点已按当前 HTML 预设生成内联样式，同时保留文档级 CSS 作为兜底。
+- Settings 新增“HTML 导出”分区，提供 `预设库 / 自定义槽位 / CSS 示例` 二级页、5 套内置 HTML 主题、2 个常规自定义 CSS 槽位和预设 JSON 导入 / 导出。
 
 ### Changed
 
@@ -35,6 +38,7 @@ All notable changes to this project will be documented in this file.
 - 关于作者区改为作者信息与微信二维码两栏，移除微信号文字和作者业务方向描述。
 - Word 纸张预览中的超长 HTML 表格现在按行分页，并在分页片段中重复表头；含 `rowspan` 的行组会保守地保持在同一页。
 - Word 纸张预览的导出预设选择器改为 Folia 风格的轻量弹出列表，显示预设来源、说明和当前选中状态，并只展示已启用预设。
+- 右侧预览面板改为互斥模式：无面板、Word 预览、HTML 预览三种状态不会同时打开，并共用同一套右侧宽度拖拽逻辑。
 - Settings 侧栏标题默认从 `Settings` 改为“设置”。
 - 自动更新运行时 endpoint 暂时收敛为 GitHub Releases `latest.json`；Gitee 继续作为 Release 产物同步镜像，但不再写入客户端静态更新源，避免 Gitee 不支持 GitHub 风格 `/releases/latest/download/...` 直链导致更新检查先命中无效地址。
 - `scripts/create-updater-manifest.mjs` 改为从签名文件自动生成全平台 `latest.json` / `latest-gitee.json`，并在缺少必需平台签名时失败发布。

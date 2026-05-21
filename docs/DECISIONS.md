@@ -2,6 +2,73 @@
 
 ## 第一部分：决策记录
 
+### [DEC-034] - 2026-05-21 - 公众号复制并入 HTML 导出预设体系
+
+**背景**
+ISS-095 ~ ISS-100 要把前一阶段的公众号预览复制能力提升为与 Word 导出并列的 HTML 导出体系。公众号编辑器粘贴仍是重要使用场景，但设置、预览和导出不再以“公众号”作为整个信息架构的名称。
+
+**决策**
+- 用户可见命名统一为“HTML 导出 / HTML 预览”；右侧面板保留“复制到公众号编辑器”动作，明确它只是 HTML 导出的一个复制目标。
+- 保留 `wechatPreviewService.ts` 和 `WechatPreviewPane.tsx` 文件名作为兼容层，新增 HTML 导出模型和函数命名，避免在已有 worktree 大面积 rename 干扰并行改动。
+- HTML 导出预设模型包含 `id`、`name`、`description`、`css`、`source`、`kind` 和可选 `base`；内置预设整理自 md2wechat 主题 CSS，并在 `source` 中保留 MIT 许可说明。
+- 预设 CSS、自定义 CSS、复制 HTML 和导出 HTML 共用同一条安全管线：用户文档任意 `class/id` 不回流，CSS 选择器归一化到 `.folia-html-article`，危险 declaration、at-rule、全局选择器、复杂组合器、URL/变量/转义写法被过滤或导入前拒绝。
+- 旧 `wechatCustomCss` 自动迁移为 `html-custom:wechat-custom` 自定义预设，基于默认 `html-wechat-style` 主题追加 CSS，避免旧用户配置丢失。
+- HTML 导出设置采用 `预设库 / 自定义槽位 / CSS 示例` 二级页，并保留右侧小型文章预览；常规版本提供 2 个自定义 CSS 预设槽位，与 Word 导出槽位模型保持一致。
+
+**验证**
+- `npm test -- src/services/wechatPreviewService.test.ts src/services/settingsService.test.ts src/components/WechatPreviewPane.test.tsx`
+
+**影响**
+- 后续 HTML 导出能力可以继续扩展为更多目标格式或团队共享预设，而无需把设置体系绑定到公众号。
+- 历史 API 仍可通过 WeChat 命名兼容函数调用；新代码优先使用 HTML 导出命名。
+
+### [DEC-033] - 2026-05-20 - 公众号复制与导出共用内联样式 HTML 文档
+
+**背景**
+ISS-092/093 需要把公众号预览面板的复制和导出从占位推进到可用，同时支持用户自定义 CSS。复制链路既要适配微信公众号编辑器的富文本粘贴，也要在浏览器或 Tauri 权限受限时尽量保留纯文本 fallback。
+
+**决策**
+- `wechatPreviewService` 继续保持 Markdown 渲染结果的安全边界：用户文档中的任意 `class` / `id` 不恢复，只保留代码高亮相关 class。
+- 预览 HTML 仍是安全的公众号 `section`，右侧面板继续依赖文档级 CSS 展示，不强制内联样式。
+- 复制和导出使用同一份完整 HTML 文档：`doctype`、`html/head/body`、文档级公众号基础 CSS、代码高亮 CSS 和用户自定义 CSS；其中正文 article 会额外生成 inline-styled HTML，把主要默认公众号样式写入元素 `style` 属性，提升粘贴到公众号编辑器后的保真度。
+- 自定义 CSS 作为本地用户设置 `wechatCustomCss` 持久化，追加在默认样式之后，参与预览、复制和导出；仅保留并归一化安全作用域下的常见文章选择器，复杂选择器、全局选择器、at-rule、CSS 变量、CSS 转义值和危险 declaration 直接丢弃，避免影响文章外 DOM 或引入资源加载。
+- 复制优先使用 `navigator.clipboard.write([new ClipboardItem(...)])` 同时写入 `text/html` 与 `text/plain`；富文本写入不可用时回退 `navigator.clipboard.writeText(plainText)` 并在面板状态中提示。
+- 导出优先使用 Tauri `save` + `writeTextFile`，浏览器环境使用 Blob 下载；默认文件名由当前文档名去扩展名后追加 `-wechat.html`。
+
+**验证**
+- `npm test -- src/services/wechatPreviewService.test.ts src/services/settingsService.test.ts src/components/WechatPreviewPane.test.tsx`
+- `npm test`
+- `npm run lint`
+- `npx tsc --noEmit`
+- `npm run build`
+- `npx playwright test e2e/layout-behavior.spec.ts`
+- `git diff --check`
+
+**影响**
+- 用户可直接从公众号预览面板复制富文本或导出独立 HTML 文件，复制/导出内容不只依赖 `<style>`，正文节点也携带主要内联样式。
+- 后续如果新增代码行号、链接样式或主题预设，可继续扩展同一个设置分区和 HTML 文档生成函数。
+
+### [DEC-032] - 2026-05-20 - 公众号预览先作为右侧互斥预览面板接入
+
+**背景**
+ISS-090/091 需要把 md2wechat 的“公众号文章预览复制”能力第一阶段放进 Folia。当前范围只做预览复制的入口和基础渲染，不做公众号草稿箱发布、素材上传或图床；图片第一阶段只保证 `http(s)` 与 `data:`，本地相对图片先提示用户。
+
+**决策**
+- AppLayout 的右侧区域从单一 `wordPreviewVisible` 改为 `none / word / wechat` 三态面板，保证 Word 预览和公众号预览天然互斥，并复用同一套右侧宽度拖拽逻辑。
+- Toolbar 保持 icon-only 风格，在 Word 预览旁增加 `Newspaper` 语义图标作为公众号预览入口，沿用现有分组、hover 和 active 态。
+- 公众号预览组件继续复用 `Vditor.preview()` 渲染当前 Markdown，再经 `wechatPreviewService` 清洗和包装到公众号文章容器中显示；复制和导出按钮先作为 disabled 占位，留给后续 ISS 接入。
+- `wechatPreviewService` 只移植必要默认 CSS 与代码高亮 CSS，并在文件头记录 md2wechat / doocs/md 来源和 MIT 许可，不引入 md2wechat 的大体积打包 bundle。
+- 图片检测第一阶段聚焦本地相对路径，`http(s)` 与 `data:` 图片保持可预览且不提示。
+
+**验证**
+- `npm test -- src/services/wechatPreviewService.test.ts`
+- `npx tsc --noEmit`
+- 本地 Vite + Playwright 冒烟：打开公众号预览后再打开 Word 预览，确认右侧面板互斥切换。
+
+**影响**
+- 用户可从顶部栏进入公众号文章预览，预览面板保持 Folia 的暖底、低边线和克制工具风格。
+- 后续复制到公众号编辑器、导出 HTML、图片上传或素材转换将基于同一个服务与面板继续扩展。
+
 ### [DEC-031] - 2026-05-20 - HTML 表格结构化编辑器只替换单个源码区块
 
 **背景**

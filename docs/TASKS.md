@@ -30,6 +30,164 @@
 
 ## 待处理
 
+### HTML 导出与公众号复制
+
+> 背景：用户希望把 Obsidian 插件 `md2wechat` 的公众号文章预览复制能力集成进 Folia，并在 ISS-095 ~ ISS-100 中提升为与 Word 导出并列的 HTML 导出体系。复制到公众号编辑器是 HTML 导出的使用场景之一；不接入公众号草稿箱发布、AppID/Secret、素材上传或图床上传。
+
+#### ISS-090 公众号预览复制：右侧面板入口与布局
+
+- **优先级:** P1
+- **类型:** L2
+- **状态:** 已完成，待归档。
+- **问题:** Folia 当前已有 Word 预览导出面板，但没有公众号文章预览与复制入口；公众号能力应作为导出能力扩展，而不是混进 Word 预览内部。
+- **建议实现:**
+  - 在工具栏 Word 预览旁新增“公众号预览”入口，保持 icon-only 和现有 Folia 工具栏风格。
+  - 将右侧面板状态调整为互斥：无面板 / Word 预览 / 公众号预览，避免两个导出面板同时挤占主编辑区。
+  - 复用现有右侧拖拽宽度逻辑，公众号面板打开时不影响主编辑区、Floating TOC 和 HTML 阅读预览。
+- **验收:** 打开公众号面板、切回 Word 面板、关闭面板时布局不重叠、不溢出；工具栏 active 状态准确。
+- **实现:** 工具栏已在 Word 预览旁新增公众号预览入口；`AppLayout` 右侧面板改为 `none / word / wechat` 互斥状态，Word 预览和公众号预览共用右侧宽度、拖拽分隔条和 active 状态。
+
+#### ISS-091 公众号预览复制：Markdown 渲染与公众号样式
+
+- **优先级:** P1
+- **类型:** L2
+- **状态:** 已完成，待归档。
+- **问题:** md2wechat 插件提供公众号样式渲染，但其 Obsidian 打包入口约 2.3MB，直接搬进 Folia 会引入不必要的 Obsidian 运行时假设和维护负担。
+- **建议实现:**
+  - 新增公众号渲染服务，输入当前 Markdown / HTML 源码，输出预览 HTML、剪贴板 HTML、纯文本和警告信息。
+  - 第一版复用 Folia 现有 Vditor 渲染能力，避免直接搬运 md2wechat 的打包 bundle。
+  - 移植 md2wechat 默认公众号样式和默认代码高亮样式，并保留来源与许可证说明。
+  - 支持 `http(s)` 与 `data:` 图片；本地相对图片先展示提示，不做图床上传或素材上传。
+- **验收:** 标题、段落、列表、引用、代码块、表格、远程图片可正常预览；危险脚本和事件属性不会进入预览或复制输出。
+- **实现:** 新增 `wechatPreviewService` 和 `WechatPreviewPane`，复用 `Vditor.preview()` 生成渲染 HTML，再统一输出 `previewHtml`、`clipboardHtml`、`plainText` 与 warnings；内容清洗移除危险标签、事件属性、任意用户 `id` 和非高亮 class，本地相对图片显示提示。
+
+#### ISS-092 公众号预览复制：复制富文本与导出 HTML
+
+- **优先级:** P1
+- **类型:** L2
+- **状态:** 已完成，待归档。
+- **问题:** 公众号编辑器粘贴需要 `text/html` 富文本剪贴板内容，普通预览 HTML 的 class 样式不足以保证粘贴后保留主要排版。
+- **建议实现:**
+  - 在公众号预览面板内增加“复制”按钮，写入 `text/html` 和 `text/plain` 剪贴板内容。
+  - 复制前将公众号 CSS 内联到 HTML，保证粘贴到微信公众号编辑器后保留主要样式。
+  - 增加“导出 HTML”按钮，导出同一份内联样式 HTML。
+  - 复制失败时在面板内显示错误状态，不中断编辑。
+- **实现:** 公众号面板按钮已启用；复制优先使用 `ClipboardItem` 写入 `text/html` + `text/plain`，不可用时回退 `writeText(plainText)`；导出优先 Tauri save + `writeTextFile`，浏览器环境使用 Blob 下载；复制/导出共用同一份完整 HTML 文档，正文节点已内联主要公众号样式、代码高亮样式和安全作用域下的简单自定义 CSS，文档 `<style>` 只保留已归一化的安全文章选择器。
+- **验收:** 复制结果能粘贴到公众号编辑器或普通富文本编辑器；导出的 HTML 可独立打开。
+
+#### ISS-093 公众号导出设置：自定义 CSS
+
+- **优先级:** P1
+- **类型:** L2
+- **状态:** 已完成，待归档。
+- **问题:** 用户希望第一版就支持自定义 CSS，以便在默认公众号样式基础上微调文章排版。
+- **建议实现:**
+  - 新增 Settings / 公众号导出页面。
+  - 增加设置项：代码行号、链接样式、自定义 CSS 开关、自定义 CSS 编辑框。
+  - 自定义 CSS 追加在默认样式之后，允许覆盖默认公众号样式。
+  - 过滤不适合复制链路的危险 CSS：`@import`、`javascript:`、不可信远程 `url()`。
+- **实现:** Settings 新增“公众号”分区，持久化 `wechatCustomCss`；自定义 CSS 只支持安全作用域下的常见文章选择器，合法选择器会归一化到 `.folia-wechat-article` 下并参与预览、复制 HTML 和导出 HTML；复杂选择器、全局选择器、at-rule 和危险 declaration 会被丢弃。Markdown 渲染结果仍只保留安全标签、属性和高亮 class，不恢复用户文档任意 class/id。
+- **验收:** 设置持久化、预览实时响应；自定义 CSS 能覆盖默认样式但不破坏基础复制安全边界。
+
+#### ISS-094 公众号预览复制：测试与文档同步
+
+- **优先级:** P1
+- **类型:** L2
+- **状态:** 已完成，待归档。
+- **问题:** 公众号预览复制会新增导出链路、剪贴板行为和设置项，需要自动化测试与项目文档同步。
+- **建议实现:**
+  - 增加单元测试：设置默认值、CSS 内联、危险 CSS 过滤、链接样式、剪贴板 HTML 生成。
+  - 增加组件或 E2E 回归：公众号面板打开 / 关闭、与 Word 面板互斥、复制按钮状态。
+  - 更新 `docs/ROADMAP.md`：新增公众号预览复制阶段或放入导出能力扩展。
+  - 更新 `docs/DECISIONS.md`：记录不直接搬运 Obsidian 插件 bundle、第一版不做草稿箱发布 / 图床上传的决策。
+  - 更新 `CHANGELOG.md`：记录用户可见的公众号预览复制能力。
+- **验收:** `npm test` 和 `npx tsc --noEmit` 通过；文档与任务状态同步。
+- **实现:** 已补服务、组件和 Playwright 回归，覆盖公众号面板互斥、复制 fallback、HTML 导出、CSS 内联、安全 CSS 过滤、设置默认值和持久化；README、CHANGELOG、ROADMAP、DECISIONS 与本任务表已同步。
+
+#### ISS-095 HTML 导出：命名与信息架构重构
+
+- **优先级:** P1
+- **类型:** L2
+- **状态:** 已完成，待归档。
+- **问题:** 当前入口与设置仍以“公众号预览 / 公众号导出”为中心，但用户希望把能力提升为与 Word 导出并列的“HTML 导出”，公众号复制只是 HTML 导出的一个使用场景。
+- **建议实现:**
+  - 将设置导航从“公众号”调整为“HTML 导出”，工具栏和面板文案统一为“HTML 预览 / HTML 导出”或更贴合现有设计的短文案。
+  - 保留“复制到公众号编辑器”的动作语义，但不把整个设置体系命名为公众号。
+  - README、CHANGELOG、ROADMAP、DECISIONS 同步更新命名，避免后续文档中同时出现两套导出概念。
+- **验收:** 用户在设置页能清楚看到 Word 导出与 HTML 导出两套并列能力；现有公众号复制入口不丢失。
+- **实现:** 设置导航改为“HTML 导出”，工具栏与右侧面板改为“HTML 预览 / HTML 导出”语义；复制按钮保留“复制到公众号编辑器”。README、CHANGELOG、ROADMAP、DECISIONS 与 DESIGN 已同步当前命名。
+
+#### ISS-096 HTML 导出预设：内置主题库
+
+- **优先级:** P1
+- **类型:** L2
+- **状态:** 已完成，待归档。
+- **问题:** md2wechat 插件内已有多套 CSS 主题配置，当前 Folia 只有一套默认公众号样式和一个自定义 CSS 文本框，缺少可切换的 HTML 导出预设库。
+- **参考来源:** `/Users/maoking/Nutstore Files/xierluo-ob/.obsidian/plugins/md2wechat/assets/themes/`，当前可参考 `wechat-style.css`、`wechat-liuxiaopai.css`、`wechat-ai.css`、`wechat-dacheng.css`、`wechat-ip.css`。
+- **建议实现:**
+  - 新增 HTML 导出预设模型，字段至少包含 `id`、`name`、`description`、`css`、`source`。
+  - 将 md2wechat 的多套主题整理成 Folia 内置 HTML 导出预设，保留来源与 MIT 许可说明。
+  - 预设 CSS 进入现有安全作用域和内联样式管线，不允许恢复用户文档任意 `class/id`。
+  - 当前 `wechatCustomCss` 迁移为默认自定义预设或追加 CSS，避免用户已有配置丢失。
+- **验收:** HTML 预览面板可切换至少 5 套内置 CSS 主题；复制和导出使用当前选中预设。
+- **实现:** 新增 `HtmlExportPreset` 模型和 5 套内置主题，整理自 md2wechat `wechat-style.css`、`wechat-liuxiaopai.css`、`wechat-ai.css`、`wechat-dacheng.css`、`wechat-ip.css`，在 `source` 中保留 MIT 许可说明；旧 `wechatCustomCss` 自动迁移为 `html-custom:wechat-custom`，基于默认主题追加 CSS。
+
+#### ISS-097 HTML 导出设置：预设库、自定义槽位与 CSS 示例
+
+- **优先级:** P1
+- **类型:** L2
+- **状态:** 已完成，待归档。
+- **问题:** HTML 导出应复用 Word 导出的设置组织方式，提供预设库、自定义槽位和 CSS 示例，而不是单一 textarea。
+- **建议实现:**
+  - Settings / HTML 导出采用二级页：`预设库`、`自定义槽位`、`CSS 示例`。
+  - `预设库` 展示内置 HTML 主题，可选择默认预设，可启用 / 停用内置预设。
+  - `自定义槽位` 参考 Word 导出的 2 个常规槽位模型，支持保存用户 CSS 预设、删除、恢复、选择默认预设。
+  - `CSS 示例` 提供可复制模板，说明支持的安全选择器范围和不支持的全局选择器 / at-rule / URL 资源。
+  - 右侧保留小型 HTML 文章预览，便于比较不同预设的标题、正文、引用、表格、代码块效果。
+- **验收:** 设置页信息密度接近 Word 导出，不同二级页职责清晰；用户能新建、选择、删除自定义 HTML CSS 预设。
+- **实现:** Settings / HTML 导出新增 `预设库 / 自定义槽位 / CSS 示例` 二级页；支持启用 / 停用内置主题、保存 / 删除 / 选择 2 个常规自定义 CSS 槽位、复制示例 CSS/JSON、导入 JSON，并在右侧常驻小型 HTML 文章预览。
+
+#### ISS-098 HTML 导出服务：预设驱动复制与导出
+
+- **优先级:** P1
+- **类型:** L2
+- **状态:** 已完成，待归档。
+- **问题:** 当前 `wechatPreviewService` 直接使用默认 CSS + `wechatCustomCss`，后续需要改成由 HTML 导出预设驱动，才能支撑内置主题和自定义槽位。
+- **建议实现:**
+  - 将 `wechatPreviewService` 重命名或抽象为 HTML 导出服务，保留公众号复制兼容接口。
+  - `createWechatPreviewResult()` 或后续替代函数接收当前 HTML 导出预设配置，输出预览 HTML、内联复制 HTML、纯文本和 warnings。
+  - 内联样式规则由预设 CSS 生成，继续使用安全选择器归一化、危险 declaration 过滤和 CSS escape 防护。
+  - 导出文件名继续使用 `*-wechat.html` 或按新命名调整为 `*-html-export.html`，需在任务中明确最终文案。
+- **验收:** 切换 HTML 导出预设后，右侧预览、富文本复制和 HTML 导出三者保持一致。
+- **实现:** 保留 `wechatPreviewService` 文件名作为兼容层，新增 HTML 导出命名的结果、样式、内联、导出和 JSON 预设函数；预览、富文本复制和 `*-html-export.html` 导出共用当前 HTML 预设生成的安全 CSS 与 inline-styled article。
+
+#### ISS-099 HTML 导出预设：自定义 CSS 导入 / 导出格式
+
+- **优先级:** P2
+- **类型:** L2
+- **状态:** 已完成，待归档。
+- **问题:** Word 导出已有 JSON 预设导入思路，HTML 导出也需要可迁移的自定义 CSS 预设格式，便于用户备份和分享。
+- **建议实现:**
+  - 设计 HTML CSS 预设 JSON 格式，包含 `id`、`name`、`description`、`css`、可选 `base`。
+  - 支持复制示例 JSON、导入 JSON 到空槽位、导出现有自定义预设。
+  - 导入时做 schema 校验和 CSS 安全预检，错误信息应能指出是 JSON 格式错误还是 CSS 选择器 / declaration 不支持。
+- **验收:** 用户可把一个 HTML 导出 CSS 预设导出为 JSON，再重新导入到自定义槽位。
+- **实现:** HTML CSS 预设 JSON 格式包含 `id`、`name`、`description`、`css` 和可选 `base`；设置页支持复制示例 JSON、粘贴或文件导入 JSON、导出当前自定义预设 JSON。导入错误区分 JSON 格式错误与 CSS 不支持。
+
+#### ISS-100 HTML 导出预设：测试与迁移文档
+
+- **优先级:** P1
+- **类型:** L2
+- **状态:** 已完成，待归档。
+- **问题:** HTML 导出预设体系会改变设置数据、导出服务和 UI，需要覆盖迁移、预设选择、安全过滤和文档同步。
+- **建议实现:**
+  - 增加 settingsService 测试：默认 HTML 预设、旧 `wechatCustomCss` 迁移、自定义槽位上限、启用 / 停用逻辑。
+  - 增加 HTML 导出服务测试：内置预设 CSS 生效、自定义 CSS 安全过滤、复制 / 导出 HTML 与当前预设一致。
+  - 增加组件或 E2E 回归：Settings / HTML 导出二级页切换、选择预设后预览更新、自定义槽位保存。
+  - 更新 README、CHANGELOG、ROADMAP、DECISIONS，说明“公众号复制”已并入“HTML 导出”体系。
+- **验收:** `npm test`、`npm run lint`、`npx tsc --noEmit`、相关 Playwright 回归通过；旧用户设置自动迁移且不丢失 CSS。
+- **实现:** 已补 settingsService、HTML 导出服务、WechatPreviewPane 组件测试和 Settings / HTML 导出 E2E 回归；文档同步说明“公众号复制”已并入 HTML 导出体系。最终验证命令与结果见本次交付说明。
+
 ### 设置 / 导出预设 / 标题栏体验
 
 > 背景：本轮用户反馈集中在导出预设筛选、设置页信息表达、顶部栏拖动与文件标题展示。实现时优先保持 Folia 的“内容优先、工具克制”设计，不把 Word 导出配置扩展成复杂表单编辑器。
@@ -471,6 +629,8 @@
 
 ## 进度日志
 
+- **2026-05-21** 完成 ISS-095 ~ ISS-100：将“公众号导出”提升为与 Word 导出并列的“HTML 导出”体系；设置导航、工具栏和右侧面板改为 HTML 导出 / HTML 预览语义，保留“复制到公众号编辑器”动作。新增 5 套 md2wechat 内置 HTML 主题、2 个常规自定义 CSS 槽位、CSS 示例、JSON 导入 / 导出、旧 `wechatCustomCss` 自动迁移和相关单元 / 组件 / E2E 回归。
+- **2026-05-20** 完成 ISS-090 ~ ISS-094 并通过规格/质量审查：新增第一阶段公众号复制右侧互斥面板，复用 Vditor 渲染与 `wechatPreviewService` 统一生成预览、剪贴板 HTML、纯文本和 warnings；复制优先写入富文本 `text/html` 与纯文本 fallback，导出 HTML 支持 Tauri 保存和浏览器 Blob 下载；复制/导出正文节点已内联主要文章样式和安全作用域下的可解析自定义 CSS。该阶段的 `wechatCustomCss` 后续已迁移进 HTML 导出预设体系。验证：`npm test`、`npm run lint`、`npx tsc --noEmit`、`npm run build`、`npx playwright test e2e/layout-behavior.spec.ts`、`git diff --check` 均通过。
 - **2026-05-20** 完成桌面复验后续优化：关于页移除 Folia 标题下能力说明和作者方向；主编辑/阅读区继续压缩上下留白；Floating TOC 展开面板改为半透明并修复未固定时轨道到面板的 hover 断层，条目现在可点击；普通 Markdown 默认改用 Vditor `ir` 即时渲染模式，当前编辑块显示 Markdown 标记，离开后恢复预览观感。验证：`npx tsc --noEmit`、`npm test`、`npx playwright test e2e/layout-behavior.spec.ts`、`npm run build` 通过；`npm run tauri -- build` 已生成 `.app` / `.dmg`，但 updater 包签名因本机缺少 `TAURI_SIGNING_PRIVATE_KEY` 失败。
 - **2026-05-20** 新增桌面复验后续优化项：关于页去掉 Folia 下方能力说明和作者方向；主编辑/阅读区参考 Typora Live Preview 的连续写作面思路继续压缩上下 padding，减少底部空白限制；Floating TOC 展开面板增加透明度，并修复未固定时从左侧轨道移动到面板会因 hover 断层而消失、导致无法点击条目的交互 bug；普通 Markdown 编辑从 Vditor `wysiwyg` 切到更接近 Obsidian Live Preview 的 Vditor `ir` 即时渲染模式，使当前编辑块显示 Markdown 标记，离开后恢复预览观感。
 - **2026-05-20** 完成 ISS-083 / ISS-084 / ISS-085 / ISS-088 / ISS-089：Floating TOC 固定逻辑统一到左侧刻度轨道并按标题层级区分刻度；Word 导出设置拆成 `预设库 / 自定义槽位 / JSON 示例` 二级页且共享右侧纸张预览；关于作者区改为左右两栏、移除微信号文字和作者业务方向；HTML table 文档默认稳定阅读但提供显式“编辑源码”入口，普通 Markdown WYSIWYG 可编辑；收紧编辑/预览上下留白改善大文档可视区域。验证：`npx tsc --noEmit`、`npm test`、`npx playwright test e2e/layout-behavior.spec.ts`、`npm run build` 均通过。

@@ -31,7 +31,10 @@ type SelectedCell = {
 
 export function HtmlTableEditor({ source, onSave, onClose }: HtmlTableEditorProps) {
   const settings = useSettings();
-  const t = (key: Parameters<typeof translate>[1]) => translate(settings.locale, key);
+  const t = useCallback(
+    (key: Parameters<typeof translate>[1]) => translate(settings.locale, key),
+    [settings.locale],
+  );
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const blocks = useMemo(() => findHtmlTableBlocks(source), [source]);
@@ -44,11 +47,18 @@ export function HtmlTableEditor({ source, onSave, onClose }: HtmlTableEditorProp
   const [dirty, setDirty] = useState(false);
 
   useEffect(() => {
-    const nextBlock = blocks[selectedBlockIndex] ?? blocks[0];
-    const nextModel = nextBlock ? parseHtmlTableModel(nextBlock.html) : parseHtmlTableModel('');
-    setModel(nextModel);
-    setSelectedCell(firstOriginCell(nextModel));
-    setDirty(false);
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      const nextBlock = blocks[selectedBlockIndex] ?? blocks[0];
+      const nextModel = nextBlock ? parseHtmlTableModel(nextBlock.html) : parseHtmlTableModel('');
+      setModel(nextModel);
+      setSelectedCell(firstOriginCell(nextModel));
+      setDirty(false);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [blocks, selectedBlockIndex]);
 
   useEffect(() => {
