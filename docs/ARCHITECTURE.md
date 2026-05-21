@@ -113,7 +113,7 @@ word/table-handler.ts 输出 docx Table；Markdown 管道表格使用专用 pars
 | `markdownFeatureDetector.ts` | 轻量扫描 Markdown fenced code 类型，为 Vditor 预览提供内部资源触发判断 |
 | `vditorPreviewConfig.ts` | 按需提供 Vditor.preview 所需中文文案，避免纯预览链路额外请求 i18n 脚本 |
 | `word/presetImport.ts` | 解析和校验用户导入的 JSON 导出预设，基于内置预设做深合并并生成自定义预设 ID |
-| `htmlExportPresets.ts` | HTML 导出预设模型、5 套内置 md2wechat 主题、自定义预设 ID/registry 归一化 |
+| `htmlExportPresets.ts` | HTML 导出预设模型、少量通用内置主题、隐藏 legacy base 兼容项、自定义预设 ID/registry 归一化 |
 | `wechatPreviewService.ts` | HTML 导出兼容服务：清洗 Vditor 渲染结果，按当前 HTML 预设生成预览、剪贴板 HTML、纯文本、导出文件和 JSON 预设导入 / 导出 |
 | `wordPreviewStyle.ts` | 将 Word 导出 `PresetConfig` 映射为 A4 纸张预览 CSS 变量 |
 | `updateService.ts` | 封装 Tauri updater 检查、下载、安装和重启；浏览器预览下返回 unsupported |
@@ -155,7 +155,7 @@ word/table-handler.ts 输出 docx Table；Markdown 管道表格使用专用 pars
 - 源码模式布局要求 CodeMirror wrapper 被主内容区高度约束，滚动只发生在 `.cm-scroller`，避免长文档把编辑器撑高后被外层裁剪。
 - 稳定 HTML 阅读预览通过 `React.lazy()` 拆分，仅在检测到原生 HTML table、`.html` 文件或后续明确需要阅读预览时加载。
 - Word 纸张预览组件通过 `React.lazy()` 拆分，仅在用户点击“Word 预览”时加载；输入内容使用 debounce 更新预览，A4 页面使用真实 CSS 尺寸后分页，长 HTML 表格按 `tr` 分片，并整体缩放到右侧面板。
-- 自定义导出预设、内置预设停用状态和语言设置只保存在 localStorage 中；Settings / Word 导出按需导入 JSON 并显示可放大的单页纸预览，Settings / HTML 导出按需管理 CSS 预设、JSON 导入 / 导出和小型文章预览，应用启动仅读取轻量设置对象，不加载 Word 导出转换链路。
+- 自定义导出预设、内置预设停用状态和语言设置只保存在 localStorage 中；Settings / Word 导出按需导入 JSON，并仅在预设库中显示可放大的单页纸预览；Settings / HTML 导出按需管理 CSS 预设、CSS 预设交换格式和小型文章预览，应用启动仅读取轻量设置对象，不加载 Word 导出转换链路。
 - 高级槽位授权状态按轻量本地缓存读取；启动时不得同步阻塞网络校验。合规确认前只支持邀请制内测激活码，不提供价格页、购买入口或内置支付。未来在线授权只在用户主动激活、手动刷新授权或后台空闲校验时触发。
 - Word 预览前通过 `markdownFeatureDetector` 做内部特征探测：当文档只包含 Mermaid、math、Graphviz、Markmap 等由 Vditor 自渲染的 fenced code 时，禁用普通代码高亮脚本加载；检测到普通代码块时仍启用 highlight.js。
 - Vditor preview 使用内联中文文案并禁用 icon 脚本加载；内容主题由 Folia 样式接管，跳过 `content-theme/light.css` 请求。

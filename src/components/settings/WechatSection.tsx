@@ -130,6 +130,7 @@ export function HtmlExportSection() {
   const customPresetCount = getCustomHtmlExportPresetCount(settings);
   const displayedCustomSlotCount = Math.max(STANDARD_CUSTOM_HTML_EXPORT_PRESET_LIMIT, customPresets.length);
   const customSlotRows = Array.from({ length: displayedCustomSlotCount }, (_, index) => customPresets[index] ?? null);
+  const showPreview = activePage !== 'examples';
 
   const slotHint = customPresetCount > STANDARD_CUSTOM_HTML_EXPORT_PRESET_LIMIT
     ? `已保存 ${customPresetCount} 个自定义 HTML 预设，前 ${STANDARD_CUSTOM_HTML_EXPORT_PRESET_LIMIT} 个为常规槽位，超出部分作为历史预设继续可用。`
@@ -208,7 +209,7 @@ export function HtmlExportSection() {
     } catch (error) {
       const text = error instanceof HtmlExportPresetImportError
         ? error.message
-        : '导入失败，请检查 JSON。';
+        : '导入失败，请检查 CSS 预设 JSON。';
       setMessage({ tone: 'error', text });
     }
   };
@@ -312,7 +313,7 @@ export function HtmlExportSection() {
                   空槽位
                   <span className="settings-preset-badge">可用</span>
                 </span>
-                <span className="settings-preset-desc">保存 CSS 或导入 JSON 后会占用这个槽位。</span>
+                <span className="settings-preset-desc">保存 CSS 预设或导入 CSS 预设文件后会占用这个槽位。</span>
               </span>
             </button>
           </div>
@@ -380,7 +381,7 @@ export function HtmlExportSection() {
             </button>
             <button type="button" className="settings-action-button" onClick={() => inputRef.current?.click()}>
               <FileUp size={14} />
-              导入 JSON
+              导入 CSS 预设
             </button>
           </>
         )}
@@ -390,16 +391,16 @@ export function HtmlExportSection() {
               <Clipboard size={14} />
               复制 CSS 示例
             </button>
-            <button type="button" className="settings-action-button" onClick={() => void handleCopyText(createHtmlExportPresetTemplateText(), 'JSON 示例已复制')}>
+            <button type="button" className="settings-action-button" onClick={() => void handleCopyText(createHtmlExportPresetTemplateText(), 'CSS 预设 JSON 已复制')}>
               <Clipboard size={14} />
-              复制示例 JSON
+              复制 CSS 预设 JSON
             </button>
           </>
         )}
         {selectedIsCustom && (
-          <button type="button" className="settings-action-button" onClick={() => void handleCopyText(presetToJson(selectedPreset), '当前自定义预设 JSON 已复制')}>
+          <button type="button" className="settings-action-button" onClick={() => void handleCopyText(presetToJson(selectedPreset), '当前 CSS 预设 JSON 已复制')}>
             <Clipboard size={14} />
-            导出当前 JSON
+            导出当前 CSS 预设
           </button>
         )}
         <button type="button" className="settings-action-button" onClick={handleRemoveSelected}>
@@ -420,7 +421,7 @@ export function HtmlExportSection() {
       </div>
       {message && <div className={`settings-message ${message.tone}`}>{message.text}</div>}
 
-      <div className="settings-preset-workbench settings-html-workbench">
+      <div className={`settings-preset-workbench settings-html-workbench ${showPreview ? '' : 'settings-preset-workbench--full'}`}>
         <div className="settings-preset-list" aria-label="HTML 导出预设列表">
           {activePage === 'library' && (
             <div className="settings-preset-page">
@@ -438,12 +439,12 @@ export function HtmlExportSection() {
               {renderCustomSlots()}
               <div className="settings-row settings-row-stacked settings-html-import-row">
                 <div>
-                  <div className="settings-label">导入 JSON 到空槽位</div>
-                  <div className="settings-desc">格式包含 id、name、description、css，可选 base。</div>
+                  <div className="settings-label">导入 CSS 预设</div>
+                  <div className="settings-desc">粘贴 CSS 预设交换 JSON，格式包含 id、name、description、css，可选 base。</div>
                 </div>
                 <textarea
                   className="settings-textarea settings-html-json-textarea"
-                  aria-label="HTML CSS 预设 JSON"
+                  aria-label="CSS 预设交换 JSON"
                   value={importJson}
                   onChange={(event) => setImportJson(event.target.value)}
                   placeholder={createHtmlExportPresetTemplateText()}
@@ -455,7 +456,7 @@ export function HtmlExportSection() {
                   onClick={() => handleImportJson(importJson)}
                   disabled={!importJson.trim()}
                 >
-                  导入粘贴的 JSON
+                  导入粘贴的 CSS 预设
                 </button>
               </div>
             </>
@@ -491,7 +492,7 @@ export function HtmlExportSection() {
           )}
         </div>
 
-        <HtmlPreviewSample preset={selectedPreset} />
+        {showPreview && <HtmlPreviewSample preset={selectedPreset} />}
       </div>
     </div>
   );

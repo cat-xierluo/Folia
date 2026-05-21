@@ -535,41 +535,49 @@ export const BUILT_IN_HTML_EXPORT_PRESETS: HtmlExportPreset[] = [
     kind: 'built-in',
   },
   {
-    id: 'html-liuxiaopai',
-    name: '刘小排红',
-    description: '红色强调、正文更疏朗，适合观点类文章。',
-    css: LIUXIAOPAI_CSS,
-    source: `${MD2WECHAT_THEME_SOURCE}: wechat-liuxiaopai.css`,
-    kind: 'built-in',
-  },
-  {
     id: 'html-ai',
-    name: 'AI 蓝灰',
-    description: '蓝灰标题和浅灰引用块，适合科技或分析类内容。',
+    name: '清爽正文',
+    description: '蓝灰标题和浅灰引用块，适合正文阅读和分析类内容。',
     css: AI_CSS,
     source: `${MD2WECHAT_THEME_SOURCE}: wechat-ai.css`,
     kind: 'built-in',
   },
   {
-    id: 'html-dacheng',
-    name: '大成紫金',
-    description: '紫色标题和暖金强调，适合正式文章与品牌内容。',
-    css: DACHENG_CSS,
-    source: `${MD2WECHAT_THEME_SOURCE}: wechat-dacheng.css`,
-    kind: 'built-in',
-  },
-  {
     id: 'html-ip',
-    name: 'IP 暖棕',
-    description: '暖棕标题和米色引用块，适合知识产权或说明型文章。',
+    name: '正式文档',
+    description: '暖棕标题和米色引用块，适合正式文档和说明型文章。',
     css: IP_CSS,
     source: `${MD2WECHAT_THEME_SOURCE}: wechat-ip.css`,
     kind: 'built-in',
   },
 ];
 
+const HIDDEN_LEGACY_HTML_EXPORT_PRESETS: HtmlExportPreset[] = [
+  {
+    id: 'html-liuxiaopai',
+    name: '刘小排红',
+    description: '红色强调、正文更疏朗，作为旧 CSS 预设 base 兼容保留。',
+    css: LIUXIAOPAI_CSS,
+    source: `${MD2WECHAT_THEME_SOURCE}: wechat-liuxiaopai.css`,
+    kind: 'built-in',
+  },
+  {
+    id: 'html-dacheng',
+    name: '大成紫金',
+    description: '紫色标题和暖金强调，作为旧 CSS 预设 base 兼容保留。',
+    css: DACHENG_CSS,
+    source: `${MD2WECHAT_THEME_SOURCE}: wechat-dacheng.css`,
+    kind: 'built-in',
+  },
+];
+
+const ALL_BUILT_IN_HTML_EXPORT_PRESETS = [
+  ...BUILT_IN_HTML_EXPORT_PRESETS,
+  ...HIDDEN_LEGACY_HTML_EXPORT_PRESETS,
+];
+
 const BUILT_IN_HTML_EXPORT_PRESET_IDS = new Set<HtmlExportPresetId>(
-  BUILT_IN_HTML_EXPORT_PRESETS.map((preset) => preset.id),
+  ALL_BUILT_IN_HTML_EXPORT_PRESETS.map((preset) => preset.id),
 );
 
 export function isBuiltInHtmlExportPresetId(id: string): id is BuiltInHtmlExportPresetId {
@@ -652,5 +660,6 @@ export function getHtmlExportPresetDefinition(
 }
 
 export function getBuiltInHtmlExportPreset(id: BuiltInHtmlExportPresetId): HtmlExportPreset {
-  return getHtmlExportPresetDefinition(id);
+  return ALL_BUILT_IN_HTML_EXPORT_PRESETS.find((preset) => preset.id === id)
+    ?? BUILT_IN_HTML_EXPORT_PRESETS[0];
 }

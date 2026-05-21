@@ -19,7 +19,7 @@ All notable changes to this project will be documented in this file.
 - 新增暗色模式，覆盖主界面、设置页、Word 预览外壳、Floating TOC 和编辑器容器。
 - 新增 HTML 预览入口与右侧预览面板：当前 Markdown 可渲染为 HTML 文章预览，并提示本地相对图片。
 - HTML 预览面板支持复制到公众号编辑器和导出 HTML：复制写入 `text/html` 与 `text/plain` fallback，导出文件包含完整 HTML 结构；正文节点已按当前 HTML 预设生成内联样式，同时保留文档级 CSS 作为兜底。
-- Settings 新增“HTML 导出”分区，提供 `预设库 / 自定义槽位 / CSS 示例` 二级页、5 套内置 HTML 主题、2 个常规自定义 CSS 槽位和预设 JSON 导入 / 导出。
+- Settings 新增“HTML 导出”分区，提供 `预设库 / 自定义槽位 / CSS 示例` 二级页、3 套简单通用内置 HTML 主题、2 个常规自定义 CSS 槽位和 CSS 预设交换 JSON 导入 / 导出。
 
 ### Changed
 
@@ -29,7 +29,8 @@ All notable changes to this project will be documented in this file.
 - 普通 Markdown 编辑从 Vditor `wysiwyg` 切换为 Vditor `ir` 即时渲染模式，更接近 Obsidian Live Preview：当前编辑块显示 Markdown 标记，离开后保持预览观感。
 - 默认内置 Word 导出预设精简，移除“法律服务方案”；常规版本自定义导出预设限制为 2 个槽位，历史超限预设继续兼容读取。
 - Word 导出设置页将内置预设与自定义预设槽位分组展示，内置预设不占用自定义槽位。
-- Word 导出设置页改为 `预设库 / 自定义槽位 / JSON 示例` 二级页面，右侧共享 Word 单页纸预览，降低首屏拥挤感。
+- Word 导出设置页改为 `预设库 / 自定义槽位 / JSON 示例` 二级页面；纸张预览只在预设库显示，自定义槽位和 JSON 示例使用全宽内容区。
+- HTML 导出设置页收敛为同构二级页面：CSS 示例页使用全宽内容区，不再常驻文章预览；自定义槽位的导入 / 导出主路径统一表述为 CSS 预设。
 - 自动检查更新恢复为可配置开关，默认开启；关于页只保留开关和手动检查更新入口，不再展示“启动后延迟检查”等技术说明。
 - 快捷键设置精简为打开、保存、另存为和导出 Word，移除暂未实际提供的命令面板占位。
 - Tauri capabilities 新增 `process:allow-restart`，保证安装更新后可以正常重启应用。

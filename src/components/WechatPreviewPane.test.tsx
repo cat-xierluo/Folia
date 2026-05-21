@@ -355,13 +355,11 @@ describe('WechatPreviewPane', () => {
     const options = Array.from(select.options).map((option) => [option.value, option.textContent]);
     expect(options.map(([value]) => value)).toEqual([
       'html-wechat-style',
-      'html-liuxiaopai',
-      'html-dacheng',
       'html-ip',
       customId,
     ]);
     expect(options.map(([, label]) => label)).toContain('面板绿色');
-    expect(options.map(([, label]) => label)).not.toContain('AI 蓝灰');
+    expect(options.map(([, label]) => label)).not.toContain('清爽正文');
 
     await act(async () => {
       select.value = customId;

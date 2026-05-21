@@ -144,7 +144,7 @@
 - [x] 明确常规/授权边界：复杂 HTML 阅读、基础 Word 导出、内置预设和 2 个自定义 JSON 预设槽位保持常规可用
 - [x] 设计“预设槽位”模型：常规版本可保存 2 个自定义 Word 导出预设，朋友/内测授权可使用更多或不限量槽位
 - [x] 设计槽位占用规则：导入 JSON 即占用一个自定义槽位；删除自定义预设释放槽位；内置预设不计入槽位
-- [x] HTML 导出预设体系：内置 5 套 md2wechat 主题，支持启用/停用、自定义 CSS 槽位、CSS 示例和 JSON 导入 / 导出；旧 `wechatCustomCss` 自动迁移为自定义 HTML 预设
+- [x] HTML 导出预设体系：内置 3 套简单通用主题，支持启用/停用、自定义 CSS 槽位、CSS 示例和 CSS 预设交换 JSON 导入 / 导出；旧 `wechatCustomCss` 自动迁移为自定义 HTML 预设
 - [x] 明确高级槽位授权路线：先做邀请制内测激活码入口和可替换 `licenseService`，合规确认前不内置支付界面
 - [x] 增加商业化合规 gate：公开售卖 license 前先完成主体登记、税务、ICP备案/许可、隐私与律师执业边界评估
 - [ ] 实现 Settings / 授权页面：输入内测激活码 / 邀请码、展示授权状态、解锁额外自定义 Word 导出预设槽位
@@ -156,8 +156,8 @@
 
 - **2026-05-21**
   - 将“公众号预览复制”提升为与 Word 导出并列的 HTML 导出体系：设置导航和右侧面板改为“HTML 导出 / HTML 预览”，保留“复制到公众号编辑器”动作语义。
-  - HTML 导出新增 5 套内置主题预设，整理自 md2wechat `wechat-style.css`、`wechat-liuxiaopai.css`、`wechat-ai.css`、`wechat-dacheng.css`、`wechat-ip.css`，并保留来源与 MIT 许可说明；自定义 CSS 继续经过安全选择器归一化和危险 declaration 过滤。
-  - Settings / HTML 导出新增 `预设库 / 自定义槽位 / CSS 示例` 二级页，支持启用/停用内置预设、保存 2 个常规自定义 CSS 槽位、JSON 导入 / 导出和右侧 HTML 文章预览；旧 `wechatCustomCss` 自动迁移为基于默认主题的自定义 HTML 预设。
+  - HTML 导出新增 3 套简单通用内置主题预设，整理自 md2wechat `wechat-style.css`、`wechat-ai.css`、`wechat-ip.css`，并保留来源与 MIT 许可说明；自定义 CSS 继续经过安全选择器归一化和危险 declaration 过滤。
+  - Settings / HTML 导出新增 `预设库 / 自定义槽位 / CSS 示例` 二级页，支持启用/停用内置预设、保存 2 个常规自定义 CSS 槽位、CSS 预设交换 JSON 导入 / 导出；预览仅在预设库和自定义槽位显示，旧 `wechatCustomCss` 自动迁移为基于默认主题的自定义 HTML 预设。
 
 - **2026-05-20**
   - HTML 导出复制链路继续推进：面板按钮从占位改为可用，复制写入 `text/html` + `text/plain` fallback，HTML 导出支持 Tauri 保存和浏览器下载；复制/导出正文节点已内联主要文章样式；第一阶段曾以“公众号”分区承载自定义 CSS，后续已升级为 HTML 导出预设体系。

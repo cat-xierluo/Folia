@@ -2,6 +2,28 @@
 
 ## 第一部分：决策记录
 
+### [DEC-035] - 2026-05-21 - Word / HTML 导出设置页统一为分标签预览模型
+
+**背景**
+用户复验后指出 Word 导出、复制到公众号编辑器和 HTML 导出在页面逻辑与设置页布局上仍不一致：二级页标题与大小写不统一，Word / HTML 设置页的预览位置不一致，HTML 自定义槽位把主路径表述成“导入 JSON”容易误导，内置 HTML 预设也不应默认展示强风格主题。
+
+**决策**
+- 用户可见命名保持 `HTML`、`CSS`、`JSON` 全大写；`Word` 作为产品名保留首字母大写。
+- Settings / Word 导出继续使用 `预设库 / 自定义槽位 / JSON 示例`；Word 单页纸预览只在 `预设库` 显示，其他二级页使用全宽内容区。
+- Settings / HTML 导出继续使用 `预设库 / 自定义槽位 / CSS 示例`；HTML 文章预览只在 `预设库` 和 `自定义槽位` 显示，`CSS 示例` 使用全宽内容区。
+- HTML 内置预设默认收敛为 3 套简单通用样式：`简洁图文`、`清爽正文`、`正式文档`；强风格 CSS 不作为默认内置项展示，但旧强风格 base 仍作为隐藏兼容项解析，避免旧自定义 CSS 预设输出变化。
+- HTML 自定义槽位的主路径表述为“保存 CSS 预设 / 导入 CSS 预设 / 导出当前 CSS 预设”；JSON 只作为 CSS 预设交换格式出现。
+
+**验证**
+- `npm test -- src/services/wechatPreviewService.test.ts src/services/settingsService.test.ts src/components/WechatPreviewPane.test.tsx`
+- `npm run lint`
+- `npx tsc --noEmit`
+- `npx playwright test e2e/layout-behavior.spec.ts --grep "HTML export settings|Word export settings"`
+
+**影响**
+- Word 与 HTML 设置页形成同构的信息架构，低频示例页不再被预览框挤占。
+- HTML 导出默认预设更克制，用户的品牌化 CSS 通过自定义槽位导入或保存。
+
 ### [DEC-034] - 2026-05-21 - 公众号复制并入 HTML 导出预设体系
 
 **背景**
@@ -13,7 +35,7 @@ ISS-095 ~ ISS-100 要把前一阶段的公众号预览复制能力提升为与 W
 - HTML 导出预设模型包含 `id`、`name`、`description`、`css`、`source`、`kind` 和可选 `base`；内置预设整理自 md2wechat 主题 CSS，并在 `source` 中保留 MIT 许可说明。
 - 预设 CSS、自定义 CSS、复制 HTML 和导出 HTML 共用同一条安全管线：用户文档任意 `class/id` 不回流，CSS 选择器归一化到 `.folia-html-article`，危险 declaration、at-rule、全局选择器、复杂组合器、URL/变量/转义写法被过滤或导入前拒绝。
 - 旧 `wechatCustomCss` 自动迁移为 `html-custom:wechat-custom` 自定义预设，基于默认 `html-wechat-style` 主题追加 CSS，避免旧用户配置丢失。
-- HTML 导出设置采用 `预设库 / 自定义槽位 / CSS 示例` 二级页，并保留右侧小型文章预览；常规版本提供 2 个自定义 CSS 预设槽位，与 Word 导出槽位模型保持一致。
+- HTML 导出设置采用 `预设库 / 自定义槽位 / CSS 示例` 二级页；小型文章预览只在预设库和自定义槽位显示；常规版本提供 2 个自定义 CSS 预设槽位，与 Word 导出槽位模型保持一致。
 
 **验证**
 - `npm test -- src/services/wechatPreviewService.test.ts src/services/settingsService.test.ts src/components/WechatPreviewPane.test.tsx`

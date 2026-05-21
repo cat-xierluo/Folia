@@ -272,7 +272,10 @@ export function ExportSection() {
             role="tab"
             className={`settings-subnav-item ${activePage === id ? 'active' : ''}`}
             aria-selected={activePage === id}
-            onClick={() => setActivePage(id)}
+            onClick={() => {
+              if (id !== 'library') setPreviewExpanded(false);
+              setActivePage(id);
+            }}
           >
             {label}
           </button>
@@ -314,7 +317,7 @@ export function ExportSection() {
       </div>
       {message && <div className={`settings-message ${message.tone}`}>{message.text}</div>}
 
-      <div className="settings-preset-workbench">
+      <div className={`settings-preset-workbench ${activePage === 'library' ? '' : 'settings-preset-workbench--full'}`}>
         <div className="settings-preset-list" aria-label="Word 导出预设列表">
           {activePage === 'library' && (
             <div className="settings-preset-page">
@@ -341,26 +344,28 @@ export function ExportSection() {
           )}
         </div>
 
-        <div className="settings-preset-preview" aria-label={`${selectedPreset.name} Word 单页纸预览`}>
-          <div className="settings-preset-preview-meta">
-            <span>{selectedPreset.name}</span>
-            <small>{selectedPreset.description}。点击纸张放大查看。</small>
-          </div>
-          <button
-            type="button"
-            className="settings-preset-preview-viewport"
-            style={selectedStyle as CSSProperties}
-            onClick={() => setPreviewExpanded(true)}
-            aria-label={`放大查看 ${selectedPreset.name} Word 预览`}
-          >
-            <div className="settings-preset-preview-paper word-paper">
-              <PresetPreviewSample />
+        {activePage === 'library' && (
+          <div className="settings-preset-preview" aria-label={`${selectedPreset.name} Word 单页纸预览`}>
+            <div className="settings-preset-preview-meta">
+              <span>{selectedPreset.name}</span>
+              <small>{selectedPreset.description}。点击纸张放大查看。</small>
             </div>
-          </button>
-        </div>
+            <button
+              type="button"
+              className="settings-preset-preview-viewport"
+              style={selectedStyle as CSSProperties}
+              onClick={() => setPreviewExpanded(true)}
+              aria-label={`放大查看 ${selectedPreset.name} Word 预览`}
+            >
+              <div className="settings-preset-preview-paper word-paper">
+                <PresetPreviewSample />
+              </div>
+            </button>
+          </div>
+        )}
       </div>
 
-      {previewExpanded && (
+      {activePage === 'library' && previewExpanded && (
         <div
           className="settings-preset-preview-zoom"
           role="dialog"

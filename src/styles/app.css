@@ -1888,7 +1888,8 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 }
 
 .settings-json-example pre {
-  max-height: 180px;
+  min-height: 240px;
+  max-height: min(520px, calc(100vh - 320px));
   overflow: auto;
   margin: 2px 0 0;
   padding: 12px;
@@ -1907,6 +1908,20 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   grid-template-columns: minmax(220px, 1fr) 260px;
   gap: 24px;
   align-items: start;
+  min-width: 0;
+}
+
+.settings-preset-workbench--full {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+}
+
+.settings-preset-workbench--full .settings-preset-list {
+  min-width: 0;
+}
+
+.settings-preset-workbench--full .settings-json-example pre {
+  min-height: 360px;
 }
 
 .settings-preset-preview {
@@ -2122,11 +2137,15 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 }
 
 .settings-wechat-css-textarea {
-  min-height: 220px;
+  min-height: 320px;
 }
 
 .settings-html-workbench {
-  grid-template-columns: minmax(280px, 1fr) 280px;
+  grid-template-columns: minmax(300px, 1fr) 300px;
+}
+
+.settings-html-workbench.settings-preset-workbench--full {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .settings-html-custom-editor {
@@ -2146,7 +2165,7 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 }
 
 .settings-html-json-textarea {
-  min-height: 150px;
+  min-height: 220px;
 }
 
 .settings-html-preview {
@@ -2160,7 +2179,7 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 
 .settings-html-preview-article {
   width: 100%;
-  max-height: 430px;
+  max-height: min(520px, calc(100vh - 330px));
   overflow: auto;
   padding: 18px 18px 24px;
   border: 1px solid var(--border-soft);

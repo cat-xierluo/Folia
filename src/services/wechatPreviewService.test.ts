@@ -68,16 +68,37 @@ describe('wechatPreviewService', () => {
     expect(WECHAT_ARTICLE_CLASS).toBe(HTML_EXPORT_ARTICLE_CLASS);
   });
 
-  it('ships five built-in HTML export presets from the md2wechat theme files', () => {
+  it('ships three simple built-in HTML export presets from the md2wechat theme files', () => {
     expect(BUILT_IN_HTML_EXPORT_PRESETS.map((preset) => preset.id)).toEqual([
       'html-wechat-style',
-      'html-liuxiaopai',
       'html-ai',
-      'html-dacheng',
       'html-ip',
+    ]);
+    expect(BUILT_IN_HTML_EXPORT_PRESETS.map((preset) => preset.name)).toEqual([
+      '简洁图文',
+      '清爽正文',
+      '正式文档',
     ]);
     expect(BUILT_IN_HTML_EXPORT_PRESETS.every((preset) => preset.css.includes('.note-to-mp'))).toBe(true);
     expect(BUILT_IN_HTML_EXPORT_PRESETS.every((preset) => preset.source.includes('MIT'))).toBe(true);
+  });
+
+  it('keeps hidden legacy base presets available for imported custom CSS presets', () => {
+    expect(BUILT_IN_HTML_EXPORT_PRESETS.map((preset) => preset.id)).not.toContain('html-dacheng');
+
+    const preset = importHtmlExportPresetFromJson(JSON.stringify({
+      id: 'legacy-formal-style',
+      name: '旧正式样式',
+      description: '保留旧 base 的自定义 CSS 预设',
+      base: 'html-dacheng',
+      css: '.folia-html-article p { margin-bottom: 18px; }',
+    }));
+    const result = createHtmlExportResult('', '<h1>标题</h1><p>正文</p>', { preset });
+    const body = getDocumentBody(result.clipboardHtml);
+
+    expect(preset.base).toBe('html-dacheng');
+    expect(queryRequired<HTMLElement>(body, 'h1').style.color).toBe('rgb(131, 61, 139)');
+    expect(queryRequired<HTMLElement>(body, 'p').style.marginBottom).toBe('18px');
   });
 
   it('removes dangerous scripts and event attributes before wrapping', () => {
@@ -139,15 +160,15 @@ describe('wechatPreviewService', () => {
   });
 
   it('creates HTML export results from the selected built-in preset', () => {
-    const liuxiaopai = BUILT_IN_HTML_EXPORT_PRESETS.find((preset) => preset.id === 'html-liuxiaopai');
-    if (!liuxiaopai) throw new Error('missing liuxiaopai preset');
+    const formal = BUILT_IN_HTML_EXPORT_PRESETS.find((preset) => preset.id === 'html-ip');
+    if (!formal) throw new Error('missing formal document preset');
 
     const result = createHtmlExportResult(
       '# 标题',
       '<h1>标题</h1><p><strong>重点</strong></p>',
       {
         title: 'HTML 样式',
-        preset: liuxiaopai,
+        preset: formal,
       },
     );
     const body = getDocumentBody(result.clipboardHtml);
@@ -155,8 +176,8 @@ describe('wechatPreviewService', () => {
     expect(result.previewHtml).toContain(`class="${HTML_EXPORT_ARTICLE_CLASS}"`);
     expect(result.clipboardHtml).toContain('.folia-html-article h1');
     expect(result.clipboardHtml).not.toContain('.note-to-mp');
-    expect(queryRequired<HTMLElement>(body, 'h1').style.color).toBe('rgb(215, 26, 27)');
-    expect(queryRequired<HTMLElement>(body, 'strong').style.color).toBe('rgb(215, 26, 27)');
+    expect(queryRequired<HTMLElement>(body, 'h1').style.color).toBe('rgb(106, 62, 46)');
+    expect(queryRequired<HTMLElement>(body, 'strong').style.color).toBe('rgb(106, 62, 46)');
   });
 
   it('resolves custom HTML export presets by applying their base preset before custom CSS', () => {

@@ -237,8 +237,8 @@ test('HTML export settings switch subpages and save a custom CSS slot', async ({
   await expect(page.getByLabel('HTML 导出预设列表')).toContainText('简洁图文');
   await expect(page.getByLabel(/HTML 文章预览/)).toBeVisible();
 
-  await page.locator('.settings-preset-select-button').filter({ hasText: '刘小排红' }).click();
-  await expect(page.getByLabel(/刘小排红 HTML 文章预览/)).toBeVisible();
+  await page.locator('.settings-preset-select-button').filter({ hasText: '清爽正文' }).click();
+  await expect(page.getByLabel(/清爽正文 HTML 文章预览/)).toBeVisible();
 
   await page.getByRole('tab', { name: '自定义槽位' }).click();
   await expect(page.getByText('自定义 HTML CSS 槽位', { exact: true })).toBeVisible();
@@ -250,27 +250,29 @@ test('HTML export settings switch subpages and save a custom CSS slot', async ({
   await expect(page.getByText('已保存「团队 HTML 样式」')).toBeVisible();
   await expect(page.getByText('1/2', { exact: true })).toBeVisible();
   await expect(page.getByText('团队 HTML 样式', { exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: '导出当前 JSON' })).toBeVisible();
-  await page.getByRole('button', { name: '导出当前 JSON' }).click();
-  await expect(page.getByText('当前自定义预设 JSON 已复制')).toBeVisible();
+  await expect(page.getByRole('button', { name: '导出当前 CSS 预设' })).toBeVisible();
+  await page.getByRole('button', { name: '导出当前 CSS 预设' }).click();
+  await expect(page.getByText('当前 CSS 预设 JSON 已复制')).toBeVisible();
   await expect.poll(async () => page.evaluate(() => window.localStorage.getItem('e2e-clipboard-text') ?? '')).toContain(
     '"name": "团队 HTML 样式"',
   );
 
-  await page.getByLabel('HTML CSS 预设 JSON').fill(JSON.stringify({
+  await page.getByLabel('CSS 预设交换 JSON').fill(JSON.stringify({
     id: 'e2e-json-style',
     name: 'E2E JSON 样式',
     description: '通过粘贴 JSON 导入',
     base: 'html-wechat-style',
     css: '.folia-html-article h2 { color: rgb(1, 2, 3); }',
   }, null, 2));
-  await page.getByRole('button', { name: '导入粘贴的 JSON' }).click();
+  await page.getByRole('button', { name: '导入粘贴的 CSS 预设' }).click();
   await expect(page.getByText('已保存「E2E JSON 样式」')).toBeVisible();
   await expect(page.getByText('2/2', { exact: true })).toBeVisible();
   await expect(page.getByText('E2E JSON 样式', { exact: true })).toBeVisible();
 
   await page.getByRole('tab', { name: 'CSS 示例' }).click();
   await expect(page.locator('.settings-json-example pre').first()).toContainText('.folia-html-article h2');
+  await expect(page.getByLabel(/HTML 文章预览/)).toHaveCount(0);
+  await expect(page.locator('.settings-preset-workbench--full')).toBeVisible();
   await expect(page.getByText(/不支持 body/)).toBeVisible();
 });
 
@@ -494,6 +496,11 @@ test('Word export settings make the paper preview expandable', async ({ page }) 
   await expect(presetList).toBeVisible();
   await expect(presetList.getByText('预设库', { exact: true })).toBeVisible();
   await expect(page.getByText('自定义预设槽位', { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: /放大查看 .* Word 预览/ }).click();
+  await expect(page.getByRole('dialog', { name: /Word 预览放大/ })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: /Word 预览放大/ }).locator('.word-paper')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog', { name: /Word 预览放大/ })).toHaveCount(0);
 
   await page.getByRole('tab', { name: '自定义槽位' }).click();
   await expect(page.getByText('自定义预设槽位', { exact: true })).toBeVisible();
@@ -501,15 +508,13 @@ test('Word export settings make the paper preview expandable', async ({ page }) 
   await expect(page.locator('.settings-preset-slot-empty')).toHaveCount(2);
   await expect(page.getByText('使用更多自定义槽位')).toBeVisible();
   await expect(page.getByRole('button', { name: '导入 JSON 到自定义槽位 1' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /放大查看 .* Word 预览/ })).toHaveCount(0);
+  await expect(page.locator('.settings-preset-workbench--full')).toBeVisible();
 
   await page.getByRole('tab', { name: 'JSON 示例' }).click();
   await expect(page.locator('.settings-json-example pre')).toContainText('"id"');
-
-  await page.getByRole('button', { name: /放大查看 .* Word 预览/ }).click();
-  await expect(page.getByRole('dialog', { name: /Word 预览放大/ })).toBeVisible();
-  await expect(page.getByRole('dialog', { name: /Word 预览放大/ }).locator('.word-paper')).toBeVisible();
-  await page.keyboard.press('Escape');
-  await expect(page.getByRole('dialog', { name: /Word 预览放大/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /放大查看 .* Word 预览/ })).toHaveCount(0);
+  await expect(page.locator('.settings-preset-workbench--full')).toBeVisible();
   await expect(page.locator('.settings-modal')).toBeVisible();
 });
 

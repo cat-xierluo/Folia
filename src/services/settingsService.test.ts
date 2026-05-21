@@ -116,9 +116,7 @@ describe('settingsService', () => {
     expect(getHtmlExportPresetConfig().name).toBe('简洁图文');
     expect(listEnabledHtmlExportPresets().map((preset) => preset.id)).toEqual([
       'html-wechat-style',
-      'html-liuxiaopai',
       'html-ai',
-      'html-dacheng',
       'html-ip',
     ]);
   });
@@ -142,23 +140,39 @@ describe('settingsService', () => {
     });
   });
 
+  it('preserves hidden legacy HTML base presets on existing custom presets', () => {
+    localStorage.setItem('folia-settings', JSON.stringify({
+      customHtmlExportPresets: {
+        'html-custom:legacy-base': {
+          id: 'html-custom:legacy-base',
+          name: '旧 base 样式',
+          description: '旧 base 自定义 CSS',
+          css: '.folia-html-article p { color: rgb(1, 2, 3); }',
+          source: 'user',
+          kind: 'custom',
+          base: 'html-dacheng',
+        },
+      },
+    }));
+
+    expect(getSettings().customHtmlExportPresets['html-custom:legacy-base']?.base).toBe('html-dacheng');
+  });
+
   it('filters disabled HTML export presets and falls back when the current preset is disabled', () => {
-    setHtmlExportPreset('html-liuxiaopai');
+    setHtmlExportPreset('html-ai');
 
-    setHtmlExportPresetEnabled('html-liuxiaopai', false);
+    setHtmlExportPresetEnabled('html-ai', false);
 
-    expect(getHtmlExportPreset()).not.toBe('html-liuxiaopai');
-    expect(getSettings().disabledHtmlExportPresetIds).toContain('html-liuxiaopai');
-    expect(listEnabledHtmlExportPresets().map((preset) => preset.id)).not.toContain('html-liuxiaopai');
+    expect(getHtmlExportPreset()).not.toBe('html-ai');
+    expect(getSettings().disabledHtmlExportPresetIds).toContain('html-ai');
+    expect(listEnabledHtmlExportPresets().map((preset) => preset.id)).not.toContain('html-ai');
   });
 
   it('keeps at least one enabled HTML export preset when all built-ins are disabled', () => {
     updateSettings({
       disabledHtmlExportPresetIds: [
         'html-wechat-style',
-        'html-liuxiaopai',
         'html-ai',
-        'html-dacheng',
         'html-ip',
       ],
     });

@@ -129,8 +129,8 @@
   - 将 md2wechat 的多套主题整理成 Folia 内置 HTML 导出预设，保留来源与 MIT 许可说明。
   - 预设 CSS 进入现有安全作用域和内联样式管线，不允许恢复用户文档任意 `class/id`。
   - 当前 `wechatCustomCss` 迁移为默认自定义预设或追加 CSS，避免用户已有配置丢失。
-- **验收:** HTML 预览面板可切换至少 5 套内置 CSS 主题；复制和导出使用当前选中预设。
-- **实现:** 新增 `HtmlExportPreset` 模型和 5 套内置主题，整理自 md2wechat `wechat-style.css`、`wechat-liuxiaopai.css`、`wechat-ai.css`、`wechat-dacheng.css`、`wechat-ip.css`，在 `source` 中保留 MIT 许可说明；旧 `wechatCustomCss` 自动迁移为 `html-custom:wechat-custom`，基于默认主题追加 CSS。
+- **验收:** HTML 预览面板可切换少量通用内置 CSS 主题；复制和导出使用当前选中预设。
+- **实现:** 新增 `HtmlExportPreset` 模型和 3 套简单通用内置主题，整理自 md2wechat `wechat-style.css`、`wechat-ai.css`、`wechat-ip.css`，在 `source` 中保留 MIT 许可说明；旧 `wechatCustomCss` 自动迁移为 `html-custom:wechat-custom`，基于默认主题追加 CSS。
 
 #### ISS-097 HTML 导出设置：预设库、自定义槽位与 CSS 示例
 
@@ -143,9 +143,9 @@
   - `预设库` 展示内置 HTML 主题，可选择默认预设，可启用 / 停用内置预设。
   - `自定义槽位` 参考 Word 导出的 2 个常规槽位模型，支持保存用户 CSS 预设、删除、恢复、选择默认预设。
   - `CSS 示例` 提供可复制模板，说明支持的安全选择器范围和不支持的全局选择器 / at-rule / URL 资源。
-  - 右侧保留小型 HTML 文章预览，便于比较不同预设的标题、正文、引用、表格、代码块效果。
+  - 小型 HTML 文章预览只在 `预设库` 和 `自定义槽位` 中显示，便于比较不同预设的标题、正文、引用、表格、代码块效果；`CSS 示例` 使用全宽内容区。
 - **验收:** 设置页信息密度接近 Word 导出，不同二级页职责清晰；用户能新建、选择、删除自定义 HTML CSS 预设。
-- **实现:** Settings / HTML 导出新增 `预设库 / 自定义槽位 / CSS 示例` 二级页；支持启用 / 停用内置主题、保存 / 删除 / 选择 2 个常规自定义 CSS 槽位、复制示例 CSS/JSON、导入 JSON，并在右侧常驻小型 HTML 文章预览。
+- **实现:** Settings / HTML 导出新增 `预设库 / 自定义槽位 / CSS 示例` 二级页；支持启用 / 停用内置主题、保存 / 删除 / 选择 2 个常规自定义 CSS 槽位、复制示例 CSS 和 CSS 预设交换 JSON、导入 CSS 预设，并仅在预设库与自定义槽位显示小型 HTML 文章预览。
 
 #### ISS-098 HTML 导出服务：预设驱动复制与导出
 
@@ -169,10 +169,10 @@
 - **问题:** Word 导出已有 JSON 预设导入思路，HTML 导出也需要可迁移的自定义 CSS 预设格式，便于用户备份和分享。
 - **建议实现:**
   - 设计 HTML CSS 预设 JSON 格式，包含 `id`、`name`、`description`、`css`、可选 `base`。
-  - 支持复制示例 JSON、导入 JSON 到空槽位、导出现有自定义预设。
+  - 支持复制 CSS 预设交换 JSON 示例、导入 CSS 预设到空槽位、导出现有自定义 CSS 预设。
   - 导入时做 schema 校验和 CSS 安全预检，错误信息应能指出是 JSON 格式错误还是 CSS 选择器 / declaration 不支持。
 - **验收:** 用户可把一个 HTML 导出 CSS 预设导出为 JSON，再重新导入到自定义槽位。
-- **实现:** HTML CSS 预设 JSON 格式包含 `id`、`name`、`description`、`css` 和可选 `base`；设置页支持复制示例 JSON、粘贴或文件导入 JSON、导出当前自定义预设 JSON。导入错误区分 JSON 格式错误与 CSS 不支持。
+- **实现:** HTML CSS 预设交换 JSON 格式包含 `id`、`name`、`description`、`css` 和可选 `base`；设置页支持复制 CSS 预设 JSON、粘贴或文件导入 CSS 预设、导出当前自定义 CSS 预设。导入错误区分 JSON 格式错误与 CSS 不支持。
 
 #### ISS-100 HTML 导出预设：测试与迁移文档
 
@@ -192,20 +192,21 @@
 
 - **优先级:** P1
 - **类型:** L2
-- **状态:** 待处理。
+- **状态:** 已完成，待归档。
 - **问题:** 用户复验后发现 Word 导出、复制到公众号编辑器、导出 HTML 在页面逻辑和设置页结构上仍不够统一；Settings / Word 导出与 Settings / HTML 导出的二级页面、标题大小写、预览位置、预设库密度和自定义槽位表单存在不一致。
 - **建议实现:**
   - 统一导出动作模型：Word 导出、复制到公众号编辑器、导出 HTML 都应表现为“打开右侧预览面板后，在面板内执行导出 / 复制动作”，主工具栏只负责打开对应预览面板。
   - 统一命名和标题规则：`HTML`、`CSS`、`JSON` 使用全大写技术缩写；`Word` 作为产品名保留首字母大写，不写成 `WORD`；Settings 分区标题、二级 tab 和按钮文案按同一规则整理。
   - 调整 Settings / Word 导出二级页：`预设库`、`自定义槽位`、`JSON 示例` 各自填满右侧内容区；`预设库` 中显示 Word 纸张预览，`自定义槽位` 和 `JSON 示例` 不显示纸张预览。
   - 调整 Settings / HTML 导出二级页：`预设库`、`自定义槽位`、`CSS 示例` 横向铺开并填满右侧内容区；HTML 文章预览默认只在 `预设库` 显示，必要时可在 `自定义槽位` 显示用于校验 CSS 效果，但不在 `CSS 示例` 中常驻。
-  - 收敛内置 HTML 预设库：默认只保留少量简单、通用的内置预设；“刘小排红”“大橙紫金”等更强风格主题不作为默认内置项展示，留给用户通过自定义槽位导入 / 配置。
+  - 收敛内置 HTML 预设库：默认只保留少量简单、通用的内置预设；“刘小排红”“大成紫金”等更强风格主题不作为默认内置项展示，留给用户通过自定义槽位导入 / 配置。
   - 明确 HTML 自定义槽位语义：用户保存的是 CSS 预设；按钮和导入入口文案应表达“保存 CSS 预设 / 导入 CSS 预设”，避免让用户误以为必须导入 JSON 才能配置 CSS。JSON 可作为高级交换格式或示例，不应抢占主路径。
 - **验收:**
   - Word / HTML 两个设置分区的标题、二级导航、页面铺展和操作文案一致；无混用大小写和“Jason”等错误写法。
   - Word 设置页只有 `预设库` 显示纸张预览；HTML 设置页不在 `CSS 示例` 中显示文章预览。
   - HTML 内置预设库只显示简单通用预设，自定义 CSS 预设保存 / 导入路径清晰。
   - `npm run lint`、`npx tsc --noEmit`、相关单元测试和 Playwright 设置页回归通过。
+- **实现:** Word 设置页仅在 `预设库` 显示可放大的纸张预览，`自定义槽位` 和 `JSON 示例` 使用全宽工作区；HTML 设置页仅在 `预设库` / `自定义槽位` 显示文章预览，`CSS 示例` 使用全宽工作区；HTML 内置预设收敛为 `简洁图文`、`清爽正文`、`正式文档`，并保留旧强风格 base 的隐藏兼容解析；CSS 预设保存、导入、导出文案已与 JSON 交换格式分离。验证：`npm test -- src/services/wechatPreviewService.test.ts src/services/settingsService.test.ts src/components/WechatPreviewPane.test.tsx`、`npm run lint`、`npx tsc --noEmit`、`npm run build`、`npx playwright test e2e/layout-behavior.spec.ts --grep "HTML export settings|Word export settings"`、`git diff --check` 均通过。
 
 ### 设置 / 导出预设 / 标题栏体验
 
@@ -648,7 +649,8 @@
 
 ## 进度日志
 
-- **2026-05-21** 完成 ISS-095 ~ ISS-100：将“公众号导出”提升为与 Word 导出并列的“HTML 导出”体系；设置导航、工具栏和右侧面板改为 HTML 导出 / HTML 预览语义，保留“复制到公众号编辑器”动作。新增 5 套 md2wechat 内置 HTML 主题、2 个常规自定义 CSS 槽位、CSS 示例、JSON 导入 / 导出、旧 `wechatCustomCss` 自动迁移和相关单元 / 组件 / E2E 回归。
+- **2026-05-21** 完成 ISS-095 ~ ISS-100：将“公众号导出”提升为与 Word 导出并列的“HTML 导出”体系；设置导航、工具栏和右侧面板改为 HTML 导出 / HTML 预览语义，保留“复制到公众号编辑器”动作。新增 3 套简单通用内置 HTML 主题、2 个常规自定义 CSS 槽位、CSS 示例、CSS 预设交换 JSON、旧 `wechatCustomCss` 自动迁移和相关单元 / 组件 / E2E 回归。
+- **2026-05-21** 完成 ISS-101：统一 Word / HTML 导出设置页的二级页布局和预览策略；Word 纸张预览只在预设库显示，HTML 文章预览只在预设库和自定义槽位显示；HTML 内置预设收敛为 3 套简单通用主题，自定义槽位主路径改为 CSS 预设语义。验证：`npm test -- src/services/wechatPreviewService.test.ts src/services/settingsService.test.ts src/components/WechatPreviewPane.test.tsx`、`npm run lint`、`npx tsc --noEmit`、`npm run build`、`npx playwright test e2e/layout-behavior.spec.ts --grep "HTML export settings|Word export settings"`、`git diff --check` 均通过。
 - **2026-05-20** 完成 ISS-090 ~ ISS-094 并通过规格/质量审查：新增第一阶段公众号复制右侧互斥面板，复用 Vditor 渲染与 `wechatPreviewService` 统一生成预览、剪贴板 HTML、纯文本和 warnings；复制优先写入富文本 `text/html` 与纯文本 fallback，导出 HTML 支持 Tauri 保存和浏览器 Blob 下载；复制/导出正文节点已内联主要文章样式和安全作用域下的可解析自定义 CSS。该阶段的 `wechatCustomCss` 后续已迁移进 HTML 导出预设体系。验证：`npm test`、`npm run lint`、`npx tsc --noEmit`、`npm run build`、`npx playwright test e2e/layout-behavior.spec.ts`、`git diff --check` 均通过。
 - **2026-05-20** 完成桌面复验后续优化：关于页移除 Folia 标题下能力说明和作者方向；主编辑/阅读区继续压缩上下留白；Floating TOC 展开面板改为半透明并修复未固定时轨道到面板的 hover 断层，条目现在可点击；普通 Markdown 默认改用 Vditor `ir` 即时渲染模式，当前编辑块显示 Markdown 标记，离开后恢复预览观感。验证：`npx tsc --noEmit`、`npm test`、`npx playwright test e2e/layout-behavior.spec.ts`、`npm run build` 通过；`npm run tauri -- build` 已生成 `.app` / `.dmg`，但 updater 包签名因本机缺少 `TAURI_SIGNING_PRIVATE_KEY` 失败。
 - **2026-05-20** 新增桌面复验后续优化项：关于页去掉 Folia 下方能力说明和作者方向；主编辑/阅读区参考 Typora Live Preview 的连续写作面思路继续压缩上下 padding，减少底部空白限制；Floating TOC 展开面板增加透明度，并修复未固定时从左侧轨道移动到面板会因 hover 断层而消失、导致无法点击条目的交互 bug；普通 Markdown 编辑从 Vditor `wysiwyg` 切到更接近 Obsidian Live Preview 的 Vditor `ir` 即时渲染模式，使当前编辑块显示 Markdown 标记，离开后恢复预览观感。
