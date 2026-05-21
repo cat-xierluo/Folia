@@ -31,6 +31,9 @@ src-tauri/target/
 .claude/worktrees/
 .claude/settings.local.json
 
+# Test artifacts
+test-results/
+
 # Local AI working context
 docs/DECISIONS.md
 docs/TASKS.md
