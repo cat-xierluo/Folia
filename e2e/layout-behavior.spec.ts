@@ -169,6 +169,111 @@ test('Word preview button opens and closes the right paper preview panel', async
   await expect(page.locator('.word-preview-panel')).toHaveCount(0);
 });
 
+test('HTML preview uses the shared right panel and is mutually exclusive with Word preview', async ({ page }) => {
+  await page.goto('/');
+
+  const editor = page.locator('.wysiwyg-editor-pane');
+  const wordButton = page.getByRole('button', { name: 'Word 预览', exact: true });
+  const htmlButton = page.getByRole('button', { name: 'HTML 预览', exact: true });
+
+  await expect(editor).toBeVisible();
+  await htmlButton.click();
+  await expect(page.locator('.wechat-preview-panel')).toBeVisible();
+  await expect(page.locator('.word-preview-panel')).toHaveCount(0);
+  await expect(htmlButton).toHaveClass(/active/);
+  await expect(wordButton).not.toHaveClass(/active/);
+  await expect(page.getByRole('separator', { name: '调整右侧预览宽度' })).toBeVisible();
+
+  const editorBeforeResize = await editor.boundingBox();
+  const handle = await page.getByRole('separator', { name: '调整右侧预览宽度' }).boundingBox();
+  expect(editorBeforeResize).not.toBeNull();
+  expect(handle).not.toBeNull();
+
+  await page.mouse.move(handle!.x + handle!.width / 2, handle!.y + handle!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(handle!.x - 90, handle!.y + handle!.height / 2);
+  await page.mouse.up();
+
+  const editorAfterResize = await editor.boundingBox();
+  expect(editorAfterResize).not.toBeNull();
+  expect(editorAfterResize!.width).toBeGreaterThan(240);
+  await expect(page.locator('.wechat-preview-panel')).toBeVisible();
+
+  await wordButton.click();
+  await expect(page.locator('.word-preview-panel')).toBeVisible();
+  await expect(page.locator('.wechat-preview-panel')).toHaveCount(0);
+  await expect(wordButton).toHaveClass(/active/);
+  await expect(htmlButton).not.toHaveClass(/active/);
+
+  await htmlButton.click();
+  await expect(page.locator('.wechat-preview-panel')).toBeVisible();
+  await expect(page.locator('.word-preview-panel')).toHaveCount(0);
+  await expect(htmlButton).toHaveClass(/active/);
+  await expect(wordButton).not.toHaveClass(/active/);
+
+  await page.locator('.wechat-preview-panel').getByRole('button', { name: '关闭预览' }).click();
+  await expect(page.locator('.wechat-preview-panel')).toHaveCount(0);
+  await expect(page.locator('.word-preview-panel')).toHaveCount(0);
+  await expect(editor).toBeVisible();
+});
+
+test('HTML export settings switch subpages and save a custom CSS slot', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: async (text: string) => {
+          window.localStorage.setItem('e2e-clipboard-text', text);
+        },
+      },
+    });
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: '设置' }).click();
+  await page.getByRole('button', { name: 'HTML 导出', exact: true }).click();
+
+  await expect(page.getByRole('heading', { name: 'HTML 导出预设' })).toBeVisible();
+  await expect(page.getByRole('tab', { name: '预设库' })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByLabel('HTML 导出预设列表')).toContainText('简洁图文');
+  await expect(page.getByLabel(/HTML 文章预览/)).toBeVisible();
+
+  await page.locator('.settings-preset-select-button').filter({ hasText: '刘小排红' }).click();
+  await expect(page.getByLabel(/刘小排红 HTML 文章预览/)).toBeVisible();
+
+  await page.getByRole('tab', { name: '自定义槽位' }).click();
+  await expect(page.getByText('自定义 HTML CSS 槽位', { exact: true })).toBeVisible();
+  await expect(page.getByText('0/2', { exact: true })).toBeVisible();
+  await page.getByLabel('自定义 HTML 预设名称').fill('团队 HTML 样式');
+  await page.getByLabel('自定义 HTML 预设说明').fill('团队统一 HTML 预设');
+  await page.getByLabel('自定义 HTML CSS').fill('.folia-html-article p { color: rgb(9, 8, 7); }');
+  await page.getByRole('button', { name: '保存 CSS 预设' }).click();
+  await expect(page.getByText('已保存「团队 HTML 样式」')).toBeVisible();
+  await expect(page.getByText('1/2', { exact: true })).toBeVisible();
+  await expect(page.getByText('团队 HTML 样式', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '导出当前 JSON' })).toBeVisible();
+  await page.getByRole('button', { name: '导出当前 JSON' }).click();
+  await expect(page.getByText('当前自定义预设 JSON 已复制')).toBeVisible();
+  await expect.poll(async () => page.evaluate(() => window.localStorage.getItem('e2e-clipboard-text') ?? '')).toContain(
+    '"name": "团队 HTML 样式"',
+  );
+
+  await page.getByLabel('HTML CSS 预设 JSON').fill(JSON.stringify({
+    id: 'e2e-json-style',
+    name: 'E2E JSON 样式',
+    description: '通过粘贴 JSON 导入',
+    base: 'html-wechat-style',
+    css: '.folia-html-article h2 { color: rgb(1, 2, 3); }',
+  }, null, 2));
+  await page.getByRole('button', { name: '导入粘贴的 JSON' }).click();
+  await expect(page.getByText('已保存「E2E JSON 样式」')).toBeVisible();
+  await expect(page.getByText('2/2', { exact: true })).toBeVisible();
+  await expect(page.getByText('E2E JSON 样式', { exact: true })).toBeVisible();
+
+  await page.getByRole('tab', { name: 'CSS 示例' }).click();
+  await expect(page.locator('.settings-json-example pre').first()).toContainText('.folia-html-article h2');
+  await expect(page.getByText(/不支持 body/)).toBeVisible();
+});
+
 test('Word preview keeps a true A4 page and scales it to the side panel', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Word 预览' }).click();
@@ -211,7 +316,7 @@ test('Word preview resizer changes panel width', async ({ page }) => {
   await page.getByRole('button', { name: 'Word 预览' }).click();
 
   const panel = page.locator('.word-preview-panel');
-  const resizer = page.getByRole('separator', { name: '调整 Word 预览宽度' });
+  const resizer = page.getByRole('separator', { name: '调整右侧预览宽度' });
   const before = await panel.boundingBox();
   const handle = await resizer.boundingBox();
 
@@ -343,7 +448,7 @@ test('Word preview panel keeps the editor visible while resizing', async ({ page
   await page.getByRole('button', { name: 'Word 预览' }).click();
 
   const editor = page.locator('.wysiwyg-editor-pane');
-  const resizer = page.getByRole('separator', { name: '调整 Word 预览宽度' });
+  const resizer = page.getByRole('separator', { name: '调整右侧预览宽度' });
   const before = await editor.boundingBox();
   const handle = await resizer.boundingBox();
 

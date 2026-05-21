@@ -5,13 +5,14 @@ import { PreviewSection } from './settings/PreviewSection';
 import { AppearanceSection } from './settings/AppearanceSection';
 import { ShortcutsSection } from './settings/ShortcutsSection';
 import { ExportSection } from './settings/ExportSection';
+import { HtmlExportSection } from './settings/WechatSection';
 import { AboutSection } from './settings/AboutSection';
 import type { UpdateCheckResult } from '../services/updateService';
 import { useSettings } from '../hooks/useSettings';
 import { translate } from '../services/i18n';
 
 type AvailableUpdate = Extract<UpdateCheckResult, { status: 'available' }>;
-type SettingsSection = 'general' | 'editor' | 'preview' | 'appearance' | 'shortcuts' | 'export' | 'about';
+type SettingsSection = 'general' | 'editor' | 'preview' | 'appearance' | 'shortcuts' | 'export' | 'htmlExport' | 'about';
 
 interface SettingsPageProps {
   onClose: () => void;
@@ -25,6 +26,7 @@ const NAV_ITEMS: { id: SettingsSection; labelKey: Parameters<typeof translate>[1
   { id: 'appearance', labelKey: 'navAppearance' },
   { id: 'shortcuts', labelKey: 'navShortcuts' },
   { id: 'export', labelKey: 'navExport' },
+  { id: 'htmlExport', labelKey: 'navHtmlExport' },
   { id: 'about', labelKey: 'navAbout' },
 ];
 
@@ -75,6 +77,7 @@ export function SettingsPage({ onClose, onUpdateAvailable }: SettingsPageProps) 
           {activeSection === 'appearance' && <AppearanceSection />}
           {activeSection === 'shortcuts' && <ShortcutsSection />}
           {activeSection === 'export' && <ExportSection />}
+          {activeSection === 'htmlExport' && <HtmlExportSection />}
           {activeSection === 'about' && <AboutSection onUpdateAvailable={onUpdateAvailable} />}
         </div>
       </div>

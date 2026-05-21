@@ -43,11 +43,16 @@ const WordPaperPreviewPane = lazy(() =>
   import('../components/WordPaperPreviewPane').then((module) => ({ default: module.WordPaperPreviewPane })),
 );
 
+const WechatPreviewPane = lazy(() =>
+  import('../components/WechatPreviewPane').then((module) => ({ default: module.WechatPreviewPane })),
+);
+
 const HtmlTableEditor = lazy(() =>
   import('../components/HtmlTableEditor').then((module) => ({ default: module.HtmlTableEditor })),
 );
 
 type AvailableUpdate = Extract<UpdateCheckResult, { status: 'available' }>;
+type RightPanelMode = 'none' | 'word' | 'wechat';
 
 function extractToc(content: string): TocItem[] {
   const headings: TocItem[] = [];
@@ -75,8 +80,8 @@ export function AppLayout() {
   const [activeTocIndex, setActiveTocIndex] = useState(0);
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [editorMode, setEditorMode] = useState<EditorMode>('wysiwyg');
-  const [wordPreviewVisible, setWordPreviewVisible] = useState(false);
-  const [wordPreviewWidth, setWordPreviewWidth] = useState(460);
+  const [rightPanelMode, setRightPanelMode] = useState<RightPanelMode>('none');
+  const [rightPanelWidth, setRightPanelWidth] = useState(460);
   const [resizing, setResizing] = useState(false);
   const [htmlTableEditorVisible, setHtmlTableEditorVisible] = useState(false);
   const [updateDialog, setUpdateDialog] = useState<{ source: UpdateSource; update: AvailableUpdate } | null>(null);
@@ -94,7 +99,7 @@ export function AppLayout() {
       setToc(extractToc(opened.content));
       if (opened.path) setLastOpenedPath(opened.path);
       if (opened.fileType === 'docx') {
-        setWordPreviewVisible(false);
+        setRightPanelMode('none');
       } else {
         setEditorMode('wysiwyg');
       }
@@ -108,7 +113,7 @@ export function AppLayout() {
     setToc(opened.fileType === 'docx' ? [] : extractToc(opened.content));
     setLastOpenedPath(path);
     if (opened.fileType === 'docx') {
-      setWordPreviewVisible(false);
+      setRightPanelMode('none');
     } else {
       setEditorMode('wysiwyg');
     }
@@ -156,10 +161,15 @@ export function AppLayout() {
 
   const handleToggleWordPreview = useCallback(() => {
     if (file.fileType === 'docx') return;
-    setWordPreviewVisible((visible) => !visible);
+    setRightPanelMode((mode) => mode === 'word' ? 'none' : 'word');
   }, [file.fileType]);
 
-  const handleWordPreviewResizerPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+  const handleToggleWechatPreview = useCallback(() => {
+    if (file.fileType === 'docx') return;
+    setRightPanelMode((mode) => mode === 'wechat' ? 'none' : 'wechat');
+  }, [file.fileType]);
+
+  const handleRightPanelResizerPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     const container = mainContentRef.current;
     if (!container) return;
 
@@ -170,7 +180,7 @@ export function AppLayout() {
       const rect = container.getBoundingClientRect();
       const maxWidth = Math.min(760, Math.round(rect.width * 0.62));
       const nextWidth = rect.right - clientX;
-      setWordPreviewWidth(Math.min(maxWidth, Math.max(360, nextWidth)));
+      setRightPanelWidth(Math.min(maxWidth, Math.max(360, nextWidth)));
     };
 
     updateWidth(event.clientX);
@@ -317,7 +327,9 @@ export function AppLayout() {
     'main-content',
     isDocx ? 'docx-layout' : 'writing-layout',
     shouldUseStableHtmlPreview && !isDocx ? 'html-reading-layout' : '',
-    wordPreviewVisible && !isDocx ? 'word-preview-open' : '',
+    rightPanelMode !== 'none' && !isDocx ? 'right-panel-open' : '',
+    rightPanelMode === 'word' && !isDocx ? 'word-preview-open' : '',
+    rightPanelMode === 'wechat' && !isDocx ? 'wechat-preview-open' : '',
     resizing ? 'is-resizing' : '',
   ].filter(Boolean).join(' ');
 
@@ -389,7 +401,7 @@ export function AppLayout() {
       window.removeEventListener('resize', scheduleUpdate);
       observer?.disconnect();
     };
-  }, [editorMode, file.content, resolveTocHeading, shouldUseStableHtmlPreview, toc, wordPreviewVisible]);
+  }, [editorMode, file.content, resolveTocHeading, shouldUseStableHtmlPreview, toc, rightPanelMode]);
 
   const editorPane = isDocx ? (
     <div className="editor-pane readonly-pane">
@@ -434,14 +446,22 @@ export function AppLayout() {
     </Suspense>
   );
 
-  const wordPreviewPane = wordPreviewVisible && !isDocx ? (
-    <Suspense fallback={<aside className="word-preview-panel" aria-label="Word 预览" />}>
+  const rightPanel = rightPanelMode === 'word' && !isDocx ? (
+    <Suspense fallback={<aside className="word-preview-panel" aria-label={t('wordPreviewAria')} />}>
       <WordPaperPreviewPane
         source={file.content}
-        previewWidth={wordPreviewWidth}
+        previewWidth={rightPanelWidth}
         canExport={Boolean(file.path)}
         onExportWord={handleExportWord}
-        onClose={() => setWordPreviewVisible(false)}
+        onClose={() => setRightPanelMode('none')}
+      />
+    </Suspense>
+  ) : rightPanelMode === 'wechat' && !isDocx ? (
+    <Suspense fallback={<aside className="wechat-preview-panel" aria-label={t('wechatPreviewAria')} />}>
+      <WechatPreviewPane
+        source={file.content}
+        fileName={file.name}
+        onClose={() => setRightPanelMode('none')}
       />
     </Suspense>
   ) : null;
@@ -460,10 +480,12 @@ export function AppLayout() {
         dirty={file.dirty}
         fileName={file.name}
         editorMode={editorMode}
-        wordPreviewVisible={wordPreviewVisible}
+        wordPreviewVisible={rightPanelMode === 'word'}
+        wechatPreviewVisible={rightPanelMode === 'wechat'}
         editingDisabled={isDocx}
         onToggleEditorMode={handleToggleEditorMode}
         onToggleWordPreview={handleToggleWordPreview}
+        onToggleWechatPreview={handleToggleWechatPreview}
         onOpen={handleOpen}
         onSave={handleSave}
         onSaveAs={handleSaveAs}
@@ -472,7 +494,7 @@ export function AppLayout() {
       <div
         ref={mainContentRef}
         className={mainContentClassName}
-        style={{ '--word-preview-width': `${wordPreviewWidth}px` } as React.CSSProperties}
+        style={{ '--right-panel-width': `${rightPanelWidth}px` } as React.CSSProperties}
       >
         {isDocx ? docxPane : (
           <>
@@ -486,21 +508,21 @@ export function AppLayout() {
             />
           </>
         )}
-        {wordPreviewVisible && !isDocx && (
+        {rightPanelMode !== 'none' && !isDocx && (
           <div
             className={`word-preview-resizer ${resizing ? 'dragging' : ''}`}
             role="separator"
-            aria-label="调整 Word 预览宽度"
+            aria-label={t('rightPanelResizeLabel')}
             aria-orientation="vertical"
             aria-valuemin={360}
             aria-valuemax={760}
-            aria-valuenow={Math.round(wordPreviewWidth)}
-            title="拖动调整 Word 预览宽度"
-            onPointerDown={handleWordPreviewResizerPointerDown}
-            onDoubleClick={() => setWordPreviewWidth(460)}
+            aria-valuenow={Math.round(rightPanelWidth)}
+            title={t('rightPanelResizeTitle')}
+            onPointerDown={handleRightPanelResizerPointerDown}
+            onDoubleClick={() => setRightPanelWidth(460)}
           />
         )}
-        {wordPreviewPane}
+        {rightPanel}
       </div>
       <StatusBar filePath={file.path} dirty={file.dirty} />
       {settingsVisible && (

@@ -11,6 +11,20 @@ import {
   type PresetId,
   type PresetInfo,
 } from './word';
+import {
+  DEFAULT_HTML_EXPORT_PRESET_ID,
+  LEGACY_WECHAT_CUSTOM_HTML_PRESET_ID,
+  getHtmlExportPresetDefinition,
+  hasHtmlExportPreset,
+  isBuiltInHtmlExportPresetId,
+  isCustomHtmlExportPresetId,
+  listHtmlExportPresets,
+  normalizeCustomHtmlExportPresets,
+  type CustomHtmlExportPresetId,
+  type CustomHtmlExportPresetRegistry,
+  type HtmlExportPreset,
+  type HtmlExportPresetId,
+} from './htmlExportPresets';
 
 const STORAGE_KEY = 'folia-settings';
 const LEGACY_KEY = 'folia-export-settings';
@@ -20,11 +34,21 @@ export const SETTINGS_CHANGED_EVENT = 'folia-settings-changed';
 export const STANDARD_CUSTOM_EXPORT_PRESET_LIMIT = 2;
 export const CUSTOM_EXPORT_PRESET_LIMIT_MESSAGE =
   '常规版本最多可保存 2 个自定义导出预设。受邀内测授权可使用更多自定义槽位。';
+export const STANDARD_CUSTOM_HTML_EXPORT_PRESET_LIMIT = 2;
+export const CUSTOM_HTML_EXPORT_PRESET_LIMIT_MESSAGE =
+  '常规版本最多可保存 2 个自定义 HTML 导出预设。受邀内测授权可使用更多自定义槽位。';
 
 export class CustomExportPresetLimitError extends Error {
   constructor() {
     super(CUSTOM_EXPORT_PRESET_LIMIT_MESSAGE);
     this.name = 'CustomExportPresetLimitError';
+  }
+}
+
+export class CustomHtmlExportPresetLimitError extends Error {
+  constructor() {
+    super(CUSTOM_HTML_EXPORT_PRESET_LIMIT_MESSAGE);
+    this.name = 'CustomHtmlExportPresetLimitError';
   }
 }
 
@@ -45,6 +69,13 @@ export interface AppSettings {
   exportPresetId: PresetId;
   customExportPresets: CustomPresetRegistry;
   disabledExportPresetIds: PresetId[];
+  htmlExportPresetId: HtmlExportPresetId;
+  customHtmlExportPresets: CustomHtmlExportPresetRegistry;
+  disabledHtmlExportPresetIds: HtmlExportPresetId[];
+  /**
+   * @deprecated Migrated to customHtmlExportPresets. Kept so old settings do not lose data.
+   */
+  wechatCustomCss: string;
   // 编辑器
   editorFontFamily: EditorFontFamily;
   editorFontSize: number;
@@ -71,6 +102,10 @@ const defaults: AppSettings = {
   exportPresetId: 'legal',
   customExportPresets: {} as CustomPresetRegistry,
   disabledExportPresetIds: [],
+  htmlExportPresetId: DEFAULT_HTML_EXPORT_PRESET_ID,
+  customHtmlExportPresets: {} as CustomHtmlExportPresetRegistry,
+  disabledHtmlExportPresetIds: [],
+  wechatCustomCss: '',
   editorFontFamily: 'IBM Plex Mono',
   editorFontSize: 13,
   editorTabSize: 4,
@@ -110,6 +145,10 @@ function normalizeLocale(value: unknown): AppLocale {
   return value === 'en-US' ? 'en-US' : 'zh-CN';
 }
 
+function normalizeWechatCustomCss(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
 function normalizeDisabledExportPresetIds(
   value: unknown,
   customExportPresets: CustomPresetRegistry,
@@ -128,6 +167,26 @@ function normalizeDisabledExportPresetIds(
   if (enabledCount > 0) return disabled;
 
   return disabled.filter((id) => id !== DEFAULT_PRESET_ID);
+}
+
+function normalizeDisabledHtmlExportPresetIds(
+  value: unknown,
+  customHtmlExportPresets: CustomHtmlExportPresetRegistry,
+): HtmlExportPresetId[] {
+  if (!Array.isArray(value)) return [];
+
+  const validIds = new Set(listHtmlExportPresets(customHtmlExportPresets).map((preset) => preset.id));
+  const seen = new Set<string>();
+  const disabled = value.flatMap((id) => {
+    if (typeof id !== 'string' || !validIds.has(id as HtmlExportPresetId) || seen.has(id)) return [];
+    seen.add(id);
+    return [id as HtmlExportPresetId];
+  });
+
+  const enabledCount = validIds.size - disabled.length;
+  if (enabledCount > 0) return disabled;
+
+  return disabled.filter((id) => id !== DEFAULT_HTML_EXPORT_PRESET_ID);
 }
 
 function firstEnabledPresetId(
@@ -150,8 +209,30 @@ function normalizeExportPresetId(
   return firstEnabledPresetId(customExportPresets, disabledExportPresetIds);
 }
 
+function firstEnabledHtmlExportPresetId(
+  customHtmlExportPresets: CustomHtmlExportPresetRegistry,
+  disabledHtmlExportPresetIds: readonly HtmlExportPresetId[],
+): HtmlExportPresetId {
+  const disabled = new Set(disabledHtmlExportPresetIds);
+  return listHtmlExportPresets(customHtmlExportPresets).find((preset) => !disabled.has(preset.id))?.id
+    ?? DEFAULT_HTML_EXPORT_PRESET_ID;
+}
+
+function normalizeHtmlExportPresetId(
+  id: HtmlExportPresetId | undefined,
+  customHtmlExportPresets: CustomHtmlExportPresetRegistry,
+  disabledHtmlExportPresetIds: readonly HtmlExportPresetId[],
+): HtmlExportPresetId {
+  if (id && hasHtmlExportPreset(id, customHtmlExportPresets) && !disabledHtmlExportPresetIds.includes(id)) {
+    return id;
+  }
+
+  return firstEnabledHtmlExportPresetId(customHtmlExportPresets, disabledHtmlExportPresetIds);
+}
+
 function migrateLegacySettings(stored: Partial<AppSettings>): Partial<AppSettings> {
   const next = { ...stored };
+  let changed = false;
   try {
     const legacyRaw = localStorage.getItem(LEGACY_KEY);
     if (legacyRaw) {
@@ -160,6 +241,31 @@ function migrateLegacySettings(stored: Partial<AppSettings>): Partial<AppSetting
         next.exportPresetId = legacy.defaultPresetId;
       }
       localStorage.removeItem(LEGACY_KEY);
+      changed = true;
+    }
+
+    const legacyWechatCss = normalizeWechatCustomCss(next.wechatCustomCss);
+    const customHtmlExportPresets = normalizeCustomHtmlExportPresets(next.customHtmlExportPresets);
+    if (legacyWechatCss.trim() && !customHtmlExportPresets[LEGACY_WECHAT_CUSTOM_HTML_PRESET_ID]) {
+      next.customHtmlExportPresets = {
+        ...customHtmlExportPresets,
+        [LEGACY_WECHAT_CUSTOM_HTML_PRESET_ID]: {
+          id: LEGACY_WECHAT_CUSTOM_HTML_PRESET_ID,
+          name: '旧公众号自定义 CSS',
+          description: '由旧版公众号自定义 CSS 自动迁移，基于简洁图文主题追加。',
+          css: legacyWechatCss,
+          source: 'legacy wechatCustomCss',
+          kind: 'custom',
+          base: DEFAULT_HTML_EXPORT_PRESET_ID,
+        },
+      };
+      if (!next.htmlExportPresetId) {
+        next.htmlExportPresetId = LEGACY_WECHAT_CUSTOM_HTML_PRESET_ID;
+      }
+      changed = true;
+    }
+
+    if (changed) {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...defaults, ...next }));
     }
   } catch {
@@ -185,6 +291,16 @@ export function getSettings(): AppSettings {
       customExportPresets,
       disabledExportPresetIds,
     );
+    const customHtmlExportPresets = normalizeCustomHtmlExportPresets(stored.customHtmlExportPresets);
+    const disabledHtmlExportPresetIds = normalizeDisabledHtmlExportPresetIds(
+      stored.disabledHtmlExportPresetIds,
+      customHtmlExportPresets,
+    );
+    const htmlExportPresetId = normalizeHtmlExportPresetId(
+      stored.htmlExportPresetId,
+      customHtmlExportPresets,
+      disabledHtmlExportPresetIds,
+    );
 
     return {
       ...defaults,
@@ -193,6 +309,10 @@ export function getSettings(): AppSettings {
       exportPresetId,
       customExportPresets,
       disabledExportPresetIds,
+      htmlExportPresetId,
+      customHtmlExportPresets,
+      disabledHtmlExportPresetIds,
+      wechatCustomCss: normalizeWechatCustomCss(stored.wechatCustomCss),
     };
   } catch {
     return { ...defaults };
@@ -207,13 +327,29 @@ export function updateSettings(patch: Partial<AppSettings>): AppSettings {
     customExportPresets,
   );
   const requestedPresetId = patch.exportPresetId ?? current.exportPresetId;
+  const customHtmlExportPresets = normalizeCustomHtmlExportPresets(
+    patch.customHtmlExportPresets ?? current.customHtmlExportPresets,
+  );
+  const disabledHtmlExportPresetIds = normalizeDisabledHtmlExportPresetIds(
+    patch.disabledHtmlExportPresetIds ?? current.disabledHtmlExportPresetIds,
+    customHtmlExportPresets,
+  );
+  const requestedHtmlExportPresetId = patch.htmlExportPresetId ?? current.htmlExportPresetId;
   const merged = {
     ...current,
     ...patch,
     locale: normalizeLocale(patch.locale ?? current.locale),
+    wechatCustomCss: normalizeWechatCustomCss(patch.wechatCustomCss ?? current.wechatCustomCss),
     customExportPresets,
     disabledExportPresetIds,
     exportPresetId: normalizeExportPresetId(requestedPresetId, customExportPresets, disabledExportPresetIds),
+    customHtmlExportPresets,
+    disabledHtmlExportPresetIds,
+    htmlExportPresetId: normalizeHtmlExportPresetId(
+      requestedHtmlExportPresetId,
+      customHtmlExportPresets,
+      disabledHtmlExportPresetIds,
+    ),
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
   emitSettingsChanged(merged);
@@ -324,6 +460,111 @@ export function removeExportPreset(id: PresetId): AppSettings {
 
   if (isBuiltInPresetId(id)) {
     return setExportPresetEnabled(id, false);
+  }
+
+  return getSettings();
+}
+
+export function getHtmlExportPreset(): HtmlExportPresetId {
+  return getSettings().htmlExportPresetId;
+}
+
+export function setHtmlExportPreset(id: HtmlExportPresetId): void {
+  updateSettings({ htmlExportPresetId: id });
+}
+
+export function getHtmlExportPresetConfig(): HtmlExportPreset {
+  const settings = getSettings();
+  return getHtmlExportPresetDefinition(settings.htmlExportPresetId, settings.customHtmlExportPresets);
+}
+
+export function listEnabledHtmlExportPresets(settings: AppSettings = getSettings()): HtmlExportPreset[] {
+  const disabled = new Set(settings.disabledHtmlExportPresetIds);
+  return listHtmlExportPresets(settings.customHtmlExportPresets).filter((preset) => !disabled.has(preset.id));
+}
+
+export function isHtmlExportPresetEnabled(
+  id: HtmlExportPresetId,
+  settings: AppSettings = getSettings(),
+): boolean {
+  return hasHtmlExportPreset(id, settings.customHtmlExportPresets)
+    && !settings.disabledHtmlExportPresetIds.includes(id);
+}
+
+export function getCustomHtmlExportPresetCount(settings: AppSettings = getSettings()): number {
+  return Object.keys(settings.customHtmlExportPresets).length;
+}
+
+export function canAddCustomHtmlExportPreset(
+  id: CustomHtmlExportPresetId,
+  settings: AppSettings = getSettings(),
+): boolean {
+  return Boolean(settings.customHtmlExportPresets[id])
+    || getCustomHtmlExportPresetCount(settings) < STANDARD_CUSTOM_HTML_EXPORT_PRESET_LIMIT;
+}
+
+export function addCustomHtmlExportPreset(
+  id: CustomHtmlExportPresetId,
+  preset: HtmlExportPreset,
+): AppSettings {
+  const settings = getSettings();
+  if (!canAddCustomHtmlExportPreset(id, settings)) {
+    throw new CustomHtmlExportPresetLimitError();
+  }
+
+  return updateSettings({
+    customHtmlExportPresets: {
+      ...settings.customHtmlExportPresets,
+      [id]: {
+        ...preset,
+        id,
+        kind: 'custom',
+        source: preset.source || 'user',
+        base: isBuiltInHtmlExportPresetId(preset.base ?? '') ? preset.base : DEFAULT_HTML_EXPORT_PRESET_ID,
+      },
+    },
+    disabledHtmlExportPresetIds: settings.disabledHtmlExportPresetIds.filter((disabledId) => disabledId !== id),
+    htmlExportPresetId: id,
+  });
+}
+
+export function removeCustomHtmlExportPreset(id: CustomHtmlExportPresetId): AppSettings {
+  const settings = getSettings();
+  const next = { ...settings.customHtmlExportPresets };
+  delete next[id];
+  return updateSettings({
+    customHtmlExportPresets: next,
+    disabledHtmlExportPresetIds: settings.disabledHtmlExportPresetIds.filter((disabledId) => disabledId !== id),
+    htmlExportPresetId: settings.htmlExportPresetId === id
+      ? DEFAULT_HTML_EXPORT_PRESET_ID
+      : settings.htmlExportPresetId,
+  });
+}
+
+export function setHtmlExportPresetEnabled(id: HtmlExportPresetId, enabled: boolean): AppSettings {
+  const settings = getSettings();
+  if (!hasHtmlExportPreset(id, settings.customHtmlExportPresets)) return settings;
+
+  const disabledSet = new Set(settings.disabledHtmlExportPresetIds);
+  if (enabled) {
+    disabledSet.delete(id);
+  } else {
+    disabledSet.add(id);
+  }
+
+  return updateSettings({
+    disabledHtmlExportPresetIds: Array.from(disabledSet),
+    htmlExportPresetId: settings.htmlExportPresetId,
+  });
+}
+
+export function removeHtmlExportPreset(id: HtmlExportPresetId): AppSettings {
+  if (isCustomHtmlExportPresetId(id)) {
+    return removeCustomHtmlExportPreset(id);
+  }
+
+  if (isBuiltInHtmlExportPresetId(id)) {
+    return setHtmlExportPresetEnabled(id, false);
   }
 
   return getSettings();

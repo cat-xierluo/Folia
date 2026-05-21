@@ -2,6 +2,7 @@ import {
   BookOpenText,
   Braces,
   FolderOpen,
+  Newspaper,
   Save,
   SaveAll,
   SlidersHorizontal,
@@ -18,9 +19,11 @@ type ToolbarProps = {
   fileName: string;
   editorMode: EditorMode;
   wordPreviewVisible: boolean;
+  wechatPreviewVisible: boolean;
   editingDisabled: boolean;
   onToggleEditorMode: () => void;
   onToggleWordPreview: () => void;
+  onToggleWechatPreview: () => void;
   onOpen: () => void;
   onSave: () => void;
   onSaveAs: () => void;
@@ -29,7 +32,7 @@ type ToolbarProps = {
 
 export function Toolbar({
   dirty, fileName,
-  editorMode, wordPreviewVisible, editingDisabled, onToggleEditorMode, onToggleWordPreview,
+  editorMode, wordPreviewVisible, wechatPreviewVisible, editingDisabled, onToggleEditorMode, onToggleWordPreview, onToggleWechatPreview,
   onOpen, onSave, onSaveAs, onOpenSettings,
 }: ToolbarProps) {
   const settings = useSettings();
@@ -92,6 +95,16 @@ export function Toolbar({
             aria-label={t('toolbarWordPreviewLabel')}
           >
             <BookOpenText size={iconSize} strokeWidth={strokeWidth} />
+          </button>
+          <button
+            className={wechatPreviewVisible ? 'active' : ''}
+            onClick={onToggleWechatPreview}
+            disabled={editingDisabled}
+            data-no-window-drag="true"
+            title={t('toolbarWechatPreviewTitle')}
+            aria-label={t('toolbarWechatPreviewLabel')}
+          >
+            <Newspaper size={iconSize} strokeWidth={strokeWidth} />
           </button>
         </div>
         <div className="toolbar-group toolbar-navigation-actions" aria-label={t('toolbarNavGroup')}>
