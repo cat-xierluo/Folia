@@ -176,6 +176,33 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   border-color: color-mix(in oklch, var(--accent) 28%, transparent);
 }
 
+.app-toolbar button.toolbar-update-button {
+  width: auto;
+  min-width: 0;
+  gap: 5px;
+  padding: 0 10px;
+  color: var(--accent);
+  background: var(--control-active-bg);
+  border-color: color-mix(in oklch, var(--accent) 30%, transparent);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.app-toolbar button.toolbar-update-button:hover {
+  color: var(--accent);
+  background: color-mix(in oklch, var(--accent) 12%, var(--control-hover-bg));
+  border-color: color-mix(in oklch, var(--accent) 42%, transparent);
+}
+
+.app-toolbar button.toolbar-update-button:disabled {
+  opacity: 0.72;
+}
+
+.toolbar-update-button span {
+  white-space: nowrap;
+  line-height: 1;
+}
+
 .app-toolbar button:disabled {
   opacity: 0.4;
   cursor: default;
@@ -2161,8 +2188,8 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 
 .settings-preset-workbench {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) 260px;
-  gap: 24px;
+  grid-template-columns: minmax(220px, 1fr) 220px;
+  gap: 20px;
   align-items: start;
   min-width: 0;
 }
@@ -2196,8 +2223,8 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 }
 
 .settings-preset-preview-viewport {
-  width: 260px;
-  height: 368px;
+  width: 220px;
+  height: 312px;
   overflow: hidden;
   border: 1px solid var(--border-soft);
   border-radius: 5px;
@@ -2221,7 +2248,7 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 .settings-preset-preview-paper.word-paper {
   width: var(--word-page-width);
   height: var(--word-page-height);
-  transform: scale(0.326);
+  transform: scale(0.277);
   transform-origin: top left;
   border: none;
   box-shadow: none;
@@ -2248,13 +2275,13 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 28px;
+  padding: 36px;
   background: var(--overlay-bg);
 }
 
 .settings-preset-preview-zoom-shell {
-  width: min(860px, calc(100vw - 56px));
-  max-height: calc(100vh - 56px);
+  width: min(820px, calc(100vw - 72px));
+  max-height: min(620px, calc(100vh - 72px));
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -2277,7 +2304,7 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   display: flex;
   justify-content: center;
   overflow: auto;
-  padding: 22px;
+  padding: 16px;
 }
 
 .settings-preset-preview-zoom-paper.word-paper {
@@ -2386,7 +2413,7 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 }
 
 .settings-html-workbench {
-  grid-template-columns: minmax(300px, 1fr) 300px;
+  grid-template-columns: minmax(260px, 1fr) 220px;
 }
 
 .settings-html-workbench.settings-preset-workbench--full {
@@ -2453,9 +2480,9 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 
 .settings-html-preview-article {
   width: 100%;
-  max-height: min(520px, calc(100vh - 330px));
+  max-height: min(380px, calc(100vh - 330px));
   overflow: auto;
-  padding: 18px 18px 24px;
+  padding: 14px 14px 18px;
   border: 1px solid var(--border-soft);
   border-radius: 5px;
   background: #fff;
@@ -2487,13 +2514,13 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 28px;
+  padding: 36px;
   background: var(--overlay-bg);
 }
 
 .settings-html-preview-zoom-shell {
-  width: min(760px, calc(100vw - 56px));
-  max-height: calc(100vh - 56px);
+  width: min(760px, calc(100vw - 72px));
+  max-height: min(620px, calc(100vh - 72px));
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -2514,7 +2541,7 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 
 .settings-html-preview-zoom-stage {
   overflow: auto;
-  padding: 22px;
+  padding: 16px;
   background: var(--surface);
 }
 
@@ -2810,123 +2837,6 @@ a.about-info-value:hover {
 
 .toolbar-settings-btn {
   line-height: 1;
-}
-
-/* ===== Update Dialog ===== */
-
-.update-dialog-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 2100;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--overlay-bg);
-}
-
-.update-dialog {
-  position: relative;
-  width: min(420px, calc(100vw - 48px));
-  padding: 28px 30px 24px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--surface);
-  box-shadow: 0 12px 48px var(--shadow-soft);
-}
-
-.update-dialog-close {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: none;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-}
-
-.update-dialog-close:hover {
-  color: var(--fg);
-  background: var(--bg);
-}
-
-.update-dialog-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 38px;
-  height: 38px;
-  margin-bottom: 16px;
-  border-radius: 6px;
-  background: var(--control-active-bg);
-  color: var(--accent);
-}
-
-.update-dialog-kicker {
-  margin-bottom: 5px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--muted);
-}
-
-.update-dialog-copy h3 {
-  margin: 0 0 8px;
-  font-family: var(--font-display);
-  font-size: 22px;
-  font-weight: 400;
-  letter-spacing: 0;
-  color: var(--fg);
-}
-
-.update-dialog-copy p {
-  margin: 0;
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1.65;
-}
-
-.update-progress {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 16px;
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.update-progress-track {
-  height: 4px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: var(--border);
-}
-
-.update-progress-track span {
-  display: block;
-  height: 100%;
-  min-width: 12%;
-  border-radius: inherit;
-  background: var(--accent);
-  transition: width 0.2s;
-}
-
-.update-error {
-  margin-top: 12px;
-  color: var(--danger);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.update-dialog-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 24px;
 }
 
 /* ===== Dark Theme Guardrails ===== */

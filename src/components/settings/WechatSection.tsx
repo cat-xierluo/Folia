@@ -180,12 +180,6 @@ export function HtmlExportSection({ onOpenLicense }: HtmlExportSectionProps) {
   const customSlotRows = Array.from({ length: displayedCustomSlotCount }, (_, index) => customPresets[index] ?? null);
   const showPreview = activePage === 'library';
 
-  const slotHint = customPresetCount > customPresetLimit
-    ? `已保存 ${customPresetCount} 个自定义 HTML 预设；当前可用 ${customPresetLimit} 个。`
-    : licenseActive
-      ? `已使用 ${customPresetCount}/${customPresetLimit} 个内测槽位。`
-      : `已使用 ${customPresetCount}/${customPresetLimit} 个常规槽位。输入内测码可扩展。`;
-
   const handleSelectPreset = (id: HtmlExportPreset['id']) => {
     if (!isHtmlExportPresetEnabled(id, settings)) {
       setMessage({ tone: 'error', text: '请先启用这个预设，再设为默认 HTML 导出样式。' });
@@ -267,7 +261,11 @@ export function HtmlExportSection({ onOpenLicense }: HtmlExportSectionProps) {
     return () => window.removeEventListener('keydown', handlePreviewKeyDown, { capture: true });
   }, [previewExpanded]);
 
-  const renderPresetItem = (preset: HtmlExportPreset, slotLabel?: string) => {
+  const renderPresetItem = (
+    preset: HtmlExportPreset,
+    slotLabel?: string,
+    options: { compact?: boolean } = {},
+  ) => {
     const enabled = isHtmlExportPresetEnabled(preset.id, settings);
     const active = selectedPreset.id === preset.id;
     const canDisable = !enabled || enabledPresets.length > 1;
@@ -288,7 +286,7 @@ export function HtmlExportSection({ onOpenLicense }: HtmlExportSectionProps) {
               {preset.kind === 'custom' && <span className="settings-preset-badge">自定义</span>}
               {!enabled && <span className="settings-preset-badge">已停用</span>}
             </span>
-            <span className="settings-preset-desc">{preset.description}</span>
+            {!options.compact && <span className="settings-preset-desc">{preset.description}</span>}
           </span>
         </button>
         <button
@@ -330,12 +328,15 @@ export function HtmlExportSection({ onOpenLicense }: HtmlExportSectionProps) {
       <div className="settings-preset-page-header">
         <div>
           <div className="settings-preset-group-title">自定义 CSS 槽位</div>
-          <p className="settings-preset-desc">{slotHint}</p>
         </div>
         <span className="settings-preset-count">{customPresetCount}/{customPresetLimit}</span>
       </div>
       {customSlotRows.map((preset, index) => (
-        preset ? renderPresetItem(preset, index < customPresetLimit ? `槽位 ${index + 1}` : `历史槽位 ${index + 1}`) : (
+        preset ? renderPresetItem(
+          preset,
+          index < customPresetLimit ? `槽位 ${index + 1}` : `历史槽位 ${index + 1}`,
+          { compact: true },
+        ) : (
           <div key={`html-empty-slot-${index}`} className="settings-preset-item settings-preset-slot-empty">
             <button
               type="button"
@@ -352,7 +353,6 @@ export function HtmlExportSection({ onOpenLicense }: HtmlExportSectionProps) {
                   空槽位
                   <span className="settings-preset-badge">可用</span>
                 </span>
-                <span className="settings-preset-desc">导入 CSS 文件后占用此槽位。</span>
               </span>
             </button>
           </div>
@@ -375,7 +375,6 @@ export function HtmlExportSection({ onOpenLicense }: HtmlExportSectionProps) {
                 使用更多自定义槽位
                 <span className="settings-preset-badge">输入内测码</span>
               </span>
-              <span className="settings-preset-desc">输入内测码后可使用更多槽位。</span>
             </span>
           </button>
         </div>
@@ -404,31 +403,25 @@ export function HtmlExportSection({ onOpenLicense }: HtmlExportSectionProps) {
         ))}
       </div>
 
-      <div className="settings-section-actions">
-        {activePage === 'custom' && (
-          <button type="button" className="primary-action-button" onClick={() => inputRef.current?.click()}>
-            <FileUp size={14} />
-            导入 CSS 预设文件
-          </button>
-        )}
-        {selectedIsCustom && activePage !== 'examples' && (
+      {selectedIsCustom && activePage !== 'examples' && (
+        <div className="settings-section-actions">
           <button type="button" className="settings-action-button" onClick={() => void handleCopyText(presetToJson(selectedPreset), '当前 CSS 预设 JSON 已复制')}>
             <Clipboard size={14} />
             导出当前 CSS 预设
           </button>
-        )}
-        <input
-          ref={inputRef}
-          className="settings-file-input"
-          type="file"
-          accept=".json,.css,application/json,text/css,text/plain"
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (file) void handleImportFile(file);
-            event.currentTarget.value = '';
-          }}
-        />
-      </div>
+        </div>
+      )}
+      <input
+        ref={inputRef}
+        className="settings-file-input"
+        type="file"
+        accept=".json,.css,application/json,text/css,text/plain"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (file) void handleImportFile(file);
+          event.currentTarget.value = '';
+        }}
+      />
       {message && <div className={`settings-message ${message.tone}`}>{message.text}</div>}
 
       <div className={`settings-preset-workbench settings-html-workbench ${showPreview ? '' : 'settings-preset-workbench--full'}`}>

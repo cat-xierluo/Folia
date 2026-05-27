@@ -61,7 +61,7 @@ export function LicenseSection() {
       <div className="settings-row settings-row-stacked settings-license-activate-row">
         <div>
           <div className="settings-label">输入内测码</div>
-          <div className="settings-desc">内测码只用于开启本机额外自定义槽位；当前版本不包含购买、订阅或公开收费流程。</div>
+          <div className="settings-desc">内测码只用于开启本机额外自定义槽位。</div>
         </div>
         <div className="settings-license-form">
           <input

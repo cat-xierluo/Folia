@@ -25,7 +25,16 @@ function PresetPreviewSample() {
       <h1>法律服务工作备忘录</h1>
       <p>本文用于展示导出预设的标题、正文、表格与段落间距效果。</p>
       <h2>一、项目概况</h2>
-      <p>Folia 会按照当前预设渲染 Word 纸张版式，帮助用户在导出前确认文档观感。</p>
+      <p>Folia 会按照当前预设渲染 Word 纸张版式，帮助用户在导出前确认<code>行内代码</code>、列表和表格密度。</p>
+      <blockquote>
+        <p>引用块用于观察缩进、字号、背景和行距。</p>
+      </blockquote>
+      <ul>
+        <li>无序列表用于检查缩进。</li>
+        <li>列表正文不应继承首行缩进。</li>
+      </ul>
+      <pre><code>const preset = 'word-export';</code></pre>
+      <hr />
       <table>
         <thead>
           <tr>
@@ -80,11 +89,6 @@ export function ExportSection({ onOpenLicense }: ExportSectionProps) {
   const licenseActive = settings.license.status === 'active';
   const displayedCustomSlotCount = Math.max(customPresetLimit, customPresets.length);
   const customSlotRows = Array.from({ length: displayedCustomSlotCount }, (_, index) => customPresets[index] ?? null);
-  const slotHint = customPresetCount > customPresetLimit
-    ? `已保存 ${customPresetCount} 个自定义预设；当前可用 ${customPresetLimit} 个。`
-    : licenseActive
-      ? `已使用 ${customPresetCount}/${customPresetLimit} 个内测槽位。`
-      : `已使用 ${customPresetCount}/${customPresetLimit} 个常规槽位。输入内测码可扩展。`;
 
   useEffect(() => {
     if (!previewExpanded) return undefined;
@@ -140,7 +144,7 @@ export function ExportSection({ onOpenLicense }: ExportSectionProps) {
 
   const renderPresetItem = (
     preset: (typeof presets)[number],
-    options: { slotLabel?: string; history?: boolean } = {},
+    options: { slotLabel?: string; history?: boolean; compact?: boolean } = {},
   ) => {
     const enabled = isExportPresetEnabled(preset.id, settings);
     const active = selected === preset.id;
@@ -166,7 +170,7 @@ export function ExportSection({ onOpenLicense }: ExportSectionProps) {
               {options.history && <span className="settings-preset-badge">历史兼容</span>}
               {!enabled && <span className="settings-preset-badge">已停用</span>}
             </span>
-            <span className="settings-preset-desc">{preset.description}</span>
+            {!options.compact && <span className="settings-preset-desc">{preset.description}</span>}
           </span>
         </button>
         <button
@@ -211,7 +215,6 @@ export function ExportSection({ onOpenLicense }: ExportSectionProps) {
       <div className="settings-preset-page-header">
         <div>
           <div className="settings-preset-group-title">自定义预设槽位</div>
-          <p className="settings-preset-desc">{slotHint}</p>
         </div>
         <span className="settings-preset-count">{customPresetCount}/{customPresetLimit}</span>
       </div>
@@ -221,6 +224,7 @@ export function ExportSection({ onOpenLicense }: ExportSectionProps) {
             ? `槽位 ${index + 1}`
             : `历史槽位 ${index + 1}`,
           history: index >= customPresetLimit,
+          compact: true,
         }) : (
           <div key={`empty-slot-${index}`} className="settings-preset-item settings-preset-slot-empty">
             <button
@@ -238,7 +242,6 @@ export function ExportSection({ onOpenLicense }: ExportSectionProps) {
                   空槽位
                   <span className="settings-preset-badge">可用</span>
                 </span>
-                <span className="settings-preset-desc">导入 JSON 后占用此槽位。</span>
               </span>
             </button>
           </div>
@@ -261,7 +264,6 @@ export function ExportSection({ onOpenLicense }: ExportSectionProps) {
               使用更多自定义槽位
               <span className="settings-preset-badge">输入内测码</span>
             </span>
-            <span className="settings-preset-desc">输入内测码后可使用更多槽位。</span>
           </span>
         </button>
       </div>
@@ -289,25 +291,17 @@ export function ExportSection({ onOpenLicense }: ExportSectionProps) {
           </button>
         ))}
       </div>
-      <div className="settings-section-actions">
-        {activePage === 'custom' && (
-          <button type="button" className="primary-action-button" onClick={() => inputRef.current?.click()}>
-            <FileUp size={15} />
-            导入 JSON
-          </button>
-        )}
-        <input
-          ref={inputRef}
-          className="settings-file-input"
-          type="file"
-          accept=".json,application/json"
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (file) void handleImportFile(file);
-            event.currentTarget.value = '';
-          }}
-        />
-      </div>
+      <input
+        ref={inputRef}
+        className="settings-file-input"
+        type="file"
+        accept=".json,application/json"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (file) void handleImportFile(file);
+          event.currentTarget.value = '';
+        }}
+      />
       {message && <div className={`settings-message ${message.tone}`}>{message.text}</div>}
 
       <div className={`settings-preset-workbench ${activePage === 'library' ? '' : 'settings-preset-workbench--full'}`}>
