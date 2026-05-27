@@ -3,6 +3,7 @@ import {
   Braces,
   FolderOpen,
   Newspaper,
+  RefreshCw,
   Save,
   SaveAll,
   SlidersHorizontal,
@@ -13,6 +14,11 @@ import { translate } from '../services/i18n';
 import { handleTitlebarMouseDown } from '../services/titlebarDrag';
 
 export type EditorMode = 'wysiwyg' | 'source';
+
+type UpdateToolbarStatus = {
+  phase: 'ready' | 'installing';
+  version: string;
+};
 
 type ToolbarProps = {
   dirty: boolean;
@@ -29,12 +35,14 @@ type ToolbarProps = {
   onSaveAs: () => void;
   onOpenSettings: () => void;
   onPreloadSettings?: () => void;
+  updateStatus?: UpdateToolbarStatus;
+  onRestartUpdate?: () => void;
 };
 
 export function Toolbar({
   dirty, fileName,
   editorMode, wordPreviewVisible, wechatPreviewVisible, editingDisabled, onToggleEditorMode, onToggleWordPreview, onToggleWechatPreview,
-  onOpen, onSave, onSaveAs, onOpenSettings, onPreloadSettings,
+  onOpen, onSave, onSaveAs, onOpenSettings, onPreloadSettings, updateStatus, onRestartUpdate,
 }: ToolbarProps) {
   const settings = useSettings();
   const t = (key: Parameters<typeof translate>[1]) => translate(settings.locale, key);
@@ -77,6 +85,35 @@ export function Toolbar({
       <div className="toolbar-spacer" data-tauri-drag-region aria-hidden="true" />
       <div className="toolbar-right">
         <div className="toolbar-group toolbar-view-actions" aria-label={t('toolbarViewGroup')}>
+          {updateStatus && (
+            <button
+              className={`toolbar-update-button ${updateStatus.phase === 'installing' ? 'installing' : ''}`}
+              onClick={onRestartUpdate}
+              disabled={updateStatus.phase === 'installing'}
+              data-no-window-drag="true"
+              title={
+                updateStatus.phase === 'installing'
+                  ? t('toolbarUpdateInstallingTitle')
+                  : `${t('toolbarRestartUpdateTitle')} ${updateStatus.version}`
+              }
+              aria-label={
+                updateStatus.phase === 'installing'
+                  ? t('toolbarUpdateInstallingLabel')
+                  : `${t('toolbarRestartUpdateLabel')} ${updateStatus.version}`
+              }
+            >
+              <RefreshCw
+                size={14}
+                strokeWidth={strokeWidth}
+                className={updateStatus.phase === 'installing' ? 'spinning' : ''}
+              />
+              <span>
+                {updateStatus.phase === 'installing'
+                  ? t('toolbarUpdateInstallingLabel')
+                  : t('toolbarRestartUpdateLabel')}
+              </span>
+            </button>
+          )}
           <button
             className={editorMode === 'source' ? 'active' : ''}
             onClick={onToggleEditorMode}

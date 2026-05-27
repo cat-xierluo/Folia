@@ -8,7 +8,10 @@ import { prefersStableHtmlPreview } from '../services/documentViewMode';
 import { useSettings } from '../hooks/useSettings';
 import {
   checkForAppUpdate,
+  downloadAppUpdate,
+  installDownloadedAppUpdate,
   type UpdateCheckResult,
+  type UpdateProgress,
   type UpdateSource,
 } from '../services/updateService';
 import { scheduleDelayedAutoUpdateCheck } from '../services/autoUpdateScheduler';
@@ -16,7 +19,6 @@ import { translate } from '../services/i18n';
 import { findHtmlTableBlocks } from '../services/htmlTableBlockService';
 import { Toolbar, type EditorMode } from '../components/Toolbar';
 import { StatusBar } from '../components/StatusBar';
-import { UpdateDialog } from '../components/UpdateDialog';
 import { FloatingToc } from '../components/FloatingToc';
 
 const EditorPane = lazy(() =>
@@ -65,6 +67,12 @@ const HtmlTableEditor = lazy(() =>
 
 type AvailableUpdate = Extract<UpdateCheckResult, { status: 'available' }>;
 type RightPanelMode = 'none' | 'word' | 'wechat';
+type UpdateInstallState =
+  | { phase: 'idle' }
+  | { phase: 'downloading'; source: UpdateSource; update: AvailableUpdate; progress: UpdateProgress | null }
+  | { phase: 'ready'; source: UpdateSource; update: AvailableUpdate }
+  | { phase: 'installing'; source: UpdateSource; update: AvailableUpdate }
+  | { phase: 'error'; source: UpdateSource; update?: AvailableUpdate; message: string };
 
 function SettingsPageFallback() {
   return (
@@ -103,11 +111,18 @@ function extractToc(content: string): TocItem[] {
   return headings;
 }
 
+function toUpdateErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  return '更新安装失败';
+}
+
 export function AppLayout() {
   const settings = useSettings();
   const t = (key: Parameters<typeof translate>[1]) => translate(settings.locale, key);
   const reopenAttempted = useRef(false);
   const autoUpdateCheckStarted = useRef(false);
+  const updateDownloadVersionRef = useRef<string | null>(null);
   const mainContentRef = useRef<HTMLDivElement>(null);
   const [file, setFile] = useState<OpenedFile>(createEmptyFile());
   const [toc, setToc] = useState<TocItem[]>([]);
@@ -120,7 +135,7 @@ export function AppLayout() {
   const [resizing, setResizing] = useState(false);
   const [htmlPresentationVisible, setHtmlPresentationVisible] = useState(false);
   const [htmlTableEditorVisible, setHtmlTableEditorVisible] = useState(false);
-  const [updateDialog, setUpdateDialog] = useState<{ source: UpdateSource; update: AvailableUpdate } | null>(null);
+  const [updateState, setUpdateState] = useState<UpdateInstallState>({ phase: 'idle' });
 
   useEffect(() => {
     document.documentElement.dataset.theme = settings.theme;
@@ -268,6 +283,45 @@ export function AppLayout() {
     setHtmlPresentationVisible(true);
   }, [file.fileType]);
 
+  const startBackgroundUpdateDownload = useCallback((source: UpdateSource, update: AvailableUpdate) => {
+    if (updateDownloadVersionRef.current === update.version) return;
+
+    updateDownloadVersionRef.current = update.version;
+    setUpdateState({ phase: 'downloading', source, update, progress: null });
+
+    void downloadAppUpdate(update.update, (progress) => {
+      setUpdateState((current) => {
+        if (current.phase !== 'downloading' || current.update.version !== update.version) return current;
+        return { ...current, progress };
+      });
+    })
+      .then(() => {
+        setUpdateState((current) => {
+          if (current.phase !== 'downloading' || current.update.version !== update.version) return current;
+          return { phase: 'ready', source, update };
+        });
+      })
+      .catch((error) => {
+        updateDownloadVersionRef.current = null;
+        setUpdateState({ phase: 'error', source, update, message: toUpdateErrorMessage(error) });
+      });
+  }, []);
+
+  const handleRestartUpdate = useCallback(async () => {
+    if (updateState.phase !== 'ready') return;
+
+    const readyUpdate = updateState.update;
+    const source = updateState.source;
+    setUpdateState({ phase: 'installing', source, update: readyUpdate });
+
+    try {
+      await installDownloadedAppUpdate(readyUpdate.update);
+    } catch (error) {
+      updateDownloadVersionRef.current = null;
+      setUpdateState({ phase: 'error', source, update: readyUpdate, message: toUpdateErrorMessage(error) });
+    }
+  }, [updateState]);
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
@@ -363,9 +417,9 @@ export function AppLayout() {
         autoUpdateCheckStarted.current = true;
       },
       checkForAppUpdate,
-      onUpdateAvailable: (result) => setUpdateDialog({ source: 'auto', update: result }),
+      onUpdateAvailable: (result) => startBackgroundUpdateDownload('auto', result),
     });
-  }, [settings.autoUpdateCheck]);
+  }, [settings.autoUpdateCheck, startBackgroundUpdateDownload]);
 
   useEffect(() => {
     if (!settings.autoSave || !file.path || !file.dirty || file.fileType === 'docx') return;
@@ -387,6 +441,9 @@ export function AppLayout() {
   }, [file.dirty, file.name]);
 
   const isDocx = file.fileType === 'docx';
+  const updateToolbarStatus = updateState.phase === 'ready' || updateState.phase === 'installing'
+    ? { phase: updateState.phase, version: updateState.update.version }
+    : undefined;
   const shouldUseStableHtmlPreview = prefersStableHtmlPreview(file.content, file.fileType);
   const shouldShowHtmlPresentation = htmlPresentationVisible && file.fileType === 'html' && !isDocx;
   const htmlTableBlocks = useMemo(
@@ -584,6 +641,8 @@ export function AppLayout() {
         onPreloadSettings={() => {
           void preloadSettingsPage();
         }}
+        updateStatus={updateToolbarStatus}
+        onRestartUpdate={handleRestartUpdate}
       />
       <div
         ref={mainContentRef}
@@ -623,7 +682,7 @@ export function AppLayout() {
         <Suspense fallback={<SettingsPageFallback />}>
           <SettingsPage
             onClose={() => setSettingsVisible(false)}
-            onUpdateAvailable={(update) => setUpdateDialog({ source: 'manual', update })}
+            onUpdateAvailable={(update) => startBackgroundUpdateDownload('manual', update)}
           />
         </Suspense>
       )}
@@ -635,13 +694,6 @@ export function AppLayout() {
             onClose={() => setHtmlTableEditorVisible(false)}
           />
         </Suspense>
-      )}
-      {updateDialog && (
-        <UpdateDialog
-          update={updateDialog.update}
-          source={updateDialog.source}
-          onClose={() => setUpdateDialog(null)}
-        />
       )}
     </div>
   );

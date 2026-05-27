@@ -6,7 +6,7 @@ export const FALLBACK_APP_VERSION = '0.3.7';
 export type UpdateSource = 'auto' | 'manual';
 
 export type UpdateProgress = {
-  status: 'downloading' | 'installing' | 'relaunching';
+  status: 'downloading' | 'ready' | 'installing' | 'relaunching';
   downloadedBytes: number;
   totalBytes?: number;
   percent?: number;
@@ -57,14 +57,14 @@ export async function checkForAppUpdate(): Promise<UpdateCheckResult> {
   }
 }
 
-export async function installAppUpdate(
+export async function downloadAppUpdate(
   update: Update,
   onProgress?: (progress: UpdateProgress) => void,
 ): Promise<void> {
   let downloadedBytes = 0;
   let totalBytes: number | undefined;
 
-  await update.downloadAndInstall((event: DownloadEvent) => {
+  await update.download((event: DownloadEvent) => {
     if (event.event === 'Started') {
       downloadedBytes = 0;
       totalBytes = event.data.contentLength;
@@ -79,10 +79,25 @@ export async function installAppUpdate(
       return;
     }
 
-    onProgress?.({ status: 'installing', downloadedBytes, totalBytes, percent: 100 });
+    onProgress?.({ status: 'ready', downloadedBytes, totalBytes, percent: 100 });
   });
+}
 
-  onProgress?.({ status: 'relaunching', downloadedBytes, totalBytes, percent: 100 });
+export async function installDownloadedAppUpdate(
+  update: Update,
+  onProgress?: (progress: UpdateProgress) => void,
+): Promise<void> {
+  onProgress?.({ status: 'installing', downloadedBytes: 0, percent: 100 });
+  await update.install();
+  onProgress?.({ status: 'relaunching', downloadedBytes: 0, percent: 100 });
   const { relaunch } = await import('@tauri-apps/plugin-process');
   await relaunch();
+}
+
+export async function installAppUpdate(
+  update: Update,
+  onProgress?: (progress: UpdateProgress) => void,
+): Promise<void> {
+  await downloadAppUpdate(update, onProgress);
+  await installDownloadedAppUpdate(update, onProgress);
 }
