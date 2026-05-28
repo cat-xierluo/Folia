@@ -2,6 +2,66 @@
 
 ## 第一部分：决策记录
 
+### [DEC-049] - 2026-05-28 - 官网 favicon 使用应用自身 Logo
+
+**背景**
+用户希望官网在浏览器标签页中显示 Folia 软件自身 logo，而不是通用网页图标。
+
+**决策**
+- 使用 Tauri 应用图标 `src-tauri/icons/128x128.png` 作为官网 favicon 来源。
+- 官网公开资源改为 `website/public/favicon.png`，页面 `<link rel="icon">` 使用 `image/png`。
+- 保持首屏和站内显示仍使用现有 `folia-icon.png`，避免重复调整视觉布局。
+
+**验证**
+- `npm run website:build`
+- 构建产物确认：`website/dist/index.html` 指向 `/Folia/favicon.png`
+- `npm run lint`
+- `git diff --check`
+
+**影响**
+- 浏览器标签页、收藏夹等位置更一致地显示 Folia 应用品牌。
+
+### [DEC-048] - 2026-05-28 - 官网首屏采用居中内容布局
+
+**背景**
+用户继续复验官网后指出，首页内容可以往中间凑，两侧留空即可，不需要文案和产品预览分别贴向左右边界。这个反馈符合 Folia 官网“克制、内容居中、阅读感优先”的品牌方向。
+
+**决策**
+- 首屏改为 `hero-inner` 居中容器，Folia 图标、标题、介绍和按钮集中在页面中轴。
+- 产品预览从绝对定位背景改为居中的下方预览，不再作为左右分栏的一侧。
+- 产品预览只露出一段，给用户产品信号，同时让首屏底部露出下一段内容区域。
+- 移动端将产品预览裁切为下方弱信号，避免穿过正文或影响按钮可读性。
+
+**验证**
+- `npm run website:build`
+- 桌面截图：`test-results/website-centered-desktop.png`
+- 移动端截图：`test-results/website-centered-mobile.png`
+- `npm run lint`
+- `git diff --check`
+
+**影响**
+- 官网视觉重心更集中，宽屏下保留更多左右留白，减少“左右都顶到”的拥挤感。
+
+### [DEC-047] - 2026-05-28 - 官网主叙事回到复杂 Markdown 知识工作
+
+**背景**
+用户复验官网后认为整体可用，但第一版过于强调法律文档。Folia 的 README 已将项目定位为“面向知识工作者的 Markdown 阅读与 Word 导出工具”，官网也应沿用这一定位：复杂 Markdown 阅读、纸张预览和导出是核心，法律文档是重要场景之一而不是唯一标签。
+
+**决策**
+- 官网首屏不再使用“法院系统”“法律文档”等强行业表达，改为“复杂 Markdown”“阅读结构”“纸张版式”“导出或分享”。
+- 产品示意图从“庭审材料目录 / 证据目录”改为“项目复盘 / 资料整理”，保留复杂表格和纸面预览能力信号。
+- 功能卡片第一项从“复杂表格稳定阅读”调整为“复杂 Markdown 稳定阅读”，覆盖长文档、HTML 片段、宽表格和混合排版。
+- “为什么做 Folia”段落从“法律文档却经常很重”调整为“复杂资料却经常很重”。
+
+**验证**
+- `npm run website:build`
+- 移动端截图：`test-results/website-knowledge-mobile.png`
+- `npm run lint`
+- `git diff --check`
+
+**影响**
+- 官网更接近 README 的通用知识工作定位，避免新用户把 Folia 误解为只服务法律场景。
+
 ### [DEC-046] - 2026-05-28 - 官方网站采用独立 Astro 静态站
 
 **背景**

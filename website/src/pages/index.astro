@@ -8,16 +8,16 @@ const releasesUrl = `${repoUrl}/releases/latest`;
 
 const features = [
   {
-    title: '复杂表格稳定阅读',
-    text: '保留 HTML table 的 rowspan、colspan 和宽表结构，法律表格、证据目录、材料清单都能安心打开。',
+    title: '复杂 Markdown 稳定阅读',
+    text: '长文档、HTML 片段、宽表格和混合排版可以保持清晰，不把复杂资料压成难以阅读的源码。',
   },
   {
     title: 'Markdown 所见即所得',
-    text: '普通 Markdown 默认进入轻量编辑视图，源码模式仍可随时切回，适合阅读、修订和排版前检查。',
+    text: '普通 Markdown 默认进入轻量编辑视图，源码模式仍可随时切回，适合阅读、修订和整理知识材料。',
   },
   {
     title: 'Word 纸张预览与导出',
-    text: '导出前先看到接近 A4 的页面效果，再用内置或自定义 JSON 预设生成 .docx。',
+    text: '导出前先看到接近 A4 的页面效果，再用内置或自定义 JSON 预设生成可交付的 .docx。',
   },
   {
     title: 'HTML 文章与演示预览',
@@ -33,7 +33,7 @@ const downloadOptions = [
 
 const workflow = [
   '打开 Markdown、HTML 或拖拽文件进入窗口',
-  '阅读复杂表格，必要时切换源码或结构化编辑',
+  '阅读复杂 Markdown，必要时切换源码或结构化编辑',
   '打开 Word 或 HTML 预览，确认输出效果',
   '导出 .docx 或复制 HTML 到目标编辑器',
 ];
@@ -50,7 +50,7 @@ const workflow = [
     />
     <meta name="theme-color" content="#f7f1e8" />
     <title>Folia - Markdown 阅读与 Word 导出工具</title>
-    <link rel="icon" href={`${base}favicon.svg`} type="image/svg+xml" />
+    <link rel="icon" href={`${base}favicon.png`} type="image/png" />
   </head>
   <body>
     <header class="site-header">
@@ -67,72 +67,74 @@ const workflow = [
 
     <main id="top">
       <section class="hero" aria-labelledby="hero-title">
-        <div class="hero-product" aria-hidden="true">
-          <div class="app-window">
-            <div class="app-toolbar">
-              <span></span>
-              <span></span>
-              <span></span>
-              <strong>庭审材料目录.md</strong>
+        <div class="hero-inner">
+          <div class="hero-content">
+            <img class="hero-icon" src={foliaIcon.src} width="86" height="86" alt="" />
+            <p class="eyebrow">Markdown reader for demanding documents</p>
+            <h1 id="hero-title">Folia</h1>
+            <p class="hero-copy">
+              面向知识工作者的 Markdown 阅读与 Word 导出工具。打开复杂 Markdown，确认阅读结构和纸张版式，再稳定导出或分享。
+            </p>
+            <div class="hero-actions" aria-label="主要操作">
+              <a class="button button-primary" href={releasesUrl}>下载最新版</a>
+              <a class="button button-secondary" href={repoUrl} target="_blank" rel="noreferrer">查看源码</a>
             </div>
-            <div class="app-body">
-              <aside class="app-rail">
+          </div>
+
+          <div class="hero-product" aria-hidden="true">
+            <div class="app-window">
+              <div class="app-toolbar">
                 <span></span>
                 <span></span>
                 <span></span>
-              </aside>
-              <div class="editor-pane">
-                <p class="md-heading"># 证据目录</p>
-                <p>## 一、主体资料</p>
-                <p>- 营业执照</p>
-                <p>- 法定代表人身份证明</p>
-                <p>## 二、往来文件</p>
-                <p>请核对每份材料的页码、来源和证明目的。</p>
+                <strong>项目复盘.md</strong>
               </div>
-              <div class="paper-pane">
-                <div class="paper">
-                  <h2>证据目录</h2>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>序号</th>
-                        <th>材料名称</th>
-                        <th>证明目的</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td rowspan="2">1</td>
-                        <td>合同及补充协议</td>
-                        <td>证明基础交易关系</td>
-                      </tr>
-                      <tr>
-                        <td>付款凭证</td>
-                        <td>证明履行情况</td>
-                      </tr>
-                      <tr>
-                        <td>2</td>
-                        <td colspan="2">电子邮件、会议纪要与交付记录</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                  <blockquote>Folia 会尽量保持表格结构和纸面版式一致。</blockquote>
+              <div class="app-body">
+                <aside class="app-rail">
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                </aside>
+                <div class="editor-pane">
+                  <p class="md-heading"># 项目复盘</p>
+                  <p>## 一、关键结论</p>
+                  <p>- 交付范围已确认</p>
+                  <p>- 后续问题进入清单</p>
+                  <p>## 二、资料整理</p>
+                  <p>请核对每份材料的来源、状态和下一步动作。</p>
+                </div>
+                <div class="paper-pane">
+                  <div class="paper">
+                    <h2>项目复盘</h2>
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>模块</th>
+                          <th>材料</th>
+                          <th>状态</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td rowspan="2">输入</td>
+                          <td>访谈记录</td>
+                          <td>已整理</td>
+                        </tr>
+                        <tr>
+                          <td>参考资料</td>
+                          <td>待复核</td>
+                        </tr>
+                        <tr>
+                          <td>输出</td>
+                          <td colspan="2">报告草稿、附件清单与后续任务</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                    <blockquote>Folia 会尽量保持复杂 Markdown 的阅读结构和纸面版式一致。</blockquote>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        </div>
-
-        <div class="hero-content">
-          <img class="hero-icon" src={foliaIcon.src} width="86" height="86" alt="" />
-          <p class="eyebrow">Markdown reader for demanding documents</p>
-          <h1 id="hero-title">Folia</h1>
-          <p class="hero-copy">
-            面向知识工作者的 Markdown 阅读与 Word 导出工具。打开复杂表格文档，确认纸张版式，再稳定交付给同事、客户或法院系统。
-          </p>
-          <div class="hero-actions" aria-label="主要操作">
-            <a class="button button-primary" href={releasesUrl}>下载最新版</a>
-            <a class="button button-secondary" href={repoUrl} target="_blank" rel="noreferrer">查看源码</a>
           </div>
         </div>
       </section>
@@ -141,10 +143,10 @@ const workflow = [
         <div class="section-inner intro-grid">
           <div>
             <p class="section-kicker">为什么做 Folia</p>
-            <h2 id="intro-title">Markdown 很轻，法律文档却经常很重。</h2>
+            <h2 id="intro-title">Markdown 很轻，复杂资料却经常很重。</h2>
           </div>
           <p>
-            Folia 重点解决知识工作里的两个断点：复杂 HTML 表格在 Markdown 工具里容易变形，导出 Word 前又很难确认最终纸面效果。它把阅读、轻量编辑、纸张预览和导出放在一个克制的桌面窗口里。
+            Folia 重点解决知识工作里的两个断点：复杂 Markdown 在常见工具里容易变形，导出 Word 前又很难确认最终纸面效果。它把阅读、轻量编辑、纸张预览和导出放在一个克制的桌面窗口里。
           </p>
         </div>
       </section>

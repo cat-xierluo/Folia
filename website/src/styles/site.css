@@ -90,37 +90,46 @@ a {
 
 .hero {
   position: relative;
-  display: grid;
-  min-height: min(760px, calc(100svh - 72px));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: auto;
   overflow: hidden;
+  padding: clamp(46px, 7vw, 82px) clamp(18px, 4vw, 56px) clamp(28px, 4vw, 42px);
   border-bottom: 1px solid var(--border);
 }
 
+.hero-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: min(1080px, 100%);
+  margin: 0 auto;
+}
+
 .hero-product {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
+  position: relative;
+  z-index: 1;
+  width: min(900px, 100%);
+  max-height: 260px;
+  margin-top: clamp(30px, 4vw, 44px);
   overflow: hidden;
 }
 
 .hero-product::after {
-  position: absolute;
-  inset: 0;
-  content: '';
-  background: oklch(97% 0.012 80 / 38%);
+  display: none;
 }
 
 .app-window {
-  position: absolute;
-  right: clamp(-260px, -12vw, -120px);
-  bottom: clamp(24px, 8vw, 82px);
-  width: min(980px, 88vw);
-  min-width: 720px;
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  margin: 0 auto;
   border: 1px solid oklch(82% 0.018 75);
   border-radius: 8px;
   background: var(--surface);
   box-shadow: var(--shadow);
-  transform: rotate(-1deg);
+  transform: rotate(-0.7deg);
 }
 
 .app-toolbar {
@@ -152,7 +161,7 @@ a {
 .app-body {
   display: grid;
   grid-template-columns: 38px minmax(220px, 0.9fr) minmax(360px, 1.25fr);
-  min-height: 455px;
+  min-height: 360px;
 }
 
 .app-rail {
@@ -198,7 +207,7 @@ a {
 
 .paper {
   width: min(360px, 100%);
-  min-height: 410px;
+  min-height: 320px;
   padding: 34px 32px;
   border: 1px solid oklch(86% 0.012 75);
   border-radius: 2px;
@@ -246,10 +255,13 @@ a {
 .hero-content {
   position: relative;
   z-index: 1;
-  align-self: center;
-  width: min(590px, calc(100% - 36px));
-  margin-left: clamp(18px, 8vw, 108px);
-  padding: clamp(48px, 8vw, 96px) 0 clamp(72px, 10vw, 120px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: min(720px, 100%);
+  margin: 0 auto;
+  padding: 0;
+  text-align: center;
 }
 
 .hero-icon {
@@ -287,7 +299,7 @@ h1 {
 }
 
 .hero-copy {
-  max-width: 520px;
+  max-width: 660px;
   margin: 28px 0 0;
   color: oklch(28% 0.025 60);
   font-size: clamp(17px, 2.2vw, 23px);
@@ -298,6 +310,7 @@ h1 {
 .download-actions {
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: 12px;
   margin-top: 30px;
 }
@@ -531,9 +544,14 @@ h1 {
 }
 
 @media (max-width: 980px) {
+  .hero-product {
+    max-height: 220px;
+  }
+
   .app-window {
-    right: -360px;
-    opacity: 0.72;
+    width: 780px;
+    max-width: none;
+    opacity: 0.78;
   }
 
   .feature-grid,
@@ -571,13 +589,18 @@ h1 {
   }
 
   .hero {
-    min-height: max(560px, calc(100svh - 140px));
+    min-height: auto;
+    padding-top: 48px;
+    padding-bottom: 28px;
   }
 
   .hero-content {
-    width: calc(100% - 36px);
-    margin: 0 auto;
-    padding-top: 54px;
+    width: 100%;
+  }
+
+  .hero-product {
+    max-height: 160px;
+    margin-top: 40px;
   }
 
   .hero-icon {
@@ -591,9 +614,10 @@ h1 {
   }
 
   .app-window {
-    right: -540px;
-    bottom: 18px;
-    opacity: 0.56;
+    width: 640px;
+    margin-left: 50%;
+    opacity: 0.38;
+    transform: translateX(-50%) rotate(-0.7deg);
   }
 
   .section {
