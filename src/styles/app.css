@@ -1241,6 +1241,19 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   text-align: center;
 }
 
+.word-preview-native-shell {
+  width: min(100%, max(320px, var(--word-page-scaled-width)));
+}
+
+.word-preview-native-pdf {
+  display: block;
+  width: 100%;
+  height: min(76vh, max(520px, calc(var(--word-page-scaled-height) + 60px)));
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: 0 1px 2px var(--paper-shadow);
+}
+
 .word-page-viewport {
   position: relative;
   width: var(--word-page-scaled-width);
@@ -2337,6 +2350,10 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 
 .settings-row:last-child {
   border-bottom: none;
+}
+
+.settings-row > .settings-action-button {
+  flex-shrink: 0;
 }
 
 .settings-row-stacked {

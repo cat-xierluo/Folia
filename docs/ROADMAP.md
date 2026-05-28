@@ -166,6 +166,8 @@
 - **2026-05-28**
   - 启动 Folia 官方网站建设：新增独立 Astro 静态站和 GitHub Pages 发布方案。
   - 继续修复 Word 预览与真实导出一致性：Markdown 链接导出为 Word 原生外部超链接，标题、正文和 Markdown 表格字体颜色按导出预设写入 `.docx`，纸张预览同步补齐链接、正文和表格颜色映射。
+  - Word 纸张预览第一阶段改为真实导出产物驱动：预览先通过 `markdownToDocx()` 生成临时 `.docx` Blob，再由 Mammoth 转为 HTML 并进入现有 A4 分页外壳，减少预览链路与导出链路分叉。
+  - Word 纸张预览继续补齐 LibreOffice 后台 renderer：Tauri 后端新增 `.docx` 转 PDF 预览命令，前端优先嵌入 LibreOffice headless 导出的 PDF；未安装 LibreOffice 或转换失败时保留 Mammoth HTML fallback，并在设置页提供下载入口。
 
 - **2026-05-27**
   - 自动更新后台下载继续收口：主界面不再订阅下载进度事件，只在下载完成后显示顶部“重启更新”，避免更新包下载期间频繁重绘造成页面卡顿。

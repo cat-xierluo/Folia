@@ -1,5 +1,44 @@
+// @vitest-environment jsdom
+import React, { act } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { paginateRenderedContent } from './WordPaperPreviewPane';
+import { getPreset } from '../services/word/config';
+import { createWordPreviewArtifact } from '../services/wordPreviewArtifactService';
+import { paginateRenderedContent, WordPaperPreviewPane } from './WordPaperPreviewPane';
+
+(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+vi.mock('../services/wordPreviewArtifactService', () => ({
+  createWordPreviewArtifact: vi.fn().mockResolvedValue({
+    source: 'docx',
+    docxBlob: new Blob(['docx']),
+    html: '<h1 data-height="20">真实 Word 标题</h1><p data-height="20">真实 Word 正文</p>',
+  }),
+}));
+
+vi.mock('vditor', () => ({
+  default: {
+    preview: vi.fn().mockResolvedValue(undefined),
+  },
+}));
+
+vi.mock('vditor/dist/index.css', () => ({}));
+
+function flushTimers(ms = 0): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
+async function waitForText(container: HTMLElement, text: string): Promise<void> {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (container.textContent?.includes(text)) return;
+    await act(async () => {
+      await flushTimers(16);
+    });
+  }
+  throw new Error(`Timed out waiting for text: ${text}`);
+}
 
 function measuredHeight(element: HTMLElement): number {
   const ownHeight = Number(element.dataset.height ?? 0);
@@ -104,5 +143,104 @@ describe('paginateRenderedContent', () => {
     const pages = pageContents(pagesContainer);
     expect(pages).toHaveLength(1);
     expect(pages[0].textContent).toContain('合计');
+  });
+});
+
+describe('WordPaperPreviewPane', () => {
+  let host: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    localStorage.clear();
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      window.setTimeout(() => callback(performance.now()), 0);
+      return 1;
+    });
+    host = document.createElement('div');
+    document.body.append(host);
+    root = createRoot(host);
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    host.remove();
+    vi.restoreAllMocks();
+    vi.clearAllMocks();
+  });
+
+  it('renders the paper preview from the generated docx artifact', async () => {
+    await act(async () => {
+      root.render(React.createElement(WordPaperPreviewPane, {
+        source: '# Markdown 标题',
+        previewWidth: 460,
+        canExport: true,
+        onExportWord: () => undefined,
+        onClose: () => undefined,
+      }));
+      await flushTimers(320);
+      await flushTimers();
+    });
+    const pages = host.querySelector<HTMLElement>('.word-preview-pages');
+    if (!pages) throw new Error('missing word preview pages');
+    await waitForText(pages, '真实 Word 标题');
+
+    expect(createWordPreviewArtifact).toHaveBeenCalledWith('# Markdown 标题', getPreset('legal'));
+    expect(pages.textContent).toContain('真实 Word 标题');
+    expect(pages.textContent).toContain('真实 Word 正文');
+  });
+
+  it('does not regenerate the docx artifact when only preview width changes', async () => {
+    await act(async () => {
+      root.render(React.createElement(WordPaperPreviewPane, {
+        source: '# Markdown 标题',
+        previewWidth: 460,
+        canExport: true,
+        onExportWord: () => undefined,
+        onClose: () => undefined,
+      }));
+      await flushTimers(320);
+      await flushTimers();
+    });
+    expect(createWordPreviewArtifact).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      root.render(React.createElement(WordPaperPreviewPane, {
+        source: '# Markdown 标题',
+        previewWidth: 520,
+        canExport: true,
+        onExportWord: () => undefined,
+        onClose: () => undefined,
+      }));
+      await flushTimers(320);
+      await flushTimers();
+    });
+
+    expect(createWordPreviewArtifact).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders a native office PDF preview when the artifact provides one', async () => {
+    vi.mocked(createWordPreviewArtifact).mockResolvedValueOnce({
+      source: 'native-pdf',
+      docxBlob: new Blob(['docx']),
+      engine: 'LibreOffice',
+      pdfDataUrl: 'data:application/pdf;base64,JVBERi0xLjQK',
+    });
+
+    await act(async () => {
+      root.render(React.createElement(WordPaperPreviewPane, {
+        source: '# Markdown 标题',
+        previewWidth: 460,
+        canExport: true,
+        onExportWord: () => undefined,
+        onClose: () => undefined,
+      }));
+      await flushTimers(320);
+      await flushTimers();
+    });
+
+    const frame = host.querySelector<HTMLIFrameElement>('.word-preview-native-pdf');
+    expect(frame).toBeTruthy();
+    expect(frame?.src).toBe('data:application/pdf;base64,JVBERi0xLjQK');
+    expect(host.querySelector('.word-preview-pages')?.textContent).not.toContain('真实 Word 标题');
   });
 });

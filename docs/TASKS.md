@@ -117,18 +117,19 @@
 
 ### 设置与导出体验
 
-#### ISS-117 Word 预览改为真实导出产物驱动
+#### ISS-119 Word 预览改为真实导出产物驱动
 
 - **优先级:** P1
 - **类型:** L2
-- **状态:** 待方案评估。
-- **问题:** 用户希望 Word 纸张预览不只是继续减少字体、颜色、行距等局部差异，而是尽量做到“最终 Word 导出什么样，预览就是什么样”。当前预览由 Markdown 经 Vditor 渲染为 HTML，再用 CSS 模拟 `PresetConfig`；这种网页模拟无法完全复现 Word / WPS 的排版引擎、分页、字体替换、列表、表格布局和兼容细节。
+- **状态:** 已实现，待复验。
+- **问题:** 用户希望 Word 纸张预览不只是继续减少字体、颜色、行距等局部差异，而是尽量做到“最终 Word 导出什么样，预览就是什么样”。旧预览由 Markdown 经 Vditor 渲染为 HTML，再用 CSS 模拟 `PresetConfig`；这种网页模拟无法完全复现 Word / WPS 的排版引擎、分页、字体替换、列表、表格布局和兼容细节。
 - **建议实现:**
   - 将右侧 Word 预览从“Markdown + CSS 模拟”升级为“真实导出产物驱动”：编辑内容先走同一套 `markdownToDocx()` 导出链路生成临时 `.docx`，预览再基于该 `.docx` 生成可视结果。
   - 第一阶段评估两条路线：A. `.docx` 转 PDF / 图片后按页展示，保真度最高但需要本机转换能力；B. 解析 `.docx` XML 生成预览 HTML，启动轻但仍需复刻 Word layout。
-  - 保留当前快速 CSS 预览作为加载中或无转换能力时的 fallback，避免输入时每次都阻塞生成真实预览。
-  - 增加缓存与 debounce：内容或预设变化后延迟生成真实预览，导出按钮复用同一 `.docx` Blob，避免预览和导出走两套产物。
+  - 保留当前纸张分页外壳，避免输入时每次都阻塞主编辑区。
+  - 增加缓存与 debounce：内容或预设变化后延迟生成真实预览，导出按钮复用同一套 `.docx` 生成逻辑，避免预览和导出走两套源数据。
 - **验收:** 同一份 Markdown 的右侧预览与点击导出的 `.docx` 来自同一生成产物；页数、分页、标题、正文、列表、表格、链接、页边距和图片尺寸明显贴近 Word / WPS 打开效果；无转换能力时有清晰 fallback，不影响正常导出。
+- **实现:** 已新增 `wordPreviewArtifactService` 和 `nativeWordPreviewService`，右侧 Word 预览在 debounce 后先调用 `markdownToDocx()` 生成临时 `.docx` Blob；Tauri 后端只通过本机 LibreOffice `soffice --headless --convert-to pdf:writer_pdf_Export` 后台导出 PDF 并返回给前端嵌入预览，不调用 Microsoft Word / WPS。未检测到 LibreOffice 或转换失败时，复用 `docxPreviewService` / Mammoth 转为已清洗 HTML，并交给现有 A4 纸张分页外壳展示；设置页新增 LibreOffice 检测状态与官方下载入口。`docxPreviewService` 同时兼容 Mammoth 在浏览器和 Node/Vitest 下的 `arrayBuffer` / `buffer` 输入差异。
 
 #### ISS-116 Word 导出链接转换与预览/导出颜色一致性
 

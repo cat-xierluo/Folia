@@ -17,6 +17,7 @@ All notable changes to this project will be documented in this file.
 - 官网首屏布局改为居中内容容器，产品预览作为下方居中视觉信号，两侧保留自然留白。
 - 官网文案从偏法律文档场景调整为面向知识工作者的复杂 Markdown 阅读、预览和导出定位。
 - ESLint 忽略 Astro 官网生成目录，避免 `website/.astro` 类型文件参与桌面应用源码检查。
+- Word 纸张预览改为先生成临时 `.docx`，优先通过本机 LibreOffice 后台命令导出 PDF 后嵌入预览；未安装 LibreOffice 或转换失败时再回落到 Mammoth HTML。设置页新增 LibreOffice 检测状态与下载入口。
 - 配置文件（eslint、playwright、tsconfig、vite）从项目根目录移至 `config/` 子目录。
 - 更新服务将下载和安装拆分为独立 API，支持后台下载后再重启安装。
 - 导出预设设置面板精简布局：移除冗余描述文案，自定义预设使用紧凑模式。

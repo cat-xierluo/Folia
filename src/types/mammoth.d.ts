@@ -6,6 +6,7 @@ declare module 'mammoth' {
 
   interface ConvertOptions {
     arrayBuffer?: ArrayBuffer;
+    buffer?: ArrayBuffer;
     path?: string;
   }
 

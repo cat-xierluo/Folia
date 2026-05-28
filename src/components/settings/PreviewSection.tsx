@@ -1,4 +1,10 @@
-import { useState } from 'react';
+import { Download } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import {
+  getNativeWordPreviewStatus,
+  openLibreOfficeDownloadPage,
+  type NativeWordPreviewStatus,
+} from '../../services/nativeWordPreviewService';
 import { getSettings, updateSettings, type AppSettings } from '../../services/settingsService';
 import type { PreviewFontFamily, PreviewWidth } from '../../services/settingsService';
 
@@ -9,11 +15,16 @@ const PREVIEW_WIDTHS: PreviewWidth[] = [640, 680, 720, 800];
 
 export function PreviewSection() {
   const [settings, setSettings] = useState(() => getSettings());
+  const [nativePreviewStatus, setNativePreviewStatus] = useState<NativeWordPreviewStatus | null>(null);
 
   const handleChange = (patch: Partial<AppSettings>) => {
     updateSettings(patch);
     setSettings(getSettings());
   };
+
+  useEffect(() => {
+    void getNativeWordPreviewStatus().then(setNativePreviewStatus);
+  }, []);
 
   return (
     <div className="settings-section">
@@ -77,6 +88,25 @@ export function PreviewSection() {
             <option key={lh} value={lh}>{lh}</option>
           ))}
         </select>
+      </div>
+
+      <div className="settings-row">
+        <div>
+          <div className="settings-label">Word 真实预览</div>
+          <div className="settings-desc">
+            {nativePreviewStatus?.available
+              ? `LibreOffice 已启用${nativePreviewStatus.path ? ` · ${nativePreviewStatus.path}` : ''}`
+              : '未检测到 LibreOffice，导出产物将使用 HTML 回退预览'}
+          </div>
+        </div>
+        <button
+          type="button"
+          className="settings-action-button"
+          onClick={() => void openLibreOfficeDownloadPage()}
+        >
+          <Download size={14} />
+          获取 LibreOffice
+        </button>
       </div>
     </div>
   );

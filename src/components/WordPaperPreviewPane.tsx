@@ -1,10 +1,9 @@
 import { useDeferredValue, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Check, ChevronDown, FileOutput, X } from 'lucide-react';
 import { useSettings } from '../hooks/useSettings';
-import { detectMarkdownRenderFeatures } from '../services/markdownFeatureDetector';
 import { translate } from '../services/i18n';
 import { listEnabledExportPresets, setExportPreset } from '../services/settingsService';
-import { VDITOR_PREVIEW_I18N } from '../services/vditorPreviewConfig';
+import { createWordPreviewArtifact } from '../services/wordPreviewArtifactService';
 import { getPreset } from '../services/word/config';
 import { createWordPreviewStyle } from '../services/wordPreviewStyle';
 import type { PresetId } from '../services/word';
@@ -59,6 +58,26 @@ function makePage(container: HTMLDivElement, pageNumber: number): HTMLDivElement
   container.append(shell);
 
   return content;
+}
+
+function renderNativePdfPreview(container: HTMLDivElement, pdfDataUrl: string, engine: string): void {
+  container.replaceChildren();
+
+  const shell = document.createElement('section');
+  shell.className = 'word-preview-native-shell';
+  shell.setAttribute('aria-label', `${engine} 预览`);
+
+  const label = document.createElement('div');
+  label.className = 'word-page-label';
+  label.textContent = engine;
+
+  const frame = document.createElement('iframe');
+  frame.className = 'word-preview-native-pdf';
+  frame.title = `${engine} PDF`;
+  frame.src = pdfDataUrl;
+
+  shell.append(label, frame);
+  container.append(shell);
 }
 
 function isTableElement(element: Element): element is HTMLTableElement {
@@ -237,10 +256,6 @@ export function WordPaperPreviewPane({
   const [activePresetId, setActivePresetId] = useState<PresetId>(settings.exportPresetId);
   const debouncedSource = useDebouncedValue(source, 260);
   const deferredSource = useDeferredValue(debouncedSource);
-  const renderFeatures = useMemo(
-    () => detectMarkdownRenderFeatures(deferredSource),
-    [deferredSource],
-  );
   const preset = useMemo(
     () => getPreset(settings.exportPresetId, settings.customExportPresets),
     [settings.customExportPresets, settings.exportPresetId],
@@ -257,13 +272,16 @@ export function WordPaperPreviewPane({
     () => presets.some((item) => item.id === activePresetId) ? activePresetId : settings.exportPresetId,
     [activePresetId, presets, settings.exportPresetId],
   );
+  const contentHeightPx = useMemo(
+    () => Math.max(
+      120,
+      (preset.page.height - preset.page.margin_top - preset.page.margin_bottom) * CSS_PX_PER_CM,
+    ),
+    [preset],
+  );
   const style = useMemo(() => {
     const pageWidthPx = preset.page.width * CSS_PX_PER_CM;
     const pageHeightPx = preset.page.height * CSS_PX_PER_CM;
-    const contentHeightPx = Math.max(
-      120,
-      (preset.page.height - preset.page.margin_top - preset.page.margin_bottom) * CSS_PX_PER_CM,
-    );
     const availableWidth = Math.max(320, previewWidth - PREVIEW_HORIZONTAL_PADDING);
     const scale = Math.min(1, Math.max(0.42, availableWidth / pageWidthPx));
     return {
@@ -275,7 +293,7 @@ export function WordPaperPreviewPane({
       '--word-page-scaled-height': `${pageHeightPx * scale}px`,
       '--word-page-content-height': `${contentHeightPx}px`,
     };
-  }, [preset, previewWidth]);
+  }, [contentHeightPx, preset, previewWidth]);
 
   useEffect(() => {
     if (!isPresetPickerOpen) return;
@@ -304,43 +322,35 @@ export function WordPaperPreviewPane({
     }
 
     let cancelled = false;
-    void Promise.all([
-      import('vditor/dist/index.css'),
-      import('vditor'),
-    ]).then(async ([, { default: Vditor }]) => {
+    measureEl.replaceChildren();
+    pagesEl.replaceChildren();
+    makePage(pagesEl, 1);
+
+    void createWordPreviewArtifact(deferredSource, preset).then((artifact) => {
       if (cancelled || !measureRef.current || !pagesRef.current) return;
-      await Vditor.preview(measureRef.current, deferredSource, {
-        mode: 'light',
-        anchor: 0,
-        cdn: '/vditor',
-        i18n: VDITOR_PREVIEW_I18N,
-        icon: undefined,
-        theme: {
-          current: 'light',
-          path: '',
-        },
-        hljs: {
-          style: 'github',
-          enable: renderFeatures.hasHighlightableCode,
-          lineNumber: false,
-        },
-        markdown: {
-          sanitize: true,
-        },
-      });
+      if (artifact.source === 'native-pdf') {
+        measureRef.current.replaceChildren();
+        renderNativePdfPreview(pagesRef.current, artifact.pdfDataUrl, artifact.engine);
+        return;
+      }
+
+      measureRef.current.innerHTML = artifact.html;
       window.requestAnimationFrame(() => {
         window.requestAnimationFrame(() => {
           if (cancelled || !measureRef.current || !pagesRef.current) return;
-          const contentHeight = Number.parseFloat(String(style['--word-page-content-height'])) || 900;
-          paginateRenderedContent(measureRef.current, pagesRef.current, contentHeight);
+          paginateRenderedContent(measureRef.current, pagesRef.current, contentHeightPx);
         });
       });
+    }).catch(() => {
+      if (cancelled || !pagesRef.current) return;
+      pagesRef.current.replaceChildren();
+      makePage(pagesRef.current, 1);
     });
 
     return () => {
       cancelled = true;
     };
-  }, [deferredSource, renderFeatures.hasHighlightableCode, style]);
+  }, [contentHeightPx, deferredSource, preset]);
 
   const selectPreset = (id: PresetId) => {
     setExportPreset(id);
