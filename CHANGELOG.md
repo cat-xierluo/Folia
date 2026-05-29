@@ -2,19 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.3.11]
+## [0.3.12]
 
 ### Changed
 
-- Word 纸张预览保持快速 HTML/CSS 仿 Word 路线：当前 Markdown 直接渲染为 A4 纸张预览，导出预设驱动页边距、字体、标题、正文、表格和图片样式；真实 `.docx` 生成继续只服务 Word 导出。
 - Markdown 阅读和即时渲染编辑默认改用中文优化字体栈，Settings / 预览字体新增“中文优化”“中文宋体”等预设，改善中文长文与中英文混排观感。
 - 优化前端生产构建拆包：React、CodeMirror、Tauri、Vditor、docx / Mammoth / JSZip 等重型依赖拆分为独立 vendor chunks，消除当前 500KB chunk size warning。
 
 ### Fixed
 
+- 修复 HTML 表格导出 Word 时正文行仍输出 `w:tblHeader w:val="false"` 的冗余节点；新增真实 `.docx` XML 回归测试，覆盖 `gridSpan`、`vMerge` 和表头行结构。
+
+## [0.3.11]
+
+### Changed
+
+- Word 纸张预览保持快速 HTML/CSS 仿 Word 路线：当前 Markdown 直接渲染为 A4 纸张预览，导出预设驱动页边距、字体、标题、正文、表格和图片样式；真实 `.docx` 生成继续只服务 Word 导出。
+
+### Fixed
+
 - 修复 Word 纸张预览中部分长表格正文单元格会按表头样式渲染的问题，长 HTML 表格预览恢复正常换行且不撑出面板。
 - 修复根目录官网脚本在未安装 `website/` 依赖时无法构建的问题；`website:dev`、`website:build`、`website:preview` 会按需补装官网依赖。
-- 修复 HTML 表格导出 Word 时正文行仍输出 `w:tblHeader w:val="false"` 的冗余节点；新增真实 `.docx` XML 回归测试，覆盖 `gridSpan`、`vMerge` 和表头行结构。
 
 ## [0.3.10]
 

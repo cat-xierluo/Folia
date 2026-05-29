@@ -2,6 +2,28 @@
 
 ## 第一部分：决策记录
 
+### [DEC-058] - 2026-05-29 - 发布 v0.3.12 字体与导出回归修复版本
+
+**背景**
+`v0.3.11` 已发布并对应上一轮 Word 预览与官网脚本回归修复。本次合并包含用户可见的中文阅读字体优化、生产构建拆包收敛，以及 HTML 表格导出 `.docx` XML 回归保护，需要作为新的补丁版本发布。
+
+**决策**
+- 发布版本号使用 `0.3.12`，不复用已有 `v0.3.11` 标签。
+- 同步更新 `package.json`、`package-lock.json`、`src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml` 和 `src-tauri/Cargo.lock` 中 Folia 自身版本。
+- `CHANGELOG.md` 将本次字体、拆包和 DOCX XML 修复拆入 `0.3.12`，保留 `0.3.11` 为上一轮回归修复说明。
+- 推送 `main` 后创建并推送 `v0.3.12` 标签，由现有 GitHub Actions Release workflow 构建多平台产物、生成 `latest.json` 并发布 GitHub Release。
+
+**验证**
+- `git diff --check`
+- `npm run typecheck`
+- `npm test`
+- `npm run lint`
+- `npm run build`
+- `cd src-tauri && cargo check`
+
+**影响**
+- 用户会收到一个聚焦的补丁版本：中文长文默认观感改善，生产构建 chunk warning 收敛，Word HTML 表格导出 XML 结构有更强回归保护。
+
 ### [DEC-057] - 2026-05-29 - 收敛前端构建 chunk 与补齐 DOCX XML 回归
 
 **背景**

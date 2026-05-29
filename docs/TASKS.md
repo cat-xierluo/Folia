@@ -32,6 +32,19 @@
 
 ### 文档与发布说明
 
+#### ISS-125 v0.3.12 字体与导出回归修复版本发布
+
+- **优先级:** P1
+- **类型:** L1
+- **状态:** 已完成，待 Release workflow 复验。
+- **问题:** 中文阅读字体优化、生产构建拆包和 DOCX XML 表格导出回归测试已经合并到 `main`，需要发布新的 GitHub Release；远端已有 `v0.3.11`，本次应使用新补丁版本。
+- **建议实现:**
+  - 将前端、Tauri、Rust crate 和 lockfile 版本统一到 `0.3.12`。
+  - 更新 `CHANGELOG.md` 中 `0.3.12` 发布说明，并保留 `0.3.11` 历史说明。
+  - 完成关键验证后提交、推送 `main`，再创建并推送 `v0.3.12` 标签触发 GitHub Release workflow。
+- **验收:** 远端 `main` 包含本次版本提交；远端存在 `v0.3.12` 标签；GitHub Actions Release workflow 开始构建新 release。
+- **实现:** 已统一 `package.json`、`package-lock.json`、`src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml` 与 `src-tauri/Cargo.lock` 版本为 `0.3.12`；`CHANGELOG.md` 已新增 `0.3.12` 发布说明并将 `0.3.11` 保持为上一轮回归修复版本；发布前验证已通过，推送 `main` 与 `v0.3.12` 标签后由 Release workflow 构建产物。
+
 #### ISS-122 v0.3.11 回归修复版本发布
 
 - **优先级:** P1
@@ -993,6 +1006,7 @@
 
 ## 进度日志
 
+- **2026-05-29** 准备发布 v0.3.12：版本号统一到 `0.3.12`，`CHANGELOG.md` 拆分 `0.3.12` / `0.3.11` 发布说明，并记录本次中文字体、构建拆包和 DOCX XML 回归修复。验证：`git diff --check`、`npm run typecheck`、`npm test`、`npm run lint`、`npm run build`、`cd src-tauri && cargo check` 均通过。
 - **2026-05-29** 完成 ISS-124：Markdown 阅读和 Vditor 即时渲染编辑默认改用中文优化字体栈，设置页新增“中文优化 / 系统默认 / 中文宋体 / Iowan Old Style / Georgia”预设，并对旧默认 `Iowan Old Style` 做一次性迁移；同步更新 `docs/DESIGN.md`、`CHANGELOG.md` 和设置服务回归测试。验证：`npm run typecheck`、`npm test`、`npm run lint`、`npm run build`、`git diff --check` 均通过。
 - **2026-05-29** 完成 ISS-121 / ISS-060：生产构建增加 Rolldown 依赖拆包组，主入口和重型编辑 / 导出依赖拆分到独立 vendor chunks，`npm run build` 不再出现 chunk size warning；新增 `.docx` XML 结构回归测试，直接检查 HTML 表格导出后的 `gridSpan`、`vMerge`、表头行和表格行数量，并修复 HTML 表格正文行输出 `tblHeader=false` 节点的问题。验证：`npm run typecheck`、`npm test`、`npm run lint`、`npm run build`、`git diff --check` 均通过。
 - **2026-05-22** 完成 ISS-113：根目录配置文件整理。ESLint、Playwright、Vite 和 TypeScript 配置集中迁移到 `config/`，日常命令通过 npm scripts 指向新配置路径，根目录只保留包管理文件、前端入口、桌面工程入口、文档和源码目录。验证：`npm test`、`npm run typecheck`、`npm run lint`、`npm run test:e2e -- --grep "settings modal"`、`npm run build`、`git diff --check` 均通过。
