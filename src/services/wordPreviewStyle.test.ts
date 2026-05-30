@@ -59,4 +59,49 @@ describe('createWordPreviewStyle', () => {
     expect(style['--word-heading-1-color']).toBe('#660000');
     expect(style['--word-link-color']).toBe('#0563C1');
   });
+
+  it('maps extended preset values for heading fonts and table backgrounds', () => {
+    const base = getPreset('legal');
+    const preset: PresetConfig = {
+      ...base,
+      titles: {
+        ...base.titles,
+        level1: {
+          ...base.titles.level1,
+          font: '微软雅黑',
+          ascii: 'Arial',
+          indent: 1,
+          line_spacing: 1.25,
+        },
+      },
+      page_number: {
+        ...base.page_number,
+        align: 'right',
+      },
+      table: {
+        ...base.table,
+        border_enabled: false,
+        alignment: 'center',
+        vertical_align: 'bottom',
+        cell_margins: { top: 0.07, bottom: 0.08, left: 0.1, right: 0.11 },
+        header_background_color: '1E3A5F',
+        row_odd_background_color: 'F5F0ED',
+        row_even_background_color: 'FFFFFF',
+      },
+    };
+
+    const style = createWordPreviewStyle(preset);
+
+    expect(style['--word-heading-1-font-family']).toBe('"微软雅黑", "Arial", serif');
+    expect(style['--word-heading-1-indent']).toBe('1em');
+    expect(style['--word-heading-1-line-height']).toBe('1.25');
+    expect(style['--word-page-number-align']).toBe('right');
+    expect(style['--word-table-border-width']).toBe('0px');
+    expect(style['--word-table-align']).toBe('center');
+    expect(style['--word-table-vertical-align']).toBe('bottom');
+    expect(style['--word-table-cell-padding']).toBe('0.07cm 0.11cm 0.08cm 0.1cm');
+    expect(style['--word-table-header-bg']).toBe('#1E3A5F');
+    expect(style['--word-table-row-odd-bg']).toBe('#F5F0ED');
+    expect(style['--word-table-row-even-bg']).toBe('#FFFFFF');
+  });
 });

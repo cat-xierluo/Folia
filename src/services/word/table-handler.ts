@@ -12,7 +12,8 @@ import {
   type HtmlTableRowModel,
 } from '../htmlTableModel';
 import type { PresetConfig } from './types';
-import { convertQuotesToChinese, createFormattedRuns, ptToHalfPt } from './formatter';
+import { convertQuotesToChinese, createFormattedRuns, parseAlignment, ptToHalfPt } from './formatter';
+import { resolveHtmlTableConfig, resolveMarkdownTableConfig } from './style-mapping';
 
 type MutableRunOptions = {
   -readonly [K in keyof IRunOptions]: IRunOptions[K];
@@ -39,34 +40,36 @@ export function createMarkdownTable(
   lines: string[],
   config: PresetConfig,
 ): Table {
+  const tablePreset = resolveMarkdownTableConfig(config);
   const rows = parseMarkdownTableRows(lines);
-  if (rows.length === 0) return emptyTable(config);
+  if (rows.length === 0) return emptyTable(tablePreset);
 
   const colCount = rows[0].length;
   const colWidths = calcColumnWidths(rows, colCount);
 
   const headerCells = rows[0].map((text, col) =>
-    makeCell(text, colWidths[col], config, true),
+    makeCell(text, colWidths[col], tablePreset, true),
   );
 
-  const bodyRows = rows.slice(1).map((row) => {
+  const bodyRows = rows.slice(1).map((row, index) => {
     const paddedRow = padRow(row, colCount);
     return new TableRow({
       children: paddedRow.map((text, col) =>
-        makeCell(text, colWidths[col], config, false),
+        makeCell(text, colWidths[col], tablePreset, false, 1, 1, tableRowBackground(tablePreset, index)),
       ),
-      height: tableRowHeight(config),
+      height: tableRowHeight(tablePreset),
     });
   });
 
   return new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
-    margins: tableCellMargins(config),
+    margins: tableCellMargins(tablePreset),
     rows: [
-      new TableRow({ children: headerCells, tableHeader: true, height: tableRowHeight(config) }),
+      new TableRow({ children: headerCells, tableHeader: true, height: tableRowHeight(tablePreset) }),
       ...bodyRows,
     ],
-    borders: tableBorders(config),
+    borders: tableBorders(tablePreset),
+    alignment: parseAlignment(tablePreset.table.alignment ?? 'center'),
   });
 }
 
@@ -76,16 +79,21 @@ export function createHtmlTable(
   html: string,
   config: PresetConfig,
 ): Table {
+  const tablePreset = resolveHtmlTableConfig(html, config);
   const model = parseHtmlTableModel(html);
-  if (model.rows.length === 0) return emptyTable(config);
+  if (model.rows.length === 0) return emptyTable(tablePreset);
 
   const colCount = model.colCount;
   const colWidths = evenWidths(colCount);
 
+  let bodyRowIndex = 0;
   const rows = model.rows.map((row) => {
+    const rowBackground = row.section === 'thead'
+      ? undefined
+      : tableRowBackground(tablePreset, bodyRowIndex++);
     const rowOptions = {
-      children: makeHtmlRowCells(row, model, colWidths, config),
-      height: tableRowHeight(config),
+      children: makeHtmlRowCells(row, model, colWidths, tablePreset, rowBackground),
+      height: tableRowHeight(tablePreset),
     };
 
     if (row.section === 'thead') {
@@ -97,9 +105,10 @@ export function createHtmlTable(
 
   return new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
-    margins: tableCellMargins(config),
+    margins: tableCellMargins(tablePreset),
     rows,
-    borders: tableBorders(config),
+    borders: tableBorders(tablePreset),
+    alignment: parseAlignment(tablePreset.table.alignment ?? 'center'),
   });
 }
 
@@ -169,12 +178,17 @@ function cmToTwip(cm: number): number {
 }
 
 function tableCellMargins(config: PresetConfig) {
-  const margin = cmToTwip(config.table.cell_margin);
+  const margins = config.table.cell_margins ?? {
+    top: config.table.cell_margin,
+    bottom: config.table.cell_margin,
+    left: config.table.cell_margin,
+    right: config.table.cell_margin,
+  };
   return {
-    top: margin,
-    bottom: margin,
-    left: margin,
-    right: margin,
+    top: cmToTwip(margins.top),
+    bottom: cmToTwip(margins.bottom),
+    left: cmToTwip(margins.left),
+    right: cmToTwip(margins.right),
   };
 }
 
@@ -192,6 +206,7 @@ function makeCell(
   isHeader: boolean,
   columnSpan = 1,
   rowSpan = 1,
+  rowBackground?: string,
 ): TableCell {
   const fontCfg = isHeader ? config.table.header_font : config.table.body_font;
   const runs = createFormattedRuns(text, config, { tableRole: isHeader ? 'header' : 'body' });
@@ -199,7 +214,8 @@ function makeCell(
   return new TableCell({
     columnSpan,
     rowSpan,
-    verticalAlign: VerticalAlign.CENTER,
+    verticalAlign: tableVerticalAlign(config),
+    shading: tableCellShading(config, isHeader, rowBackground),
     children: [
       new Paragraph({
         alignment: isHeader ? AlignmentType.CENTER : AlignmentType.LEFT,
@@ -221,13 +237,15 @@ function makeHtmlCell(
   cell: HtmlTableCellModel,
   _widthPct: number,
   config: PresetConfig,
+  rowBackground?: string,
 ): TableCell {
   const paragraphs = htmlToParagraphs(cell.html, config, cell.isHeader);
 
   return new TableCell({
     columnSpan: cell.colSpan,
     rowSpan: cell.rowSpan,
-    verticalAlign: VerticalAlign.CENTER,
+    verticalAlign: tableVerticalAlign(config),
+    shading: tableCellShading(config, cell.isHeader, rowBackground),
     children: paragraphs.length > 0 ? paragraphs : [
       makeParagraph([fallbackRun('', config, cell.isHeader)], config, cell.isHeader),
     ],
@@ -239,6 +257,7 @@ function makeHtmlRowCells(
   model: HtmlTableModel,
   colWidths: number[],
   config: PresetConfig,
+  rowBackground?: string,
 ): TableCell[] {
   const cells: TableCell[] = [];
 
@@ -246,7 +265,7 @@ function makeHtmlRowCells(
     const slot = model.grid[row.rowIndex]?.[col];
 
     if (!slot) {
-      cells.push(makeCell('', colWidths[col] ?? colWidths[0] ?? 100, config, row.section === 'thead'));
+      cells.push(makeCell('', colWidths[col] ?? colWidths[0] ?? 100, config, row.section === 'thead', 1, 1, rowBackground));
       col += 1;
       continue;
     }
@@ -256,7 +275,7 @@ function makeHtmlRowCells(
       continue;
     }
 
-    cells.push(makeHtmlCell(slot.cell, colWidths[col] ?? colWidths[0] ?? 100, config));
+    cells.push(makeHtmlCell(slot.cell, colWidths[col] ?? colWidths[0] ?? 100, config, rowBackground));
     col += slot.cell.colSpan;
   }
 
@@ -445,6 +464,26 @@ function tableBorders(config: PresetConfig): ITableBordersOptions {
     top: b, bottom: b, left: b, right: b,
     insideHorizontal: b, insideVertical: b,
   };
+}
+
+function tableVerticalAlign(config: PresetConfig) {
+  const map = {
+    top: VerticalAlign.TOP,
+    center: VerticalAlign.CENTER,
+    bottom: VerticalAlign.BOTTOM,
+  };
+  return map[config.table.vertical_align ?? 'center'];
+}
+
+function tableCellShading(config: PresetConfig, isHeader: boolean, rowBackground?: string) {
+  const fill = isHeader ? config.table.header_background_color : rowBackground;
+  return fill ? { type: 'clear' as const, fill } : undefined;
+}
+
+function tableRowBackground(config: PresetConfig, bodyRowIndex: number): string | undefined {
+  return bodyRowIndex % 2 === 0
+    ? config.table.row_odd_background_color
+    : config.table.row_even_background_color;
 }
 
 function emptyTable(config: PresetConfig): Table {

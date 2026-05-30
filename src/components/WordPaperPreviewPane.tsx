@@ -5,8 +5,10 @@ import { translate } from '../services/i18n';
 import { listEnabledExportPresets, setExportPreset } from '../services/settingsService';
 import { createWordPreviewArtifact } from '../services/wordPreviewArtifactService';
 import { getPreset } from '../services/word/config';
+import { getMarkdownStyleName, getStyle } from '../services/word/style-mapping';
 import { createWordPreviewStyle } from '../services/wordPreviewStyle';
-import type { PresetId } from '../services/word';
+import type { PresetConfig, PresetId } from '../services/word';
+import type { PresetTableFontConfig } from '../services/word/types';
 
 type WordPaperPreviewPaneProps = {
   source: string;
@@ -76,6 +78,153 @@ function tableFooterRows(table: HTMLTableElement): HTMLTableRowElement[] {
   return table.tFoot ? Array.from(table.tFoot.rows) : [];
 }
 
+function cssColor(color?: string): string | undefined {
+  if (!color) return undefined;
+  return color.startsWith('#') ? color : `#${color}`;
+}
+
+function appendInlineStyle(element: HTMLElement, declarations: Array<string | undefined>): void {
+  const clean = declarations.filter(Boolean);
+  if (clean.length === 0) return;
+
+  const existing = element.getAttribute('style')?.trim();
+  element.setAttribute('style', [existing, ...clean].filter(Boolean).join('; '));
+}
+
+function applyTextStyle(element: HTMLElement, preset: PresetConfig, styleName?: string): void {
+  const style = getStyle(preset, styleName);
+  if (!style) return;
+
+  appendInlineStyle(element, [
+    style.font ? `font-family: "${style.font}", "${style.ascii ?? preset.fonts.default.ascii}", serif` : undefined,
+    style.size ? `font-size: ${style.size}pt` : undefined,
+    style.color ? `color: ${cssColor(style.color)}` : undefined,
+    style.bold ? 'font-weight: 700' : undefined,
+    style.italic ? 'font-style: italic' : undefined,
+    style.underline ? 'text-decoration: underline' : undefined,
+    style.strikethrough ? 'text-decoration: line-through' : undefined,
+    style.align ? `text-align: ${style.align === 'justify' ? 'justify' : style.align}` : undefined,
+    style.line_spacing ? `line-height: ${style.line_spacing}` : undefined,
+    style.first_line_indent !== undefined ? `text-indent: ${style.first_line_indent}em` : undefined,
+    style.left_indent !== undefined ? `padding-left: ${style.left_indent}pt` : undefined,
+    style.space_before !== undefined ? `margin-top: ${style.space_before}pt` : undefined,
+    style.space_after !== undefined ? `margin-bottom: ${style.space_after}pt` : undefined,
+    style.background_color ? `background-color: ${cssColor(style.background_color)}` : undefined,
+  ]);
+
+  if (element instanceof HTMLTableElement && style.table) {
+    applyTableStyle(element, style.table);
+  }
+}
+
+function applyTableStyle(table: HTMLTableElement, tableStyle: NonNullable<PresetConfig['styles']>[string]['table']): void {
+  if (!tableStyle) return;
+
+  appendInlineStyle(table, [
+    tableStyle.alignment === 'left' ? 'margin-left: 0; margin-right: auto' : undefined,
+    tableStyle.alignment === 'center' ? 'margin-left: auto; margin-right: auto' : undefined,
+    tableStyle.alignment === 'right' ? 'margin-left: auto; margin-right: 0' : undefined,
+  ]);
+
+  const margins = tableStyle.cell_margins;
+  const padding = margins
+    ? `${margins.top}cm ${margins.right}cm ${margins.bottom}cm ${margins.left}cm`
+    : tableStyle.cell_margin !== undefined
+      ? `${tableStyle.cell_margin}cm`
+      : undefined;
+  const border = tableStyle.border_enabled === false
+    ? 'none'
+    : tableStyle.border_color || tableStyle.border_width
+      ? `${tableStyle.border_width ?? 1}px solid ${cssColor(tableStyle.border_color) ?? 'currentColor'}`
+      : undefined;
+
+  table.querySelectorAll<HTMLElement>('th, td').forEach((cell) => {
+    appendInlineStyle(cell, [
+      padding ? `padding: ${padding}` : undefined,
+      border ? `border: ${border}` : undefined,
+      tableStyle.vertical_align ? `vertical-align: ${tableStyle.vertical_align}` : undefined,
+      tableStyle.line_spacing ? `line-height: ${tableStyle.line_spacing}` : undefined,
+    ]);
+  });
+
+  table.querySelectorAll<HTMLElement>('th').forEach((cell) => {
+    appendInlineStyle(cell, [
+      ...tableFontDeclarations(tableStyle.header_font),
+      tableStyle.header_background_color ? `background-color: ${cssColor(tableStyle.header_background_color)}` : undefined,
+    ]);
+  });
+
+  table.querySelectorAll<HTMLElement>('td').forEach((cell) => {
+    appendInlineStyle(cell, tableFontDeclarations(tableStyle.body_font));
+  });
+
+  Array.from(table.tBodies).forEach((tbody) => {
+    Array.from(tbody.rows).forEach((row, index) => {
+      if (tableStyle.row_height !== undefined) {
+        appendInlineStyle(row, [`height: ${tableStyle.row_height}cm`]);
+      }
+      const fill = index % 2 === 0
+        ? tableStyle.row_odd_background_color
+        : tableStyle.row_even_background_color;
+      if (!fill) return;
+      Array.from(row.cells).forEach((cell) => {
+        appendInlineStyle(cell, [`background-color: ${cssColor(fill)}`]);
+      });
+    });
+  });
+}
+
+function tableFontDeclarations(font?: PresetTableFontConfig): Array<string | undefined> {
+  if (!font) return [];
+  return [
+    font.name || font.font ? `font-family: "${font.name ?? font.font}", "${font.ascii ?? font.name ?? font.font}", serif` : undefined,
+    font.size ? `font-size: ${font.size}pt` : undefined,
+    font.color ? `color: ${cssColor(font.color)}` : undefined,
+  ];
+}
+
+function applyMappedPreviewStyles(root: HTMLElement, preset: PresetConfig): void {
+  Array.from(root.children).forEach((child) => {
+    if (!(child instanceof HTMLElement)) return;
+    const tag = child.tagName.toLowerCase();
+    if (tag === 'h1') applyTextStyle(child, preset, getMarkdownStyleName(preset, 'heading1'));
+    if (tag === 'h2') applyTextStyle(child, preset, getMarkdownStyleName(preset, 'heading2'));
+    if (tag === 'h3') applyTextStyle(child, preset, getMarkdownStyleName(preset, 'heading3'));
+    if (tag === 'h4') applyTextStyle(child, preset, getMarkdownStyleName(preset, 'heading4'));
+    if (tag === 'p' && !child.classList.contains('word-image-caption')) {
+      applyTextStyle(child, preset, getMarkdownStyleName(preset, 'paragraph'));
+    }
+    if (tag === 'blockquote') applyTextStyle(child, preset, getMarkdownStyleName(preset, 'blockquote') ?? getMarkdownStyleName(preset, 'quote'));
+    if (tag === 'pre') applyTextStyle(child, preset, getMarkdownStyleName(preset, 'code_block'));
+    if (tag === 'table') applyTextStyle(child, preset, getMarkdownStyleName(preset, 'table'));
+    if (tag === 'hr') applyTextStyle(child, preset, getMarkdownStyleName(preset, 'horizontal_rule'));
+  });
+
+  root.querySelectorAll<HTMLElement>('ul, ol').forEach((element) => {
+    applyTextStyle(element, preset, getMarkdownStyleName(preset, 'list'));
+  });
+
+  root.querySelectorAll<HTMLElement>(':not(pre) > code').forEach((element) => {
+    applyTextStyle(element, preset, getMarkdownStyleName(preset, 'inline_code'));
+  });
+
+  root.querySelectorAll<HTMLElement>('.word-image-caption').forEach((element) => {
+    applyTextStyle(element, preset, getMarkdownStyleName(preset, 'image_caption'));
+  });
+
+  Object.entries(preset.html_mapping?.tags ?? {}).forEach(([tag, styleName]) => {
+    root.querySelectorAll<HTMLElement>(tag).forEach((element) => applyTextStyle(element, preset, styleName));
+  });
+
+  Object.entries(preset.html_mapping?.selectors ?? {}).forEach(([selector, styleName]) => {
+    try {
+      root.querySelectorAll<HTMLElement>(selector).forEach((element) => applyTextStyle(element, preset, styleName));
+    } catch {
+      // Imported presets reject invalid selectors; ignore legacy persisted data defensively.
+    }
+  });
+}
+
 function groupTableRowsByRowspan(rows: HTMLTableRowElement[]): HTMLTableRowElement[][] {
   const groups: HTMLTableRowElement[][] = [];
   let index = 0;
@@ -121,6 +270,29 @@ function cloneTableShell(table: HTMLTableElement): { table: HTMLTableElement; bo
   clone.append(body);
 
   return { table: clone, body };
+}
+
+// Exported for deterministic unit tests without rendering Vditor.
+// eslint-disable-next-line react-refresh/only-export-components
+export function applyWordPreviewPresetPostprocess(root: HTMLElement, preset: PresetConfig): void {
+  if (preset.image.show_caption) {
+    root.querySelectorAll<HTMLImageElement>('img[alt]').forEach((image) => {
+      const captionText = image.alt.trim();
+      if (!captionText) return;
+
+      const anchor = image.parentElement?.tagName === 'P' && image.parentElement.children.length === 1
+        ? image.parentElement
+        : image;
+      if (anchor.nextElementSibling?.classList.contains('word-image-caption')) return;
+
+      const caption = document.createElement('p');
+      caption.className = 'word-image-caption';
+      caption.textContent = captionText;
+      anchor.after(caption);
+    });
+  }
+
+  applyMappedPreviewStyles(root, preset);
 }
 
 // Exported for deterministic pagination unit tests without rendering Vditor.
@@ -310,6 +482,7 @@ export function WordPaperPreviewPane({
       if (cancelled || !measureRef.current || !pagesRef.current) return;
 
       measureRef.current.innerHTML = artifact.html;
+      applyWordPreviewPresetPostprocess(measureRef.current, preset);
       window.requestAnimationFrame(() => {
         window.requestAnimationFrame(() => {
           if (cancelled || !measureRef.current || !pagesRef.current) return;

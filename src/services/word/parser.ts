@@ -7,6 +7,7 @@ import {
   AlignmentType,
   HeadingLevel,
   Footer,
+  Header,
   PageNumber,
   type FileChild,
 } from 'docx';
@@ -19,6 +20,7 @@ import {
   ptToTwip,
   parseAlignment,
 } from './formatter';
+import { getMarkdownStyle, getMarkdownStyleName, getStyle, mergeFont as mergeStyleFont } from './style-mapping';
 import {
   isMarkdownTableRow,
   isMarkdownSeparator,
@@ -87,7 +89,7 @@ export async function markdownToDocx(
             },
           },
         },
-        footers: buildFooter(config),
+        ...buildPageNumber(config),
         children: paragraphs,
       },
     ],
@@ -315,39 +317,56 @@ function cmToTwip(cm: number): number {
 // Helper: footer / page number
 // ---------------------------------------------------------------------------
 
-function buildFooter(
+function buildPageNumber(
   config: PresetConfig,
-): { default: Footer } | undefined {
+): { headers: { default: Header } } | { footers: { default: Footer } } | undefined {
   if (!config.page_number.enabled) return undefined;
 
   const pn = config.page_number;
   const fontObj = { eastAsia: pn.font };
+  const children: TextRun[] = [];
+
+  if (pn.format.includes('1')) {
+    children.push(new TextRun({
+      children: [PageNumber.CURRENT],
+      font: fontObj,
+      size: ptToHalfPt(pn.size),
+    }));
+  }
+
+  if (pn.format.includes('/') && pn.format.includes('1') && pn.format.includes('x')) {
+    children.push(new TextRun({
+      text: '/',
+      font: fontObj,
+      size: ptToHalfPt(pn.size),
+    }));
+  }
+
+  if (pn.format.includes('x')) {
+    children.push(new TextRun({
+      children: [PageNumber.TOTAL_PAGES],
+      font: fontObj,
+      size: ptToHalfPt(pn.size),
+    }));
+  }
+
+  const paragraph = new Paragraph({
+    alignment: parseAlignment(pn.align ?? 'center'),
+    children,
+  });
+
+  if (pn.position === 'header') {
+    return {
+      headers: {
+        default: new Header({ children: [paragraph] }),
+      },
+    };
+  }
 
   return {
-    default: new Footer({
-      children: [
-        new Paragraph({
-          alignment: AlignmentType.CENTER,
-          children: [
-            new TextRun({
-              children: [PageNumber.CURRENT],
-              font: fontObj,
-              size: ptToHalfPt(pn.size),
-            }),
-            new TextRun({
-              text: '/',
-              font: fontObj,
-              size: ptToHalfPt(pn.size),
-            }),
-            new TextRun({
-              children: [PageNumber.TOTAL_PAGES],
-              font: fontObj,
-              size: ptToHalfPt(pn.size),
-            }),
-          ],
-        }),
-      ],
-    }),
+    footers: {
+      default: new Footer({ children: [paragraph] }),
+    },
   };
 }
 
@@ -496,55 +515,88 @@ function addHeading(
     4: HeadingLevel.HEADING_4,
   };
 
+  const headingIndent =
+    (hc.indent && hc.indent > 0)
+      ? hc.indent * config.fonts.default.size * 20
+      : undefined;
+  const styleName = getMarkdownStyleName(config, `heading${level}` as keyof NonNullable<PresetConfig['markdown_mapping']>);
+  const style = getStyle(config, styleName);
+  const firstLineIndent =
+    style?.first_line_indent && style.first_line_indent > 0
+      ? style.first_line_indent * (style.size ?? config.fonts.default.size) * 20
+      : headingIndent;
+  const leftIndent =
+    style?.left_indent && style.left_indent > 0
+      ? ptToTwip(style.left_indent)
+      : undefined;
+
   return new Paragraph({
     heading: headingLevelMap[level],
-    alignment: parseAlignment(hc.align),
+    alignment: parseAlignment(style?.align ?? hc.align),
     spacing: {
-      before: hc.space_before * 20,
-      after: hc.space_after * 20,
-      line: (hc.line_spacing ?? config.paragraph.line_spacing) * 240,
+      before: (style?.space_before ?? hc.space_before) * 20,
+      after: (style?.space_after ?? hc.space_after) * 20,
+      line: (style?.line_spacing ?? hc.line_spacing ?? config.paragraph.line_spacing) * 240,
     },
-    indent: hc.indent ? { firstLine: cmToTwip(hc.indent) } : undefined,
-    children: createFormattedRuns(text, config, { titleLevel: level }),
+    indent: firstLineIndent || leftIndent ? { firstLine: firstLineIndent, left: leftIndent } : undefined,
+    shading: style?.background_color ? { type: 'clear', fill: style.background_color } : undefined,
+    children: createFormattedRuns(text, config, { titleLevel: level, styleName }),
   });
 }
 
 function addParagraph(text: string, config: PresetConfig): Paragraph {
   const pc = config.paragraph;
+  const styleName = getMarkdownStyleName(config, 'paragraph');
+  const style = getStyle(config, styleName);
 
   // 首行缩进：first_line_indent 表示"字符数"
   // 近似公式：字符数 × 字号(pt) × 20 = twips
+  const firstLineIndentValue = style?.first_line_indent ?? pc.first_line_indent;
   const firstLineIndent =
-    pc.first_line_indent > 0
-      ? pc.first_line_indent * config.fonts.default.size * 20
+    firstLineIndentValue > 0
+      ? firstLineIndentValue * (style?.size ?? config.fonts.default.size) * 20
+      : undefined;
+  const leftIndent =
+    style?.left_indent && style.left_indent > 0
+      ? ptToTwip(style.left_indent)
       : undefined;
 
   return new Paragraph({
-    alignment: parseAlignment(pc.align),
-    spacing: { line: pc.line_spacing * 240 },
-    indent: firstLineIndent ? { firstLine: firstLineIndent } : undefined,
-    children: createFormattedRuns(text, config),
+    alignment: parseAlignment(style?.align ?? pc.align),
+    spacing: {
+      before: style?.space_before !== undefined ? style.space_before * 20 : undefined,
+      after: style?.space_after !== undefined ? style.space_after * 20 : undefined,
+      line: (style?.line_spacing ?? pc.line_spacing) * 240,
+    },
+    indent: firstLineIndent || leftIndent ? { firstLine: firstLineIndent, left: leftIndent } : undefined,
+    shading: style?.background_color ? { type: 'clear', fill: style.background_color } : undefined,
+    children: createFormattedRuns(text, config, { styleName }),
   });
 }
 
 function addBulletList(line: string, config: PresetConfig): Paragraph {
   const text = line.replace(/^[-*+]\s+/, '');
   const marker = config.lists.bullet.marker;
-  const indent = config.lists.bullet.indent;
+  const styleName = getMarkdownStyleName(config, 'list');
+  const style = getStyle(config, styleName);
+  const font = mergeStyleFont(config.fonts.default, style);
+  const indent = style?.left_indent ?? config.lists.bullet.indent;
 
   return new Paragraph({
-    spacing: { line: config.paragraph.line_spacing * 240 },
+    spacing: { line: (style?.line_spacing ?? config.paragraph.line_spacing) * 240 },
     indent: { left: ptToTwip(indent) },
+    shading: style?.background_color ? { type: 'clear', fill: style.background_color } : undefined,
     children: [
       new TextRun({
         text: `${marker} `,
         font: {
-          eastAsia: config.fonts.default.name,
-          ascii: config.fonts.default.ascii,
+          eastAsia: font.name,
+          ascii: font.ascii,
         },
-        size: ptToHalfPt(config.fonts.default.size),
+        size: ptToHalfPt(font.size),
+        color: font.color,
       }),
-      ...createFormattedRuns(text, config),
+      ...createFormattedRuns(text, config, { styleName }),
     ],
   });
 }
@@ -553,21 +605,26 @@ function addNumberedList(line: string, config: PresetConfig): Paragraph {
   const match = line.match(/^(\d+[.)])\s+(.+)$/);
   const prefix = match ? match[1] : '';
   const text = match ? match[2] : line;
-  const indent = config.lists.numbered.indent;
+  const styleName = getMarkdownStyleName(config, 'list');
+  const style = getStyle(config, styleName);
+  const font = mergeStyleFont(config.fonts.default, style);
+  const indent = style?.left_indent ?? config.lists.numbered.indent;
 
   return new Paragraph({
-    spacing: { line: config.paragraph.line_spacing * 240 },
+    spacing: { line: (style?.line_spacing ?? config.paragraph.line_spacing) * 240 },
     indent: { left: ptToTwip(indent) },
+    shading: style?.background_color ? { type: 'clear', fill: style.background_color } : undefined,
     children: [
       new TextRun({
         text: `${prefix} `,
         font: {
-          eastAsia: config.fonts.default.name,
-          ascii: config.fonts.default.ascii,
+          eastAsia: font.name,
+          ascii: font.ascii,
         },
-        size: ptToHalfPt(config.fonts.default.size),
+        size: ptToHalfPt(font.size),
+        color: font.color,
       }),
-      ...createFormattedRuns(text, config),
+      ...createFormattedRuns(text, config, { styleName }),
     ],
   });
 }
@@ -581,48 +638,67 @@ function addTaskList(line: string, config: PresetConfig): Paragraph {
   const symbol = checked
     ? config.lists.task.checked
     : config.lists.task.unchecked;
-  const indent = config.lists.bullet.indent;
+  const styleName = getMarkdownStyleName(config, 'list');
+  const style = getStyle(config, styleName);
+  const font = mergeStyleFont(config.fonts.default, style);
+  const indent = style?.left_indent ?? config.lists.bullet.indent;
 
   return new Paragraph({
-    spacing: { line: config.paragraph.line_spacing * 240 },
+    spacing: { line: (style?.line_spacing ?? config.paragraph.line_spacing) * 240 },
     indent: { left: ptToTwip(indent) },
+    shading: style?.background_color ? { type: 'clear', fill: style.background_color } : undefined,
     children: [
       new TextRun({
         text: `${symbol} `,
         font: {
-          eastAsia: config.fonts.default.name,
-          ascii: config.fonts.default.ascii,
+          eastAsia: font.name,
+          ascii: font.ascii,
         },
-        size: ptToHalfPt(config.fonts.default.size),
+        size: ptToHalfPt(font.size),
+        color: font.color,
       }),
-      ...createFormattedRuns(text, config),
+      ...createFormattedRuns(text, config, { styleName }),
     ],
   });
 }
 
 function addQuote(text: string, config: PresetConfig): Paragraph {
   const qc = config.quote;
+  const styleName = getMarkdownStyleName(config, 'blockquote') ?? getMarkdownStyleName(config, 'quote');
+  const style = getStyle(config, styleName);
 
   return new Paragraph({
-    spacing: { line: qc.line_spacing * 240 },
-    indent: { left: ptToTwip(qc.left_indent) },
-    shading: { type: 'clear', fill: qc.background_color },
-    children: createFormattedRuns(text, config, { isQuote: true }),
+    spacing: { line: (style?.line_spacing ?? qc.line_spacing) * 240 },
+    indent: { left: ptToTwip(style?.left_indent ?? qc.left_indent) },
+    shading: { type: 'clear', fill: style?.background_color ?? qc.background_color },
+    children: createFormattedRuns(text, config, { isQuote: true, styleName }),
   });
 }
 
 function addHorizontalRule(config: PresetConfig): Paragraph {
   const hr = config.horizontal_rule;
+  const style = getMarkdownStyle(config, 'horizontal_rule');
+  const font = mergeStyleFont({
+    name: hr.font,
+    ascii: hr.font,
+    size: hr.size,
+    color: hr.color,
+  }, style);
 
   return new Paragraph({
-    alignment: parseAlignment(hr.alignment),
+    alignment: parseAlignment(style?.align ?? hr.alignment),
     spacing: { before: 120, after: 120 },
+    shading: style?.background_color ? { type: 'clear', fill: style.background_color } : undefined,
     children: [
       new TextRun({
         text: hr.character.repeat(hr.repeat_count),
-        font: { eastAsia: hr.font, ascii: hr.font },
-        size: ptToHalfPt(hr.size),
-        color: hr.color,
+        font: { eastAsia: font.name, ascii: font.ascii },
+        size: ptToHalfPt(font.size),
+        color: font.color,
+        bold: style?.bold || undefined,
+        italics: style?.italic || undefined,
+        underline: style?.underline ? {} : undefined,
+        strike: style?.strikethrough || undefined,
       }),
     ],
   });
@@ -641,6 +717,7 @@ async function addImage(
   alt: string,
   config: PresetConfig,
 ): Promise<Paragraph[]> {
+  const caption = createImageCaption(alt, config);
   // 创建文本占位符（降级方案）
   const createPlaceholder = (): Paragraph =>
     new Paragraph({
@@ -661,7 +738,7 @@ async function addImage(
 
   // HTTP/HTTPS URL：受 CSP 限制，使用占位符
   if (/^https?:\/\//i.test(url)) {
-    return [createPlaceholder()];
+    return [createPlaceholder(), ...caption];
   }
 
   try {
@@ -719,9 +796,41 @@ async function addImage(
           }),
         ],
       }),
+      ...caption,
     ];
   } catch {
     // 读取或解析失败时优雅降级为文本占位符
-    return [createPlaceholder()];
+    return [createPlaceholder(), ...caption];
   }
+}
+
+function createImageCaption(alt: string, config: PresetConfig): Paragraph[] {
+  if (!config.image.show_caption || !alt.trim()) return [];
+  const style = getMarkdownStyle(config, 'image_caption');
+  const font = mergeStyleFont({
+    ...config.fonts.default,
+    size: Math.max(8, config.fonts.default.size - 2),
+    color: config.fonts.default.color ?? '666666',
+  }, style);
+  return [
+    new Paragraph({
+      alignment: parseAlignment(style?.align ?? 'center'),
+      spacing: { after: 80 },
+      children: [
+        new TextRun({
+          text: alt.trim(),
+          font: {
+            eastAsia: font.name,
+            ascii: font.ascii,
+          },
+          size: ptToHalfPt(font.size),
+          color: font.color,
+          bold: style?.bold || undefined,
+          italics: style?.italic || undefined,
+          underline: style?.underline ? {} : undefined,
+          strike: style?.strikethrough || undefined,
+        }),
+      ],
+    }),
+  ];
 }

@@ -1,6 +1,7 @@
 import type { ParsedTextPart, PresetConfig } from './types';
 import { TextRun, AlignmentType, ExternalHyperlink } from 'docx';
 import type { IRunOptions, ParagraphChild } from 'docx';
+import { getMarkdownStyle, getStyle, mergeFont as mergeStyleFont } from './style-mapping';
 
 type MutableRunOptions = {
   -readonly [K in keyof IRunOptions]: IRunOptions[K];
@@ -11,6 +12,7 @@ type FormattedRunOptions = {
   isQuote?: boolean;
   isTableHeader?: boolean;
   tableRole?: 'header' | 'body';
+  styleName?: string;
 };
 
 /** Convert points to half-points (docx uses half-points for font sizes). */
@@ -182,6 +184,7 @@ export function createFormattedRuns(
     let font = config.fonts.default;
     let fontSize = font.size;
     let color = font.color;
+    const mappedStyle = getStyle(config, options?.styleName);
 
     const tableRole = options?.tableRole ?? (options?.isTableHeader ? 'header' : undefined);
     if (tableRole) {
@@ -196,6 +199,13 @@ export function createFormattedRuns(
       const headingKey = `level${options.titleLevel}` as keyof typeof config.titles;
       const headingConf = config.titles[headingKey];
       if (headingConf) {
+        if (headingConf.font || headingConf.ascii) {
+          font = {
+            ...font,
+            name: headingConf.font ?? font.name,
+            ascii: headingConf.ascii ?? font.ascii,
+          };
+        }
         fontSize = headingConf.size;
         color = headingConf.color ?? color;
       }
@@ -207,6 +217,12 @@ export function createFormattedRuns(
 
     if (options?.isTableHeader) {
       fontSize = config.table.header_font.size;
+    }
+
+    if (mappedStyle) {
+      font = mergeStyleFont(font, mappedStyle);
+      fontSize = font.size;
+      color = font.color;
     }
 
     const runOptions: MutableRunOptions = {
@@ -230,6 +246,19 @@ export function createFormattedRuns(
       }
     }
 
+    if (mappedStyle?.bold) {
+      runOptions.bold = true;
+    }
+    if (mappedStyle?.italic) {
+      runOptions.italics = true;
+    }
+    if (mappedStyle?.underline) {
+      runOptions.underline = {};
+    }
+    if (mappedStyle?.strikethrough) {
+      runOptions.strike = true;
+    }
+
     if (tableRole === 'header') {
       runOptions.bold = true;
     }
@@ -249,12 +278,23 @@ export function createFormattedRuns(
 
     if (part.formats.code) {
       const ic = config.inline_code;
-      runOptions.font = {
-        eastAsia: ic.font,
+      const inlineStyle = getMarkdownStyle(config, 'inline_code');
+      const inlineFont = mergeStyleFont({
+        name: ic.font,
         ascii: ic.font,
+        size: ic.size,
+        color: ic.color,
+      }, inlineStyle);
+      runOptions.font = {
+        eastAsia: inlineFont.name,
+        ascii: inlineFont.ascii,
       };
-      runOptions.size = ptToHalfPt(ic.size);
-      runOptions.color = ic.color;
+      runOptions.size = ptToHalfPt(inlineFont.size);
+      runOptions.color = inlineFont.color;
+      if (inlineStyle?.bold) runOptions.bold = true;
+      if (inlineStyle?.italic) runOptions.italics = true;
+      if (inlineStyle?.underline) runOptions.underline = {};
+      if (inlineStyle?.strikethrough) runOptions.strike = true;
     }
 
     if (part.formats.math) {

@@ -2,8 +2,9 @@
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { getPreset } from '../services/word/config';
 import { createWordPreviewArtifact } from '../services/wordPreviewArtifactService';
-import { paginateRenderedContent, WordPaperPreviewPane } from './WordPaperPreviewPane';
+import { applyWordPreviewPresetPostprocess, paginateRenderedContent, WordPaperPreviewPane } from './WordPaperPreviewPane';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -141,6 +142,79 @@ describe('paginateRenderedContent', () => {
     const pages = pageContents(pagesContainer);
     expect(pages).toHaveLength(1);
     expect(pages[0].textContent).toContain('合计');
+  });
+});
+
+describe('applyWordPreviewPresetPostprocess', () => {
+  it('adds image captions when enabled and alt text exists', () => {
+    const preset = {
+      ...getPreset('legal'),
+      image: {
+        ...getPreset('legal').image,
+        show_caption: true,
+      },
+    };
+    const content = createMeasureContent('<p><img src="./evidence.png" alt="证据图片"></p>');
+
+    applyWordPreviewPresetPostprocess(content, preset);
+
+    expect(content.querySelector('.word-image-caption')?.textContent).toBe('证据图片');
+  });
+
+  it('applies reusable markdown and HTML style mappings to preview DOM', () => {
+    const preset = {
+      ...getPreset('legal'),
+      image: {
+        ...getPreset('legal').image,
+        show_caption: true,
+      },
+      styles: {
+        mappedHeading: { font: '微软雅黑', ascii: 'Arial', size: 18, color: '445566', align: 'right' },
+        mappedParagraph: { font: '楷体', ascii: 'Georgia', size: 13, color: '112233', line_spacing: 1.8 },
+        evidenceTable: {
+          table: {
+            header_background_color: '123456',
+            row_odd_background_color: '654321',
+            cell_margins: { top: 0.08, bottom: 0.08, left: 0.12, right: 0.12 },
+            header_font: { font: '微软雅黑', ascii: 'Arial', size: 11, color: 'FFFFFF' },
+            body_font: { font: '仿宋', ascii: 'Times New Roman', size: 10, color: '111111' },
+          },
+        },
+        mappedCaption: { font: '黑体', ascii: 'Arial', size: 9, color: '777777' },
+        mappedList: { font: '宋体', ascii: 'Arial', size: 10, color: '336699', left_indent: 30 },
+        mappedRule: { font: 'Arial', ascii: 'Arial', size: 8, color: '222222', align: 'center' },
+      },
+      markdown_mapping: {
+        heading1: 'mappedHeading',
+        paragraph: 'mappedParagraph',
+        image_caption: 'mappedCaption',
+        list: 'mappedList',
+        horizontal_rule: 'mappedRule',
+      },
+      html_mapping: {
+        selectors: { 'table.evidence-table': 'evidenceTable' },
+      },
+    };
+    const content = createMeasureContent(`
+      <h1>映射标题</h1>
+      <p>映射正文</p>
+      <table class="evidence-table"><thead><tr><th>证据</th></tr></thead><tbody><tr><td>合同</td></tr></tbody></table>
+      <ul><li>映射列表</li></ul>
+      <hr>
+      <p><img src="./evidence.png" alt="证据图片"></p>
+    `);
+
+    applyWordPreviewPresetPostprocess(content, preset);
+
+    expect(content.querySelector('h1')?.getAttribute('style')).toContain('微软雅黑');
+    expect(content.querySelector('p')?.getAttribute('style')).toContain('112233');
+    expect(content.querySelector('th')?.getAttribute('style')).toContain('123456');
+    expect(content.querySelector('th')?.getAttribute('style')).toContain('微软雅黑');
+    expect(content.querySelector('td')?.getAttribute('style')).toContain('654321');
+    expect(content.querySelector('td')?.getAttribute('style')).toContain('111111');
+    expect(content.querySelector('ul')?.getAttribute('style')).toContain('336699');
+    expect(content.querySelector('hr')?.getAttribute('style')).toContain('222222');
+    expect(content.querySelector('.word-image-caption')?.getAttribute('style')).toContain('777777');
   });
 });
 

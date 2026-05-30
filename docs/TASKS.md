@@ -30,6 +30,35 @@
 
 ## 待处理
 
+### Word 导出预设
+
+#### ISS-128 Word 预设 JSON v2 样式协议与 Markdown / HTML 映射
+
+- **优先级:** P1
+- **类型:** L2
+- **状态:** 已完成，已复验，待 PR 合并。
+- **问题:** 当前 Word JSON 已覆盖 Folia 现有导出字段，但还偏“字段清单”。如果用户希望把复杂 Markdown 和带 HTML 的内容尽可能稳定地转换为 Word，需要一个可扩展的样式协议：先定义可复用样式，再声明 Markdown 元素、HTML 标签或选择器映射到哪些样式。
+- **建议实现:**
+  - 新增 `styles`，支持定义正文、标题、表格、图片标题、引用等可复用样式别名。
+  - 新增 `markdown_mapping`，将 `paragraph`、`heading1-4`、`blockquote`、`code_block`、`inline_code`、`list`、`horizontal_rule`、`table`、`image_caption` 等 Markdown 语义映射到样式别名。
+  - 新增 `html_mapping`，先支持 HTML table 的标签和选择器映射，例如 `table.evidence-table -> evidenceTable`，后续再扩展普通 HTML inline / block 样式。
+  - DOCX 导出和 Word 纸张预览都消费同一套映射，不能只在 JSON 中展示而不生效。
+- **验收:** JSON 模板包含 `styles / markdown_mapping / html_mapping`；映射引用不存在或映射键不受支持时导入失败并提示清晰；Markdown 标题/正文/列表/分割线/表格/图片标题和 HTML table 选择器映射在 `.docx` 与纸张预览中生效；全量验证通过。
+- **实现:** 已新增 JSON v2 样式别名和 Markdown / HTML 映射字段；导入层校验映射引用、Markdown 映射键和 HTML table 映射范围；DOCX 导出已消费标题、正文、代码块、列表、分割线、Markdown 表格、HTML table 选择器和图片标题映射；纸张预览同步做 DOM 后处理样式映射。已通过 `npm run typecheck`、`npm test`、`npm run lint`、`npm run build` 和 `git diff --check`。
+
+#### ISS-127 Word 导出 JSON 与 md2word 配置兼容完善
+
+- **优先级:** P1
+- **类型:** L2
+- **状态:** 已完成，已复验，待 PR 合并。
+- **问题:** Word 导出自定义 JSON 示例字段偏少，用户难以从外部 md2word 配置迁移完整格式；部分可配置样式没有同时作用到纸张预览和真实 `.docx` 导出。
+- **建议实现:**
+  - 扩展 Word 预设 JSON 模板，覆盖页面、字体、标题、正文、页码、表格、代码、引用、图片、分割线和列表。
+  - 导入时兼容 md2word YAML 转 JSON 后的常见字段别名与单位，包括表格行高、单元格边距、代码块、引用缩进和页码位置。
+  - 补齐 DOCX 导出与 Word 纸张预览对标题字体、表格背景、表格对齐、单元格边距、页码格式和图片标题的映射。
+- **验收:** 完整 Folia JSON 模板和 md2word 风格 JSON 均可导入；相关 DOCX XML、预览样式和导入校验测试通过；全量类型检查、测试、lint 和构建通过。
+- **实现:** 已扩展 Word JSON 完整模板；导入层兼容 md2word 风格字段别名、颜色清洗和单位转换；DOCX 导出与纸张预览补齐页码、标题字体、表格背景/对齐/四边距和图片标题映射。已通过 `npm run typecheck`、`npm test`、`npm run lint`、`npm run build` 和 `git diff --check`。
+
 ### 文档与发布说明
 
 #### ISS-125 v0.3.12 字体与导出回归修复版本发布
@@ -1006,6 +1035,7 @@
 
 ## 进度日志
 
+- **2026-05-30** 完成 ISS-127：Word 导出自定义 JSON 示例扩展为完整模板，并兼容 md2word YAML 转 JSON 后的常见字段别名与单位；`.docx` 导出和 Word 纸张预览同步补齐页码格式/位置、标题字体、表格背景色、表格对齐、单元格四边距和图片标题映射。验证：`npm test -- src/services/word/presetImport.test.ts src/services/word/docxXml.test.ts src/services/wordPreviewStyle.test.ts src/components/WordPaperPreviewPane.test.ts`、`npm run typecheck` 通过；全量验证待 PR 前执行。
 - **2026-05-29** 准备发布 v0.3.12：版本号统一到 `0.3.12`，`CHANGELOG.md` 拆分 `0.3.12` / `0.3.11` 发布说明，并记录本次中文字体、构建拆包和 DOCX XML 回归修复。验证：`git diff --check`、`npm run typecheck`、`npm test`、`npm run lint`、`npm run build`、`cd src-tauri && cargo check` 均通过。
 - **2026-05-29** 发布 v0.3.12：推送 `main` 与 annotated tag `v0.3.12`，GitHub Actions Release run `26626281208` 构建 macOS aarch64 / macOS x86_64 / Windows 三平台产物并发布 GitHub Release；首次运行在 Gitee 同步阶段失败，重跑 failed job 后成功。GitHub Release 地址：https://github.com/cat-xierluo/Folia/releases/tag/v0.3.12
 - **2026-05-29** 完成 ISS-124：Markdown 阅读和 Vditor 即时渲染编辑默认改用中文优化字体栈，设置页新增“中文优化 / 系统默认 / 中文宋体 / Iowan Old Style / Georgia”预设，并对旧默认 `Iowan Old Style` 做一次性迁移；同步更新 `docs/DESIGN.md`、`CHANGELOG.md` 和设置服务回归测试。验证：`npm run typecheck`、`npm test`、`npm run lint`、`npm run build`、`git diff --check` 均通过。

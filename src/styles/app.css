@@ -1303,7 +1303,6 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 .word-paper-content h2,
 .word-paper-content h3,
 .word-paper-content h4 {
-  font-family: var(--word-font-family);
   font-weight: 700;
   line-height: var(--word-line-height);
 }
@@ -1311,29 +1310,41 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 .word-paper-content h1 {
   margin: var(--word-heading-1-space-before) 0 var(--word-heading-1-space-after);
   color: var(--word-heading-1-color);
+  font-family: var(--word-heading-1-font-family);
   font-size: var(--word-heading-1-size);
+  line-height: var(--word-heading-1-line-height);
   text-align: var(--word-heading-1-align);
+  text-indent: var(--word-heading-1-indent);
 }
 
 .word-paper-content h2 {
   margin: var(--word-heading-2-space-before) 0 var(--word-heading-2-space-after);
   color: var(--word-heading-2-color);
+  font-family: var(--word-heading-2-font-family);
   font-size: var(--word-heading-2-size);
+  line-height: var(--word-heading-2-line-height);
   text-align: var(--word-heading-2-align);
+  text-indent: var(--word-heading-2-indent);
 }
 
 .word-paper-content h3 {
   margin: var(--word-heading-3-space-before) 0 var(--word-heading-3-space-after);
   color: var(--word-heading-3-color);
+  font-family: var(--word-heading-3-font-family);
   font-size: var(--word-heading-3-size);
+  line-height: var(--word-heading-3-line-height);
   text-align: var(--word-heading-3-align);
+  text-indent: var(--word-heading-3-indent);
 }
 
 .word-paper-content h4 {
   margin: var(--word-heading-4-space-before) 0 var(--word-heading-4-space-after);
   color: var(--word-heading-4-color);
+  font-family: var(--word-heading-4-font-family);
   font-size: var(--word-heading-4-size);
+  line-height: var(--word-heading-4-line-height);
   text-align: var(--word-heading-4-align);
+  text-indent: var(--word-heading-4-indent);
 }
 
 .word-paper-content p {
@@ -1443,11 +1454,12 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   max-width: 100%;
   table-layout: fixed;
   border-collapse: collapse;
-  margin: 0.8em 0;
+  margin: 0.8em var(--word-table-margin-right) 0.8em var(--word-table-margin-left);
   font-size: var(--word-table-font-size);
   line-height: var(--word-table-line-height);
   font-family: var(--word-table-body-font-family);
   color: var(--word-table-body-color);
+  text-align: left;
 }
 
 .word-paper-content tr,
@@ -1459,12 +1471,12 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 .word-paper-content td,
 .word-paper-content.vditor-reset th,
 .word-paper-content.vditor-reset td {
-  border: 1px solid var(--word-table-border-color);
+  border: var(--word-table-border-width) solid var(--word-table-border-color);
   padding: var(--word-table-cell-padding);
   white-space: normal !important;
   word-break: break-word !important;
   overflow-wrap: anywhere !important;
-  vertical-align: top;
+  vertical-align: var(--word-table-vertical-align);
 }
 
 .word-paper-content th,
@@ -1473,7 +1485,18 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   font-size: var(--word-table-header-font-size);
   font-weight: 700;
   color: var(--word-table-header-color);
+  background: var(--word-table-header-bg);
   text-align: center;
+}
+
+.word-paper-content tbody tr:nth-child(odd) td,
+.word-paper-content.vditor-reset tbody tr:nth-child(odd) td {
+  background: var(--word-table-row-odd-bg);
+}
+
+.word-paper-content tbody tr:nth-child(even) td,
+.word-paper-content.vditor-reset tbody tr:nth-child(even) td {
+  background: var(--word-table-row-even-bg);
 }
 
 .word-paper-content td p,
@@ -1485,6 +1508,14 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 .word-paper-content img {
   max-width: var(--word-image-max-width);
   height: auto;
+}
+
+.word-paper-content .word-image-caption {
+  margin: 0;
+  color: var(--muted);
+  font-size: max(8pt, calc(var(--word-font-size) - 2pt));
+  text-align: center;
+  text-indent: 0;
 }
 
 /* ===== On-demand HTML Article Preview ===== */
