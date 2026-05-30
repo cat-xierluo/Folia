@@ -47,12 +47,23 @@ export function resolveTableConfig(config: PresetConfig, styleName?: string): Ta
   const tableStyle = getStyle(config, styleName)?.table;
   if (!tableStyle) return config.table;
 
-  return {
+  const table = {
     ...config.table,
     ...tableStyle,
     header_font: mergeTableFont(config.table.header_font, tableStyle.header_font),
     body_font: mergeTableFont(config.table.body_font, tableStyle.body_font),
   };
+
+  if (!tableStyle.cell_margins && tableStyle.cell_margin !== undefined) {
+    table.cell_margins = {
+      top: tableStyle.cell_margin,
+      bottom: tableStyle.cell_margin,
+      left: tableStyle.cell_margin,
+      right: tableStyle.cell_margin,
+    };
+  }
+
+  return table;
 }
 
 export function withTableStyle(config: PresetConfig, styleName?: string): PresetConfig {

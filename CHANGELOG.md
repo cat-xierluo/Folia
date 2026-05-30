@@ -15,6 +15,12 @@ All notable changes to this project will be documented in this file.
 - Word 纸张预览和真实 `.docx` 导出继续以同一套 `PresetConfig` 为来源，并补齐标题字体、页码格式/位置、表格背景色、表格对齐、单元格四边距和图片标题的可见样式映射。
 - Word 纸张预览和 `.docx` 导出会消费 JSON v2 样式映射；映射引用不存在时导入失败，避免 JSON 中写了样式但实际导出无效。
 
+### Fixed
+
+- 修复 md2word 风格 JSON 只包含 `table.cell_margin.top/bottom/left/right` 时不会触发 dxa 单位转换的问题。
+- 修复 JSON v2 表格样式只设置 `cell_margin` 时纸张预览和 `.docx` 单元格边距可能不一致的问题。
+- 修复 Word 纸张预览中未配置表格背景色时默认背景变量可能继承文字色的问题。
+
 ## [0.3.12]
 
 ### Changed

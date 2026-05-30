@@ -220,6 +220,25 @@ describe('presetImport', () => {
     expect(imported.config.math.color).toBe('00008B');
   });
 
+  it('recognizes md2word table cell margins even when they are the only md2word-style field', () => {
+    const imported = importPresetFromJson(JSON.stringify({
+      name: '仅表格边距',
+      config: {
+        table: {
+          cell_margin: { top: 40, bottom: 50, left: 60, right: 70 },
+        },
+      },
+    }));
+
+    expect(imported.config.table.cell_margin).toBeCloseTo(60 / 567);
+    expect(imported.config.table.cell_margins).toMatchObject({
+      top: 40 / 567,
+      bottom: 50 / 567,
+      left: 60 / 567,
+      right: 70 / 567,
+    });
+  });
+
   it('rejects malformed preset files', () => {
     expect(() => importPresetFromJson('{broken')).toThrow(PresetImportError);
     expect(() => importPresetFromJson(JSON.stringify({ config: { page: { width: -1 } } }))).toThrow(PresetImportError);

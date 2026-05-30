@@ -431,6 +431,7 @@ function isMd2WordLikeConfig(config: Record<string, unknown>): boolean {
     'code_block.content',
     'quote.left_indent_inches',
   ].some((path) => getPath(config, path) !== undefined)
+    || isRecord(getPath(config, 'table.cell_margin'))
     || ['left', 'center', 'right'].includes(String(getPath(config, 'page_number.position') ?? ''));
 }
 

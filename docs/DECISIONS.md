@@ -2,6 +2,29 @@
 
 ## 第一部分：决策记录
 
+### [DEC-061] - 2026-05-31 - Word JSON 合并前 code review 补齐一致性边界
+
+**背景**
+PR #17 已完成 Word JSON 完整模板、md2word 兼容导入和 JSON v2 样式映射。合并前 code review 继续按“JSON 写到哪里，预览和真实 DOCX 就应尽量生效到哪里”的标准复核，发现三个边界会造成一致性落差。
+
+**决策**
+- md2word 兼容识别条件补上 `table.cell_margin` 对象。即使外部 JSON 只包含 `cell_margin.top/bottom/left/right`，也按 md2word dxa 单位转换为 Folia 的 cm 四边距。
+- JSON v2 表格样式中只设置 `cell_margin` 时，DOCX 导出同步展开为 `cell_margins` 四边距，避免预览生效但 Word 导出仍使用基础预设边距。
+- Word 纸张预览的表格背景变量缺省值改为 `transparent`，只在 JSON 明确设置背景色时才填充表头或交替行背景。
+
+**验证**
+- 新增回归用例先失败后通过：`npm test -- src/services/word/presetImport.test.ts src/services/wordPreviewStyle.test.ts src/services/word/docxXml.test.ts`
+- `npm run typecheck`
+- `npm test`
+- `npm run lint`
+- `npm run build`
+- `git diff --check`
+
+**影响**
+- md2word JSON 的最小迁移样例更稳，不需要同时包含 `row_height_cm` 或其他别名字段才能触发单位转换。
+- JSON v2 表格样式的等边距写法在纸张预览和 `.docx` 中保持一致。
+- 默认 Word 纸张预览不会因未配置表格背景色而出现异常底色。
+
 ### [DEC-060] - 2026-05-30 - Word JSON v2 采用样式别名与元素映射协议
 
 **背景**

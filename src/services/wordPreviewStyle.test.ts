@@ -22,6 +22,9 @@ describe('createWordPreviewStyle', () => {
     expect(style['--word-table-font-size']).toBe('10.5pt');
     expect(style['--word-table-cell-padding']).toBe('0.1cm');
     expect(style['--word-table-row-height']).toBe('0.8cm');
+    expect(style['--word-table-header-bg']).toBe('transparent');
+    expect(style['--word-table-row-odd-bg']).toBe('transparent');
+    expect(style['--word-table-row-even-bg']).toBe('transparent');
     expect(style['--word-heading-1-size']).toBe('15pt');
     expect(style['--word-heading-1-align']).toBe('center');
     expect(style['--word-list-indent']).toBe('24pt');

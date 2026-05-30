@@ -165,6 +165,9 @@
 
 ## 进度日志
 
+- **2026-05-31**
+  - Word JSON / md2word 兼容合并前 code review 完成跟进修复：`table.cell_margin` 对象可单独触发 md2word dxa 转 cm，JSON v2 表格样式的 `cell_margin` 在 DOCX 中同步展开为四边距，未配置的预览表格背景回退为透明。
+
 - **2026-05-30**
   - Word 导出预设 JSON 完整模板和 md2word 兼容导入完成：扩展标题、页码、表格、代码、引用、图片等字段，导入时清洗颜色并转换 dxa / pt / inch 单位；`.docx` 导出和 Word 纸张预览同步补齐标题字体、表格背景/对齐/四边距、页码格式和图片标题映射。
   - Word JSON v2 样式协议第一阶段完成：新增 `styles / markdown_mapping / html_mapping`，支持 Markdown 标题、正文、代码块、列表、分割线、表格、图片标题和 HTML table 选择器映射到可复用样式。

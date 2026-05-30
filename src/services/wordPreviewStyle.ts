@@ -20,6 +20,11 @@ function optionalColor(color?: string): string {
   return color.startsWith('#') ? color : `#${color}`;
 }
 
+function optionalBackgroundColor(color?: string): string {
+  if (!color) return 'transparent';
+  return color.startsWith('#') ? color : `#${color}`;
+}
+
 function cssString(value: string): string {
   return JSON.stringify(value);
 }
@@ -84,9 +89,9 @@ export function createWordPreviewStyle(config: PresetConfig): WordPreviewStyle {
     '--word-table-margin-left': margins.left,
     '--word-table-margin-right': margins.right,
     '--word-table-vertical-align': config.table.vertical_align ?? 'center',
-    '--word-table-header-bg': optionalColor(config.table.header_background_color),
-    '--word-table-row-odd-bg': optionalColor(config.table.row_odd_background_color),
-    '--word-table-row-even-bg': optionalColor(config.table.row_even_background_color),
+    '--word-table-header-bg': optionalBackgroundColor(config.table.header_background_color),
+    '--word-table-row-odd-bg': optionalBackgroundColor(config.table.row_odd_background_color),
+    '--word-table-row-even-bg': optionalBackgroundColor(config.table.row_even_background_color),
     '--word-list-indent': `${config.lists.bullet.indent}pt`,
     '--word-code-label-font-family': fontStack(config.code_block.label_font.name, config.code_block.label_font.ascii, 'monospace'),
     '--word-code-label-font-size': `${config.code_block.label_font.size}pt`,

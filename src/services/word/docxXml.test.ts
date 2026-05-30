@@ -167,6 +167,7 @@ describe('markdownToDocx XML output', () => {
         },
         mappedTable: {
           table: {
+            cell_margin: 40 / 567,
             header_background_color: 'ABCDEF',
             row_odd_background_color: 'F0F0F0',
           },
@@ -265,5 +266,6 @@ describe('markdownToDocx XML output', () => {
       '123456',
       '654321',
     ]));
+    expect(allXmlAttrs(documentXml, 'w:top', 'w:w')).toEqual(expect.arrayContaining(['40']));
   });
 });
