@@ -539,6 +539,7 @@ function addHeading(
       line: (style?.line_spacing ?? hc.line_spacing ?? config.paragraph.line_spacing) * 240,
     },
     indent: firstLineIndent || leftIndent ? { firstLine: firstLineIndent, left: leftIndent } : undefined,
+    shading: style?.background_color ? { type: 'clear', fill: style.background_color } : undefined,
     children: createFormattedRuns(text, config, { titleLevel: level, styleName }),
   });
 }
@@ -568,6 +569,7 @@ function addParagraph(text: string, config: PresetConfig): Paragraph {
       line: (style?.line_spacing ?? pc.line_spacing) * 240,
     },
     indent: firstLineIndent || leftIndent ? { firstLine: firstLineIndent, left: leftIndent } : undefined,
+    shading: style?.background_color ? { type: 'clear', fill: style.background_color } : undefined,
     children: createFormattedRuns(text, config, { styleName }),
   });
 }
@@ -575,21 +577,26 @@ function addParagraph(text: string, config: PresetConfig): Paragraph {
 function addBulletList(line: string, config: PresetConfig): Paragraph {
   const text = line.replace(/^[-*+]\s+/, '');
   const marker = config.lists.bullet.marker;
-  const indent = config.lists.bullet.indent;
+  const styleName = getMarkdownStyleName(config, 'list');
+  const style = getStyle(config, styleName);
+  const font = mergeStyleFont(config.fonts.default, style);
+  const indent = style?.left_indent ?? config.lists.bullet.indent;
 
   return new Paragraph({
-    spacing: { line: config.paragraph.line_spacing * 240 },
+    spacing: { line: (style?.line_spacing ?? config.paragraph.line_spacing) * 240 },
     indent: { left: ptToTwip(indent) },
+    shading: style?.background_color ? { type: 'clear', fill: style.background_color } : undefined,
     children: [
       new TextRun({
         text: `${marker} `,
         font: {
-          eastAsia: config.fonts.default.name,
-          ascii: config.fonts.default.ascii,
+          eastAsia: font.name,
+          ascii: font.ascii,
         },
-        size: ptToHalfPt(config.fonts.default.size),
+        size: ptToHalfPt(font.size),
+        color: font.color,
       }),
-      ...createFormattedRuns(text, config),
+      ...createFormattedRuns(text, config, { styleName }),
     ],
   });
 }
@@ -598,21 +605,26 @@ function addNumberedList(line: string, config: PresetConfig): Paragraph {
   const match = line.match(/^(\d+[.)])\s+(.+)$/);
   const prefix = match ? match[1] : '';
   const text = match ? match[2] : line;
-  const indent = config.lists.numbered.indent;
+  const styleName = getMarkdownStyleName(config, 'list');
+  const style = getStyle(config, styleName);
+  const font = mergeStyleFont(config.fonts.default, style);
+  const indent = style?.left_indent ?? config.lists.numbered.indent;
 
   return new Paragraph({
-    spacing: { line: config.paragraph.line_spacing * 240 },
+    spacing: { line: (style?.line_spacing ?? config.paragraph.line_spacing) * 240 },
     indent: { left: ptToTwip(indent) },
+    shading: style?.background_color ? { type: 'clear', fill: style.background_color } : undefined,
     children: [
       new TextRun({
         text: `${prefix} `,
         font: {
-          eastAsia: config.fonts.default.name,
-          ascii: config.fonts.default.ascii,
+          eastAsia: font.name,
+          ascii: font.ascii,
         },
-        size: ptToHalfPt(config.fonts.default.size),
+        size: ptToHalfPt(font.size),
+        color: font.color,
       }),
-      ...createFormattedRuns(text, config),
+      ...createFormattedRuns(text, config, { styleName }),
     ],
   });
 }
@@ -626,21 +638,26 @@ function addTaskList(line: string, config: PresetConfig): Paragraph {
   const symbol = checked
     ? config.lists.task.checked
     : config.lists.task.unchecked;
-  const indent = config.lists.bullet.indent;
+  const styleName = getMarkdownStyleName(config, 'list');
+  const style = getStyle(config, styleName);
+  const font = mergeStyleFont(config.fonts.default, style);
+  const indent = style?.left_indent ?? config.lists.bullet.indent;
 
   return new Paragraph({
-    spacing: { line: config.paragraph.line_spacing * 240 },
+    spacing: { line: (style?.line_spacing ?? config.paragraph.line_spacing) * 240 },
     indent: { left: ptToTwip(indent) },
+    shading: style?.background_color ? { type: 'clear', fill: style.background_color } : undefined,
     children: [
       new TextRun({
         text: `${symbol} `,
         font: {
-          eastAsia: config.fonts.default.name,
-          ascii: config.fonts.default.ascii,
+          eastAsia: font.name,
+          ascii: font.ascii,
         },
-        size: ptToHalfPt(config.fonts.default.size),
+        size: ptToHalfPt(font.size),
+        color: font.color,
       }),
-      ...createFormattedRuns(text, config),
+      ...createFormattedRuns(text, config, { styleName }),
     ],
   });
 }
@@ -660,16 +677,28 @@ function addQuote(text: string, config: PresetConfig): Paragraph {
 
 function addHorizontalRule(config: PresetConfig): Paragraph {
   const hr = config.horizontal_rule;
+  const style = getMarkdownStyle(config, 'horizontal_rule');
+  const font = mergeStyleFont({
+    name: hr.font,
+    ascii: hr.font,
+    size: hr.size,
+    color: hr.color,
+  }, style);
 
   return new Paragraph({
-    alignment: parseAlignment(hr.alignment),
+    alignment: parseAlignment(style?.align ?? hr.alignment),
     spacing: { before: 120, after: 120 },
+    shading: style?.background_color ? { type: 'clear', fill: style.background_color } : undefined,
     children: [
       new TextRun({
         text: hr.character.repeat(hr.repeat_count),
-        font: { eastAsia: hr.font, ascii: hr.font },
-        size: ptToHalfPt(hr.size),
-        color: hr.color,
+        font: { eastAsia: font.name, ascii: font.ascii },
+        size: ptToHalfPt(font.size),
+        color: font.color,
+        bold: style?.bold || undefined,
+        italics: style?.italic || undefined,
+        underline: style?.underline ? {} : undefined,
+        strike: style?.strikethrough || undefined,
       }),
     ],
   });

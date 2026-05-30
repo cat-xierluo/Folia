@@ -167,7 +167,7 @@
 
 - **2026-05-30**
   - Word 导出预设 JSON 完整模板和 md2word 兼容导入完成：扩展标题、页码、表格、代码、引用、图片等字段，导入时清洗颜色并转换 dxa / pt / inch 单位；`.docx` 导出和 Word 纸张预览同步补齐标题字体、表格背景/对齐/四边距、页码格式和图片标题映射。
-  - Word JSON v2 样式协议第一阶段完成：新增 `styles / markdown_mapping / html_mapping`，支持 Markdown 标题、正文、代码块、表格、图片标题和 HTML table 选择器映射到可复用样式。
+  - Word JSON v2 样式协议第一阶段完成：新增 `styles / markdown_mapping / html_mapping`，支持 Markdown 标题、正文、代码块、列表、分割线、表格、图片标题和 HTML table 选择器映射到可复用样式。
 
 - **2026-05-28**
   - 启动 Folia 官方网站建设：新增独立 Astro 静态站和 GitHub Pages 发布方案。

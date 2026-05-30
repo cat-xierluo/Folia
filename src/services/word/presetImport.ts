@@ -162,6 +162,28 @@ const TEMPLATE: ImportablePresetJson = {
         space_after: 6,
         line_spacing: 1.5,
       },
+      heading3: {
+        font: '黑体',
+        ascii: 'Arial',
+        size: 12,
+        bold: true,
+        align: 'left',
+        color: '000000',
+        space_before: 6,
+        space_after: 6,
+        line_spacing: 1.5,
+      },
+      heading4: {
+        font: '仿宋_GB2312',
+        ascii: 'Times New Roman',
+        size: 12,
+        bold: true,
+        align: 'left',
+        color: '000000',
+        space_before: 6,
+        space_after: 3,
+        line_spacing: 1.5,
+      },
       quoteBlock: {
         background_color: 'EAEAEA',
         color: '000000',
@@ -182,6 +204,14 @@ const TEMPLATE: ImportablePresetJson = {
         ascii: 'Consolas',
         size: 10,
         color: 'C7254E',
+      },
+      listItem: {
+        font: '仿宋_GB2312',
+        ascii: 'Times New Roman',
+        size: 12,
+        color: '000000',
+        line_spacing: 1.5,
+        left_indent: 24,
       },
       standardTable: {
         table: {
@@ -204,6 +234,13 @@ const TEMPLATE: ImportablePresetJson = {
           row_even_background_color: 'FFFFFF',
         },
       },
+      horizontalRule: {
+        font: '仿宋_GB2312',
+        ascii: 'Times New Roman',
+        size: 10,
+        color: 'CCCCCC',
+        align: 'center',
+      },
       imageCaption: {
         font: '仿宋_GB2312',
         ascii: 'Times New Roman',
@@ -216,12 +253,14 @@ const TEMPLATE: ImportablePresetJson = {
       paragraph: 'body',
       heading1: 'heading1',
       heading2: 'heading2',
-      heading3: 'heading2',
-      heading4: 'body',
+      heading3: 'heading3',
+      heading4: 'heading4',
       blockquote: 'quoteBlock',
       code_block: 'codeBlock',
       inline_code: 'inlineCode',
+      list: 'listItem',
       table: 'standardTable',
+      horizontal_rule: 'horizontalRule',
       image_caption: 'imageCaption',
     },
     html_mapping: {
@@ -234,6 +273,23 @@ const TEMPLATE: ImportablePresetJson = {
     },
   },
 };
+
+const MARKDOWN_MAPPING_KEYS = new Set([
+  'paragraph',
+  'heading1',
+  'heading2',
+  'heading3',
+  'heading4',
+  'blockquote',
+  'quote',
+  'code_block',
+  'inline_code',
+  'table',
+  'image_caption',
+  'horizontal_rule',
+  'list',
+]);
+const HTML_MAPPING_TAGS = new Set(['table']);
 
 function readObject(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -507,14 +563,34 @@ function validateStyleMappings(config: PresetConfig): void {
   };
 
   Object.entries(config.markdown_mapping ?? {}).forEach(([key, value]) => {
+    if (!MARKDOWN_MAPPING_KEYS.has(key)) {
+      throw new PresetImportError(`markdown_mapping.${key} 不是支持的 Markdown 映射项。`);
+    }
     hasStyle(`markdown_mapping.${key}`, value);
   });
   Object.entries(config.html_mapping?.tags ?? {}).forEach(([key, value]) => {
+    if (!HTML_MAPPING_TAGS.has(key)) {
+      throw new PresetImportError(`html_mapping.tags.${key} 暂不支持；当前仅支持 table。`);
+    }
     hasStyle(`html_mapping.tags.${key}`, value);
   });
   Object.entries(config.html_mapping?.selectors ?? {}).forEach(([key, value]) => {
+    assertValidHtmlSelector(key);
     hasStyle(`html_mapping.selectors.${key}`, value);
   });
+}
+
+function assertValidHtmlSelector(selector: string): void {
+  if (!selector.trim()) {
+    throw new PresetImportError('html_mapping.selectors 不能包含空选择器。');
+  }
+  if (typeof document === 'undefined') return;
+
+  try {
+    document.createDocumentFragment().querySelector(selector);
+  } catch {
+    throw new PresetImportError(`html_mapping.selectors.${selector} 不是有效的 CSS 选择器。`);
+  }
 }
 
 function validateReusableStyles(config: PresetConfig): void {

@@ -29,6 +29,8 @@ describe('presetImport', () => {
     expect(imported.config.page_number.align).toBe('center');
     expect(imported.config.styles?.body.font).toBe('仿宋_GB2312');
     expect(imported.config.markdown_mapping?.heading1).toBe('heading1');
+    expect(imported.config.markdown_mapping?.heading4).toBe('heading4');
+    expect(imported.config.styles?.heading4.align).toBe('left');
     expect(imported.config.html_mapping?.selectors?.['table.evidence-table']).toBe('evidenceTable');
     expect(imported.config.table.cell_margins?.left).toBeCloseTo(0.1);
     expect(imported.config.table.header_background_color).toBe('F5F5F5');
@@ -71,6 +73,27 @@ describe('presetImport', () => {
       name: '坏映射',
       config: {
         markdown_mapping: { paragraph: 'missingStyle' },
+      },
+    }))).toThrow(PresetImportError);
+    expect(() => importPresetFromJson(JSON.stringify({
+      name: '坏映射键',
+      config: {
+        styles: { heading: { font: '黑体', size: 12 } },
+        markdown_mapping: { heading_1: 'heading' },
+      },
+    }))).toThrow(PresetImportError);
+    expect(() => importPresetFromJson(JSON.stringify({
+      name: '坏 HTML 标签映射',
+      config: {
+        styles: { htmlStyle: { font: '黑体', size: 12 } },
+        html_mapping: { tags: { div: 'htmlStyle' } },
+      },
+    }))).toThrow(PresetImportError);
+    expect(() => importPresetFromJson(JSON.stringify({
+      name: '坏 HTML 选择器',
+      config: {
+        styles: { tableStyle: { table: { header_background_color: 'FFFFFF' } } },
+        html_mapping: { selectors: { 'table[': 'tableStyle' } },
       },
     }))).toThrow(PresetImportError);
   });

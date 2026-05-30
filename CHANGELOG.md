@@ -8,7 +8,7 @@ All notable changes to this project will be documented in this file.
 
 - Word 导出自定义 JSON 示例扩展为完整模板，覆盖页面、字体、标题、正文、页码、表格、代码、引用、图片、分割线和列表配置。
 - Word 自定义预设导入兼容 md2word YAML 转 JSON 后的常见字段别名与单位，包括 `row_height_cm`、`cell_margin.top/bottom/left/right`、`table.header/body`、`code_block.label/content`、`quote.left_indent_inches` 和页码位置。
-- Word 导出 JSON 新增 `styles`、`markdown_mapping` 和 `html_mapping`，可用样式别名统一定义 Markdown 标题、正文、代码块、表格、图片标题以及 HTML table 选择器的输出规则。
+- Word 导出 JSON 新增 `styles`、`markdown_mapping` 和 `html_mapping`，可用样式别名统一定义 Markdown 标题、正文、代码块、列表、分割线、表格、图片标题以及 HTML table 选择器的输出规则。
 
 ### Changed
 

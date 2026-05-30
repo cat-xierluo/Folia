@@ -8,6 +8,7 @@ import { getPreset } from '../services/word/config';
 import { getMarkdownStyleName, getStyle } from '../services/word/style-mapping';
 import { createWordPreviewStyle } from '../services/wordPreviewStyle';
 import type { PresetConfig, PresetId } from '../services/word';
+import type { PresetTableFontConfig } from '../services/word/types';
 
 type WordPaperPreviewPaneProps = {
   source: string;
@@ -142,17 +143,26 @@ function applyTableStyle(table: HTMLTableElement, tableStyle: NonNullable<Preset
       padding ? `padding: ${padding}` : undefined,
       border ? `border: ${border}` : undefined,
       tableStyle.vertical_align ? `vertical-align: ${tableStyle.vertical_align}` : undefined,
+      tableStyle.line_spacing ? `line-height: ${tableStyle.line_spacing}` : undefined,
     ]);
   });
 
   table.querySelectorAll<HTMLElement>('th').forEach((cell) => {
     appendInlineStyle(cell, [
+      ...tableFontDeclarations(tableStyle.header_font),
       tableStyle.header_background_color ? `background-color: ${cssColor(tableStyle.header_background_color)}` : undefined,
     ]);
   });
 
+  table.querySelectorAll<HTMLElement>('td').forEach((cell) => {
+    appendInlineStyle(cell, tableFontDeclarations(tableStyle.body_font));
+  });
+
   Array.from(table.tBodies).forEach((tbody) => {
     Array.from(tbody.rows).forEach((row, index) => {
+      if (tableStyle.row_height !== undefined) {
+        appendInlineStyle(row, [`height: ${tableStyle.row_height}cm`]);
+      }
       const fill = index % 2 === 0
         ? tableStyle.row_odd_background_color
         : tableStyle.row_even_background_color;
@@ -162,6 +172,15 @@ function applyTableStyle(table: HTMLTableElement, tableStyle: NonNullable<Preset
       });
     });
   });
+}
+
+function tableFontDeclarations(font?: PresetTableFontConfig): Array<string | undefined> {
+  if (!font) return [];
+  return [
+    font.name || font.font ? `font-family: "${font.name ?? font.font}", "${font.ascii ?? font.name ?? font.font}", serif` : undefined,
+    font.size ? `font-size: ${font.size}pt` : undefined,
+    font.color ? `color: ${cssColor(font.color)}` : undefined,
+  ];
 }
 
 function applyMappedPreviewStyles(root: HTMLElement, preset: PresetConfig): void {
@@ -178,6 +197,11 @@ function applyMappedPreviewStyles(root: HTMLElement, preset: PresetConfig): void
     if (tag === 'blockquote') applyTextStyle(child, preset, getMarkdownStyleName(preset, 'blockquote') ?? getMarkdownStyleName(preset, 'quote'));
     if (tag === 'pre') applyTextStyle(child, preset, getMarkdownStyleName(preset, 'code_block'));
     if (tag === 'table') applyTextStyle(child, preset, getMarkdownStyleName(preset, 'table'));
+    if (tag === 'hr') applyTextStyle(child, preset, getMarkdownStyleName(preset, 'horizontal_rule'));
+  });
+
+  root.querySelectorAll<HTMLElement>('ul, ol').forEach((element) => {
+    applyTextStyle(element, preset, getMarkdownStyleName(preset, 'list'));
   });
 
   root.querySelectorAll<HTMLElement>(':not(pre) > code').forEach((element) => {
@@ -196,7 +220,7 @@ function applyMappedPreviewStyles(root: HTMLElement, preset: PresetConfig): void
     try {
       root.querySelectorAll<HTMLElement>(selector).forEach((element) => applyTextStyle(element, preset, styleName));
     } catch {
-      // Invalid selectors are rejected on import in later schema revisions; ignore legacy data defensively.
+      // Imported presets reject invalid selectors; ignore legacy persisted data defensively.
     }
   });
 }

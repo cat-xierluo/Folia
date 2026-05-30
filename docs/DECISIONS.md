@@ -9,9 +9,9 @@
 
 **决策**
 - 在现有 `PresetConfig` 上新增 JSON v2 结构：`styles` 定义可复用样式别名，`markdown_mapping` 定义 Markdown 语义到样式的映射，`html_mapping` 定义 HTML 标签或选择器到样式的映射。
-- 本轮先把样式映射接入 Folia 已有导出链路：Markdown 标题、正文、代码块、表格、图片标题，以及 HTML table 选择器。
+- 本轮先把样式映射接入 Folia 已有导出链路：Markdown 标题、正文、代码块、列表、分割线、表格、图片标题，以及 HTML table 选择器。
 - Word 纸张预览也消费同一套映射，通过渲染后 DOM 后处理把样式落到元素上，避免“JSON 可写但预览无效”。
-- 映射引用不存在时导入失败；继续保留旧字段，保证现有自定义预设可读。
+- 映射引用不存在、Markdown 映射键不受支持或 HTML tag 映射超出当前 table 范围时导入失败；继续保留旧字段，保证现有自定义预设可读。
 - 自动目录、脚注、分节符、Word 原生样式表和普通 HTML inline / block class 的完整映射暂不在本轮完成，作为后续 v2 扩展。
 
 **验证**

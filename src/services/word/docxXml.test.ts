@@ -192,6 +192,22 @@ describe('markdownToDocx XML output', () => {
           left_indent: 18,
           line_spacing: 1.1,
         },
+        mappedList: {
+          font: '宋体',
+          ascii: 'Arial',
+          size: 10,
+          color: '336699',
+          left_indent: 30,
+          line_spacing: 1.1,
+        },
+        mappedRule: {
+          font: 'Arial',
+          ascii: 'Arial',
+          size: 8,
+          color: '222222',
+          bold: true,
+          align: 'center',
+        },
       },
       markdown_mapping: {
         heading1: 'mappedHeading',
@@ -199,6 +215,8 @@ describe('markdownToDocx XML output', () => {
         table: 'mappedTable',
         image_caption: 'mappedCaption',
         code_block: 'mappedCode',
+        list: 'mappedList',
+        horizontal_rule: 'mappedRule',
       },
       html_mapping: {
         selectors: {
@@ -222,17 +240,24 @@ describe('markdownToDocx XML output', () => {
       'const a = 1',
       '```',
       '',
+      '- 映射列表',
+      '',
+      '---',
+      '',
       '![证据图](https://example.com/evidence.png)',
     ].join('\n'), preset);
 
     expect(documentXml).toMatch(/<w:rFonts\b(?=[^>]*w:eastAsia="微软雅黑")(?=[^>]*w:ascii="Arial")/);
     expect(documentXml).toMatch(/<w:rFonts\b(?=[^>]*w:eastAsia="楷体")(?=[^>]*w:ascii="Georgia")/);
     expect(documentXml).toMatch(/<w:rFonts\b(?=[^>]*w:eastAsia="Courier New")(?=[^>]*w:ascii="Courier New")/);
+    expect(documentXml).toMatch(/<w:rFonts\b(?=[^>]*w:eastAsia="宋体")(?=[^>]*w:ascii="Arial")/);
     expect(allXmlAttrs(documentXml, 'w:color', 'w:val')).toEqual(expect.arrayContaining([
       '445566',
       '112233',
       '777777',
       '990000',
+      '336699',
+      '222222',
     ]));
     expect(allXmlAttrs(documentXml, 'w:shd', 'w:fill')).toEqual(expect.arrayContaining([
       'ABCDEF',
