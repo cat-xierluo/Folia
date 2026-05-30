@@ -4,6 +4,7 @@ import {
 } from 'docx';
 import type { PresetConfig } from './types';
 import { ptToTwip } from './formatter';
+import { withCodeBlockStyle } from './style-mapping';
 
 /**
  * 从 Mermaid 源码创建 Word 段落（文本回退方案）
@@ -15,23 +16,24 @@ export function createMermaidFallback(
   code: string,
   config: PresetConfig,
 ): Paragraph[] {
+  const styledConfig = withCodeBlockStyle(config);
   const trimmed = code.trim();
   const firstLine = trimmed.split('\n')[0].trim();
 
   if (/^(graph|flowchart)\b/.test(firstLine)) {
-    return parseFlowchart(trimmed, config);
+    return parseFlowchart(trimmed, styledConfig);
   }
   if (/^sequenceDiagram\b/.test(firstLine)) {
-    return parseSequence(trimmed, config);
+    return parseSequence(trimmed, styledConfig);
   }
   if (/^pie\b/.test(firstLine)) {
-    return parsePie(trimmed, config);
+    return parsePie(trimmed, styledConfig);
   }
   if (/^gantt\b/.test(firstLine)) {
-    return parseGantt(trimmed, config);
+    return parseGantt(trimmed, styledConfig);
   }
 
-  return createCodeFallback(trimmed, 'mermaid', config);
+  return createCodeFallback(trimmed, 'mermaid', styledConfig);
 }
 
 /**
@@ -421,7 +423,8 @@ export function createCodeFallback(
   language: string,
   config: PresetConfig,
 ): Paragraph[] {
-  const { content_font, left_indent, line_spacing } = config.code_block;
+  const styledConfig = withCodeBlockStyle(config);
+  const { content_font, left_indent, line_spacing } = styledConfig.code_block;
   const leftIndent = ptToTwip(left_indent);
   const lines = code.split('\n');
 
@@ -437,11 +440,11 @@ export function createCodeFallback(
           new TextRun({
             text: language,
             font: {
-              eastAsia: config.code_block.label_font.name,
-              ascii: config.code_block.label_font.ascii,
+              eastAsia: styledConfig.code_block.label_font.name,
+              ascii: styledConfig.code_block.label_font.ascii,
             },
-            size: config.code_block.label_font.size * 2,
-            color: config.code_block.label_font.color,
+            size: styledConfig.code_block.label_font.size * 2,
+            color: styledConfig.code_block.label_font.color,
           }),
         ],
       }),

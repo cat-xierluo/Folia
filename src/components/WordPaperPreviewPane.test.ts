@@ -160,6 +160,50 @@ describe('applyWordPreviewPresetPostprocess', () => {
 
     expect(content.querySelector('.word-image-caption')?.textContent).toBe('证据图片');
   });
+
+  it('applies reusable markdown and HTML style mappings to preview DOM', () => {
+    const preset = {
+      ...getPreset('legal'),
+      image: {
+        ...getPreset('legal').image,
+        show_caption: true,
+      },
+      styles: {
+        mappedHeading: { font: '微软雅黑', ascii: 'Arial', size: 18, color: '445566', align: 'right' },
+        mappedParagraph: { font: '楷体', ascii: 'Georgia', size: 13, color: '112233', line_spacing: 1.8 },
+        evidenceTable: {
+          table: {
+            header_background_color: '123456',
+            row_odd_background_color: '654321',
+            cell_margins: { top: 0.08, bottom: 0.08, left: 0.12, right: 0.12 },
+          },
+        },
+        mappedCaption: { font: '黑体', ascii: 'Arial', size: 9, color: '777777' },
+      },
+      markdown_mapping: {
+        heading1: 'mappedHeading',
+        paragraph: 'mappedParagraph',
+        image_caption: 'mappedCaption',
+      },
+      html_mapping: {
+        selectors: { 'table.evidence-table': 'evidenceTable' },
+      },
+    };
+    const content = createMeasureContent(`
+      <h1>映射标题</h1>
+      <p>映射正文</p>
+      <table class="evidence-table"><thead><tr><th>证据</th></tr></thead><tbody><tr><td>合同</td></tr></tbody></table>
+      <p><img src="./evidence.png" alt="证据图片"></p>
+    `);
+
+    applyWordPreviewPresetPostprocess(content, preset);
+
+    expect(content.querySelector('h1')?.getAttribute('style')).toContain('微软雅黑');
+    expect(content.querySelector('p')?.getAttribute('style')).toContain('112233');
+    expect(content.querySelector('th')?.getAttribute('style')).toContain('123456');
+    expect(content.querySelector('td')?.getAttribute('style')).toContain('654321');
+    expect(content.querySelector('.word-image-caption')?.getAttribute('style')).toContain('777777');
+  });
 });
 
 describe('WordPaperPreviewPane', () => {

@@ -148,6 +148,7 @@
 - [x] 明确常规/授权边界：复杂 HTML 阅读、基础 Word 导出、内置预设和 2 个自定义 JSON 预设槽位保持常规可用
 - [x] 设计“预设槽位”模型：常规版本可保存 2 个自定义 Word 导出预设，内测授权可使用更多槽位
 - [x] 设计槽位占用规则：导入 JSON 即占用一个自定义槽位；删除自定义预设释放槽位；内置预设不计入槽位
+- [x] Word JSON v2 样式协议：通过 `styles / markdown_mapping / html_mapping` 定义可复用样式和 Markdown / HTML table 映射
 - [x] HTML 导出预设体系：内置 3 套简单通用主题，支持启用/停用、自定义 CSS 槽位、CSS 示例、`.css` / `.json` 文件导入和当前 CSS 预设 JSON 导出；旧 `wechatCustomCss` 自动迁移为自定义 HTML 预设
 - [x] 明确额外槽位授权路线：先做内测码入口和可替换 `licenseService`，内测码只用于开启本机额外自定义槽位
 - [x] 实现 Settings / 授权页面：输入内测码、展示授权状态、解锁额外 Word / HTML 自定义预设槽位
@@ -166,6 +167,7 @@
 
 - **2026-05-30**
   - Word 导出预设 JSON 完整模板和 md2word 兼容导入完成：扩展标题、页码、表格、代码、引用、图片等字段，导入时清洗颜色并转换 dxa / pt / inch 单位；`.docx` 导出和 Word 纸张预览同步补齐标题字体、表格背景/对齐/四边距、页码格式和图片标题映射。
+  - Word JSON v2 样式协议第一阶段完成：新增 `styles / markdown_mapping / html_mapping`，支持 Markdown 标题、正文、代码块、表格、图片标题和 HTML table 选择器映射到可复用样式。
 
 - **2026-05-28**
   - 启动 Folia 官方网站建设：新增独立 Astro 静态站和 GitHub Pages 发布方案。

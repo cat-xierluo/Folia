@@ -20,6 +20,7 @@ import {
   ptToTwip,
   parseAlignment,
 } from './formatter';
+import { getMarkdownStyle, getMarkdownStyleName, getStyle, mergeFont as mergeStyleFont } from './style-mapping';
 import {
   isMarkdownTableRow,
   isMarkdownSeparator,
@@ -515,38 +516,59 @@ function addHeading(
   };
 
   const headingIndent =
-    hc.indent && hc.indent > 0
+    (hc.indent && hc.indent > 0)
       ? hc.indent * config.fonts.default.size * 20
+      : undefined;
+  const styleName = getMarkdownStyleName(config, `heading${level}` as keyof NonNullable<PresetConfig['markdown_mapping']>);
+  const style = getStyle(config, styleName);
+  const firstLineIndent =
+    style?.first_line_indent && style.first_line_indent > 0
+      ? style.first_line_indent * (style.size ?? config.fonts.default.size) * 20
+      : headingIndent;
+  const leftIndent =
+    style?.left_indent && style.left_indent > 0
+      ? ptToTwip(style.left_indent)
       : undefined;
 
   return new Paragraph({
     heading: headingLevelMap[level],
-    alignment: parseAlignment(hc.align),
+    alignment: parseAlignment(style?.align ?? hc.align),
     spacing: {
-      before: hc.space_before * 20,
-      after: hc.space_after * 20,
-      line: (hc.line_spacing ?? config.paragraph.line_spacing) * 240,
+      before: (style?.space_before ?? hc.space_before) * 20,
+      after: (style?.space_after ?? hc.space_after) * 20,
+      line: (style?.line_spacing ?? hc.line_spacing ?? config.paragraph.line_spacing) * 240,
     },
-    indent: headingIndent ? { firstLine: headingIndent } : undefined,
-    children: createFormattedRuns(text, config, { titleLevel: level }),
+    indent: firstLineIndent || leftIndent ? { firstLine: firstLineIndent, left: leftIndent } : undefined,
+    children: createFormattedRuns(text, config, { titleLevel: level, styleName }),
   });
 }
 
 function addParagraph(text: string, config: PresetConfig): Paragraph {
   const pc = config.paragraph;
+  const styleName = getMarkdownStyleName(config, 'paragraph');
+  const style = getStyle(config, styleName);
 
   // 首行缩进：first_line_indent 表示"字符数"
   // 近似公式：字符数 × 字号(pt) × 20 = twips
+  const firstLineIndentValue = style?.first_line_indent ?? pc.first_line_indent;
   const firstLineIndent =
-    pc.first_line_indent > 0
-      ? pc.first_line_indent * config.fonts.default.size * 20
+    firstLineIndentValue > 0
+      ? firstLineIndentValue * (style?.size ?? config.fonts.default.size) * 20
+      : undefined;
+  const leftIndent =
+    style?.left_indent && style.left_indent > 0
+      ? ptToTwip(style.left_indent)
       : undefined;
 
   return new Paragraph({
-    alignment: parseAlignment(pc.align),
-    spacing: { line: pc.line_spacing * 240 },
-    indent: firstLineIndent ? { firstLine: firstLineIndent } : undefined,
-    children: createFormattedRuns(text, config),
+    alignment: parseAlignment(style?.align ?? pc.align),
+    spacing: {
+      before: style?.space_before !== undefined ? style.space_before * 20 : undefined,
+      after: style?.space_after !== undefined ? style.space_after * 20 : undefined,
+      line: (style?.line_spacing ?? pc.line_spacing) * 240,
+    },
+    indent: firstLineIndent || leftIndent ? { firstLine: firstLineIndent, left: leftIndent } : undefined,
+    children: createFormattedRuns(text, config, { styleName }),
   });
 }
 
@@ -625,12 +647,14 @@ function addTaskList(line: string, config: PresetConfig): Paragraph {
 
 function addQuote(text: string, config: PresetConfig): Paragraph {
   const qc = config.quote;
+  const styleName = getMarkdownStyleName(config, 'blockquote') ?? getMarkdownStyleName(config, 'quote');
+  const style = getStyle(config, styleName);
 
   return new Paragraph({
-    spacing: { line: qc.line_spacing * 240 },
-    indent: { left: ptToTwip(qc.left_indent) },
-    shading: { type: 'clear', fill: qc.background_color },
-    children: createFormattedRuns(text, config, { isQuote: true }),
+    spacing: { line: (style?.line_spacing ?? qc.line_spacing) * 240 },
+    indent: { left: ptToTwip(style?.left_indent ?? qc.left_indent) },
+    shading: { type: 'clear', fill: style?.background_color ?? qc.background_color },
+    children: createFormattedRuns(text, config, { isQuote: true, styleName }),
   });
 }
 
@@ -753,19 +777,29 @@ async function addImage(
 
 function createImageCaption(alt: string, config: PresetConfig): Paragraph[] {
   if (!config.image.show_caption || !alt.trim()) return [];
+  const style = getMarkdownStyle(config, 'image_caption');
+  const font = mergeStyleFont({
+    ...config.fonts.default,
+    size: Math.max(8, config.fonts.default.size - 2),
+    color: config.fonts.default.color ?? '666666',
+  }, style);
   return [
     new Paragraph({
-      alignment: AlignmentType.CENTER,
+      alignment: parseAlignment(style?.align ?? 'center'),
       spacing: { after: 80 },
       children: [
         new TextRun({
           text: alt.trim(),
           font: {
-            eastAsia: config.fonts.default.name,
-            ascii: config.fonts.default.ascii,
+            eastAsia: font.name,
+            ascii: font.ascii,
           },
-          size: ptToHalfPt(Math.max(8, config.fonts.default.size - 2)),
-          color: config.fonts.default.color ?? '666666',
+          size: ptToHalfPt(font.size),
+          color: font.color,
+          bold: style?.bold || undefined,
+          italics: style?.italic || undefined,
+          underline: style?.underline ? {} : undefined,
+          strike: style?.strikethrough || undefined,
         }),
       ],
     }),

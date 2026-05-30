@@ -139,4 +139,106 @@ describe('markdownToDocx XML output', () => {
     expect(documentXml).toContain('[图片: 证据图片]');
     expect(documentXml).toContain('证据图片');
   });
+
+  it('applies reusable markdown and HTML style mappings to DOCX XML', async () => {
+    const base = getPreset(DEFAULT_PRESET_ID);
+    const preset: PresetConfig = {
+      ...base,
+      image: {
+        ...base.image,
+        show_caption: true,
+      },
+      styles: {
+        mappedHeading: {
+          font: '微软雅黑',
+          ascii: 'Arial',
+          size: 18,
+          color: '445566',
+          bold: true,
+          align: 'right',
+        },
+        mappedParagraph: {
+          font: '楷体',
+          ascii: 'Georgia',
+          size: 13,
+          color: '112233',
+          line_spacing: 1.8,
+          first_line_indent: 1,
+        },
+        mappedTable: {
+          table: {
+            header_background_color: 'ABCDEF',
+            row_odd_background_color: 'F0F0F0',
+          },
+        },
+        evidenceTable: {
+          table: {
+            header_background_color: '123456',
+            row_odd_background_color: '654321',
+            row_even_background_color: '654321',
+          },
+        },
+        mappedCaption: {
+          font: '黑体',
+          ascii: 'Arial',
+          size: 9,
+          color: '777777',
+        },
+        mappedCode: {
+          font: 'Courier New',
+          ascii: 'Courier New',
+          size: 11,
+          color: '990000',
+          left_indent: 18,
+          line_spacing: 1.1,
+        },
+      },
+      markdown_mapping: {
+        heading1: 'mappedHeading',
+        paragraph: 'mappedParagraph',
+        table: 'mappedTable',
+        image_caption: 'mappedCaption',
+        code_block: 'mappedCode',
+      },
+      html_mapping: {
+        selectors: {
+          'table.evidence-table': 'evidenceTable',
+        },
+      },
+    };
+
+    const documentXml = await readDocumentXml([
+      '# 映射标题',
+      '',
+      '映射正文',
+      '',
+      '| A | B |',
+      '| --- | --- |',
+      '| 1 | 2 |',
+      '',
+      '<table class="evidence-table"><tr><th>证据</th></tr><tr><td>合同</td></tr></table>',
+      '',
+      '```ts',
+      'const a = 1',
+      '```',
+      '',
+      '![证据图](https://example.com/evidence.png)',
+    ].join('\n'), preset);
+
+    expect(documentXml).toMatch(/<w:rFonts\b(?=[^>]*w:eastAsia="微软雅黑")(?=[^>]*w:ascii="Arial")/);
+    expect(documentXml).toMatch(/<w:rFonts\b(?=[^>]*w:eastAsia="楷体")(?=[^>]*w:ascii="Georgia")/);
+    expect(documentXml).toMatch(/<w:rFonts\b(?=[^>]*w:eastAsia="Courier New")(?=[^>]*w:ascii="Courier New")/);
+    expect(allXmlAttrs(documentXml, 'w:color', 'w:val')).toEqual(expect.arrayContaining([
+      '445566',
+      '112233',
+      '777777',
+      '990000',
+    ]));
+    expect(allXmlAttrs(documentXml, 'w:shd', 'w:fill')).toEqual(expect.arrayContaining([
+      'ABCDEF',
+      'F0F0F0',
+      '123456',
+      '654321',
+    ]));
+  });
 });

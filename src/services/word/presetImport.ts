@@ -130,6 +130,108 @@ const TEMPLATE: ImportablePresetJson = {
       numbered: { indent: 24, preserve_format: true },
       task: { checked: '☑', unchecked: '☐' },
     },
+    styles: {
+      body: {
+        font: '仿宋_GB2312',
+        ascii: 'Times New Roman',
+        size: 12,
+        color: '000000',
+        align: 'justify',
+        line_spacing: 1.5,
+        first_line_indent: 2,
+      },
+      heading1: {
+        font: '黑体',
+        ascii: 'Arial',
+        size: 15,
+        bold: true,
+        align: 'center',
+        color: '000000',
+        space_before: 0,
+        space_after: 12,
+        line_spacing: 1.5,
+      },
+      heading2: {
+        font: '黑体',
+        ascii: 'Arial',
+        size: 12,
+        bold: true,
+        align: 'left',
+        color: '000000',
+        space_before: 12,
+        space_after: 6,
+        line_spacing: 1.5,
+      },
+      quoteBlock: {
+        background_color: 'EAEAEA',
+        color: '000000',
+        size: 9,
+        left_indent: 24,
+        line_spacing: 1.2,
+      },
+      codeBlock: {
+        font: 'Consolas',
+        ascii: 'Consolas',
+        size: 10,
+        color: '333333',
+        left_indent: 24,
+        line_spacing: 1.2,
+      },
+      inlineCode: {
+        font: 'Consolas',
+        ascii: 'Consolas',
+        size: 10,
+        color: 'C7254E',
+      },
+      standardTable: {
+        table: {
+          alignment: 'center',
+          vertical_align: 'center',
+          border_enabled: true,
+          border_color: '000000',
+          border_width: 1,
+          row_height: 0.8,
+          cell_margins: { top: 0.1, bottom: 0.1, left: 0.1, right: 0.1 },
+          header_background_color: 'F5F5F5',
+          row_odd_background_color: 'FFFFFF',
+          row_even_background_color: 'FFFFFF',
+        },
+      },
+      evidenceTable: {
+        table: {
+          header_background_color: '1E3A5F',
+          row_odd_background_color: 'F5F0ED',
+          row_even_background_color: 'FFFFFF',
+        },
+      },
+      imageCaption: {
+        font: '仿宋_GB2312',
+        ascii: 'Times New Roman',
+        size: 10,
+        color: '666666',
+        align: 'center',
+      },
+    },
+    markdown_mapping: {
+      paragraph: 'body',
+      heading1: 'heading1',
+      heading2: 'heading2',
+      heading3: 'heading2',
+      heading4: 'body',
+      blockquote: 'quoteBlock',
+      code_block: 'codeBlock',
+      inline_code: 'inlineCode',
+      table: 'standardTable',
+      image_caption: 'imageCaption',
+    },
+    html_mapping: {
+      tags: {
+        table: 'standardTable',
+      },
+      selectors: {
+        'table.evidence-table': 'evidenceTable',
+      },
+    },
   },
 };
 
@@ -177,6 +279,22 @@ function assertPositiveNumber(source: unknown, path: string): void {
   }
 }
 
+function assertOptionalPositiveNumber(source: unknown, path: string): void {
+  const value = getPath(source, path);
+  if (value === undefined) return;
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    throw new PresetImportError(`${path} 必须是大于 0 的数字。`);
+  }
+}
+
+function assertOptionalNonNegativeNumber(source: unknown, path: string): void {
+  const value = getPath(source, path);
+  if (value === undefined) return;
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+    throw new PresetImportError(`${path} 必须是大于等于 0 的数字。`);
+  }
+}
+
 function assertString(source: unknown, path: string): void {
   const value = getPath(source, path);
   if (typeof value !== 'string' || !value.trim()) {
@@ -186,6 +304,14 @@ function assertString(source: unknown, path: string): void {
 
 function assertOneOf(source: unknown, path: string, values: readonly string[]): void {
   const value = getPath(source, path);
+  if (typeof value !== 'string' || !values.includes(value)) {
+    throw new PresetImportError(`${path} 必须是 ${values.join(' / ')} 之一。`);
+  }
+}
+
+function assertOptionalOneOf(source: unknown, path: string, values: readonly string[]): void {
+  const value = getPath(source, path);
+  if (value === undefined) return;
   if (typeof value !== 'string' || !values.includes(value)) {
     throw new PresetImportError(`${path} 必须是 ${values.join(' / ')} 之一。`);
   }
@@ -368,6 +494,59 @@ function normalizeMergedConfig(config: PresetConfig): PresetConfig {
   return normalized;
 }
 
+function validateStyleMappings(config: PresetConfig): void {
+  const styles = config.styles ?? {};
+  const hasStyle = (path: string, value: unknown) => {
+    if (value === undefined) return;
+    if (typeof value !== 'string' || !value.trim()) {
+      throw new PresetImportError(`${path} 必须是非空样式名。`);
+    }
+    if (!styles[value]) {
+      throw new PresetImportError(`${path} 引用的样式 "${value}" 不存在。`);
+    }
+  };
+
+  Object.entries(config.markdown_mapping ?? {}).forEach(([key, value]) => {
+    hasStyle(`markdown_mapping.${key}`, value);
+  });
+  Object.entries(config.html_mapping?.tags ?? {}).forEach(([key, value]) => {
+    hasStyle(`html_mapping.tags.${key}`, value);
+  });
+  Object.entries(config.html_mapping?.selectors ?? {}).forEach(([key, value]) => {
+    hasStyle(`html_mapping.selectors.${key}`, value);
+  });
+}
+
+function validateReusableStyles(config: PresetConfig): void {
+  Object.keys(config.styles ?? {}).forEach((name) => {
+    const path = `styles.${name}`;
+    [
+      'size',
+      'line_spacing',
+      'table.border_width',
+      'table.row_height',
+      'table.cell_margin',
+      'table.cell_margins.top',
+      'table.cell_margins.bottom',
+      'table.cell_margins.left',
+      'table.cell_margins.right',
+      'table.header_font.size',
+      'table.body_font.size',
+    ].forEach((key) => assertOptionalPositiveNumber(config, `${path}.${key}`));
+    [
+      'first_line_indent',
+      'left_indent',
+      'space_before',
+      'space_after',
+    ].forEach((key) => assertOptionalNonNegativeNumber(config, `${path}.${key}`));
+    assertOptionalOneOf(config, `${path}.align`, ['left', 'center', 'right', 'justify']);
+    assertOptionalOneOf(config, `${path}.table.alignment`, ['left', 'center', 'right']);
+    assertOptionalOneOf(config, `${path}.table.vertical_align`, ['top', 'center', 'bottom']);
+  });
+
+  validateStyleMappings(config);
+}
+
 function validatePresetConfig(config: PresetConfig): void {
   assertString(config, 'name');
   assertString(config, 'description');
@@ -432,6 +611,8 @@ function validatePresetConfig(config: PresetConfig): void {
     'math.color',
     'horizontal_rule.color',
   ].forEach((path) => assertColor(config, path));
+
+  validateReusableStyles(config);
 }
 
 function hashString(value: string): string {

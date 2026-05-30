@@ -13,6 +13,7 @@ import {
 } from '../htmlTableModel';
 import type { PresetConfig } from './types';
 import { convertQuotesToChinese, createFormattedRuns, parseAlignment, ptToHalfPt } from './formatter';
+import { resolveHtmlTableConfig, resolveMarkdownTableConfig } from './style-mapping';
 
 type MutableRunOptions = {
   -readonly [K in keyof IRunOptions]: IRunOptions[K];
@@ -39,35 +40,36 @@ export function createMarkdownTable(
   lines: string[],
   config: PresetConfig,
 ): Table {
+  const tablePreset = resolveMarkdownTableConfig(config);
   const rows = parseMarkdownTableRows(lines);
-  if (rows.length === 0) return emptyTable(config);
+  if (rows.length === 0) return emptyTable(tablePreset);
 
   const colCount = rows[0].length;
   const colWidths = calcColumnWidths(rows, colCount);
 
   const headerCells = rows[0].map((text, col) =>
-    makeCell(text, colWidths[col], config, true),
+    makeCell(text, colWidths[col], tablePreset, true),
   );
 
   const bodyRows = rows.slice(1).map((row, index) => {
     const paddedRow = padRow(row, colCount);
     return new TableRow({
       children: paddedRow.map((text, col) =>
-        makeCell(text, colWidths[col], config, false, 1, 1, tableRowBackground(config, index)),
+        makeCell(text, colWidths[col], tablePreset, false, 1, 1, tableRowBackground(tablePreset, index)),
       ),
-      height: tableRowHeight(config),
+      height: tableRowHeight(tablePreset),
     });
   });
 
   return new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
-    margins: tableCellMargins(config),
+    margins: tableCellMargins(tablePreset),
     rows: [
-      new TableRow({ children: headerCells, tableHeader: true, height: tableRowHeight(config) }),
+      new TableRow({ children: headerCells, tableHeader: true, height: tableRowHeight(tablePreset) }),
       ...bodyRows,
     ],
-    borders: tableBorders(config),
-    alignment: parseAlignment(config.table.alignment ?? 'center'),
+    borders: tableBorders(tablePreset),
+    alignment: parseAlignment(tablePreset.table.alignment ?? 'center'),
   });
 }
 
@@ -77,8 +79,9 @@ export function createHtmlTable(
   html: string,
   config: PresetConfig,
 ): Table {
+  const tablePreset = resolveHtmlTableConfig(html, config);
   const model = parseHtmlTableModel(html);
-  if (model.rows.length === 0) return emptyTable(config);
+  if (model.rows.length === 0) return emptyTable(tablePreset);
 
   const colCount = model.colCount;
   const colWidths = evenWidths(colCount);
@@ -87,10 +90,10 @@ export function createHtmlTable(
   const rows = model.rows.map((row) => {
     const rowBackground = row.section === 'thead'
       ? undefined
-      : tableRowBackground(config, bodyRowIndex++);
+      : tableRowBackground(tablePreset, bodyRowIndex++);
     const rowOptions = {
-      children: makeHtmlRowCells(row, model, colWidths, config, rowBackground),
-      height: tableRowHeight(config),
+      children: makeHtmlRowCells(row, model, colWidths, tablePreset, rowBackground),
+      height: tableRowHeight(tablePreset),
     };
 
     if (row.section === 'thead') {
@@ -102,10 +105,10 @@ export function createHtmlTable(
 
   return new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
-    margins: tableCellMargins(config),
+    margins: tableCellMargins(tablePreset),
     rows,
-    borders: tableBorders(config),
-    alignment: parseAlignment(config.table.alignment ?? 'center'),
+    borders: tableBorders(tablePreset),
+    alignment: parseAlignment(tablePreset.table.alignment ?? 'center'),
   });
 }
 

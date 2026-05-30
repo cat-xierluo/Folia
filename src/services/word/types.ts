@@ -88,6 +88,80 @@ export interface TableConfig {
   row_even_background_color?: string;
 }
 
+export type WordTextAlign = 'left' | 'center' | 'right' | 'justify';
+export type WordVerticalAlign = 'top' | 'center' | 'bottom';
+
+/** 可复用文字/段落样式 */
+export interface PresetTextStyleConfig {
+  font?: string;
+  ascii?: string;
+  size?: number;
+  color?: string;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  strikethrough?: boolean;
+  background_color?: string;
+  align?: WordTextAlign;
+  line_spacing?: number;
+  first_line_indent?: number;
+  left_indent?: number;
+  space_before?: number;
+  space_after?: number;
+}
+
+export type PresetTableFontConfig = Partial<FontConfig> & {
+  font?: string;
+};
+
+/** 可复用表格样式 */
+export interface PresetTableStyleConfig {
+  border_enabled?: boolean;
+  border_color?: string;
+  border_width?: number;
+  line_spacing?: number;
+  row_height?: number;
+  cell_margin?: number;
+  cell_margins?: TableCellMarginsConfig;
+  alignment?: 'left' | 'center' | 'right';
+  vertical_align?: WordVerticalAlign;
+  header_font?: PresetTableFontConfig;
+  body_font?: PresetTableFontConfig;
+  header_background_color?: string;
+  row_odd_background_color?: string;
+  row_even_background_color?: string;
+}
+
+/** JSON v2 可复用样式 */
+export interface PresetStyleConfig extends PresetTextStyleConfig {
+  table?: PresetTableStyleConfig;
+}
+
+export type PresetStyleRegistry = Record<string, PresetStyleConfig>;
+
+/** Markdown 元素到可复用样式的映射 */
+export interface MarkdownStyleMappingConfig {
+  paragraph?: string;
+  heading1?: string;
+  heading2?: string;
+  heading3?: string;
+  heading4?: string;
+  blockquote?: string;
+  quote?: string;
+  code_block?: string;
+  inline_code?: string;
+  table?: string;
+  image_caption?: string;
+  horizontal_rule?: string;
+  list?: string;
+}
+
+/** HTML 标签/选择器到可复用样式的映射 */
+export interface HtmlStyleMappingConfig {
+  tags?: Record<string, string>;
+  selectors?: Record<string, string>;
+}
+
 /** 代码块配置 */
 export interface CodeBlockConfig {
   label_font: FontConfig;
@@ -195,6 +269,15 @@ export interface PresetConfig {
     table_header_fg: string;
     table_alt_row_bg: string;
   };
+
+  /** JSON v2 可复用样式 */
+  styles?: PresetStyleRegistry;
+
+  /** Markdown 语义到样式的映射 */
+  markdown_mapping?: MarkdownStyleMappingConfig;
+
+  /** HTML 标签/选择器到样式的映射 */
+  html_mapping?: HtmlStyleMappingConfig;
 }
 
 /** 预设列表项 */

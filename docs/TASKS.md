@@ -32,6 +32,20 @@
 
 ### Word 导出预设
 
+#### ISS-128 Word 预设 JSON v2 样式协议与 Markdown / HTML 映射
+
+- **优先级:** P1
+- **类型:** L2
+- **状态:** 已完成，已复验，待 PR 合并。
+- **问题:** 当前 Word JSON 已覆盖 Folia 现有导出字段，但还偏“字段清单”。如果用户希望把复杂 Markdown 和带 HTML 的内容尽可能稳定地转换为 Word，需要一个可扩展的样式协议：先定义可复用样式，再声明 Markdown 元素、HTML 标签或选择器映射到哪些样式。
+- **建议实现:**
+  - 新增 `styles`，支持定义正文、标题、表格、图片标题、引用等可复用样式别名。
+  - 新增 `markdown_mapping`，将 `paragraph`、`heading1-4`、`blockquote`、`table`、`image_caption` 等 Markdown 语义映射到样式别名。
+  - 新增 `html_mapping`，先支持 HTML table 的标签和选择器映射，例如 `table.evidence-table -> evidenceTable`，后续再扩展普通 HTML inline / block 样式。
+  - DOCX 导出和 Word 纸张预览都消费同一套映射，不能只在 JSON 中展示而不生效。
+- **验收:** JSON 模板包含 `styles / markdown_mapping / html_mapping`；映射引用不存在时导入失败并提示清晰；Markdown 标题/正文/表格/图片标题和 HTML table 选择器映射在 `.docx` 与纸张预览中生效；全量验证通过。
+- **实现:** 已新增 JSON v2 样式别名和 Markdown / HTML 映射字段；导入层校验映射引用；DOCX 导出已消费标题、正文、代码块、Markdown 表格、HTML table 选择器和图片标题映射；纸张预览同步做 DOM 后处理样式映射。已通过 `npm run typecheck`、`npm test`、`npm run lint`、`npm run build` 和 `git diff --check`。
+
 #### ISS-127 Word 导出 JSON 与 md2word 配置兼容完善
 
 - **优先级:** P1

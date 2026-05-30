@@ -27,10 +27,52 @@ describe('presetImport', () => {
     expect(imported.config.page.width).toBe(21);
     expect(imported.config.titles.level1.font).toBe('黑体');
     expect(imported.config.page_number.align).toBe('center');
+    expect(imported.config.styles?.body.font).toBe('仿宋_GB2312');
+    expect(imported.config.markdown_mapping?.heading1).toBe('heading1');
+    expect(imported.config.html_mapping?.selectors?.['table.evidence-table']).toBe('evidenceTable');
     expect(imported.config.table.cell_margins?.left).toBeCloseTo(0.1);
     expect(imported.config.table.header_background_color).toBe('F5F5F5');
     expect(imported.config.code_block.content_font.color).toBe('333333');
     expect(imported.config.image.show_caption).toBe(true);
+  });
+
+  it('imports reusable v2 styles and validates mapping references', () => {
+    const imported = importPresetFromJson(JSON.stringify({
+      id: 'v2-mapping',
+      name: '样式映射预设',
+      config: {
+        styles: {
+          bodyText: { font: '楷体', ascii: 'Georgia', size: 13, color: '#112233', line_spacing: 1.8 },
+          evidenceTable: {
+            table: {
+              header_background_color: '#123456',
+              row_odd_background_color: '#F7F7F7',
+              cell_margins: { top: 0.08, bottom: 0.08, left: 0.12, right: 0.12 },
+            },
+          },
+        },
+        markdown_mapping: {
+          paragraph: 'bodyText',
+          table: 'evidenceTable',
+        },
+        html_mapping: {
+          tags: { table: 'evidenceTable' },
+          selectors: { 'table.evidence-table': 'evidenceTable' },
+        },
+      },
+    }));
+
+    expect(imported.config.styles?.bodyText.color).toBe('112233');
+    expect(imported.config.styles?.evidenceTable.table?.header_background_color).toBe('123456');
+    expect(imported.config.markdown_mapping?.paragraph).toBe('bodyText');
+    expect(imported.config.html_mapping?.selectors?.['table.evidence-table']).toBe('evidenceTable');
+
+    expect(() => importPresetFromJson(JSON.stringify({
+      name: '坏映射',
+      config: {
+        markdown_mapping: { paragraph: 'missingStyle' },
+      },
+    }))).toThrow(PresetImportError);
   });
 
   it('imports md2word-style JSON by normalizing aliases, colors, and units', () => {

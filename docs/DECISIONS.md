@@ -2,6 +2,30 @@
 
 ## 第一部分：决策记录
 
+### [DEC-060] - 2026-05-30 - Word JSON v2 采用样式别名与元素映射协议
+
+**背景**
+用户进一步明确，Word JSON 不应只是把当前字段列出来，而应尽可能支持复杂 Markdown 和带 HTML 内容的转换规则。不同用户对 Word 输出的调整面很广，如果每个 Markdown / HTML 元素都只能依赖固定字段，后续会变成难维护的大字段清单。
+
+**决策**
+- 在现有 `PresetConfig` 上新增 JSON v2 结构：`styles` 定义可复用样式别名，`markdown_mapping` 定义 Markdown 语义到样式的映射，`html_mapping` 定义 HTML 标签或选择器到样式的映射。
+- 本轮先把样式映射接入 Folia 已有导出链路：Markdown 标题、正文、代码块、表格、图片标题，以及 HTML table 选择器。
+- Word 纸张预览也消费同一套映射，通过渲染后 DOM 后处理把样式落到元素上，避免“JSON 可写但预览无效”。
+- 映射引用不存在时导入失败；继续保留旧字段，保证现有自定义预设可读。
+- 自动目录、脚注、分节符、Word 原生样式表和普通 HTML inline / block class 的完整映射暂不在本轮完成，作为后续 v2 扩展。
+
+**验证**
+- `npm test -- src/services/word/presetImport.test.ts src/services/word/docxXml.test.ts src/components/WordPaperPreviewPane.test.ts`
+- `npm run typecheck`
+- `npm test`
+- `npm run lint`
+- `npm run build`
+- `git diff --check`
+
+**影响**
+- JSON 模板从“字段样例”升级为“样式协议雏形”，用户可以先定义样式，再把 Markdown / HTML 元素映射到样式。
+- 后续继续扩展 Word 高级能力时，可以优先增加新的 style 能力或 mapping 目标，而不必为每个场景新增零散顶层字段。
+
 ### [DEC-059] - 2026-05-30 - Word JSON 预设兼容 md2word 配置并补齐导出映射
 
 **背景**
