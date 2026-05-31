@@ -2,6 +2,28 @@
 
 ## 第一部分：决策记录
 
+### [DEC-063] - 2026-05-31 - 发布 v0.3.13 Word JSON 与预设优化版本
+
+**背景**
+`v0.3.12` 已发布。当前远端 `main` 已合入 Word JSON 完整模板、md2word 兼容导入、JSON v2 样式映射、预览 / DOCX 一致性修复，以及公文和学术论文内置预设优化。这些都是用户可见的 Word 导出能力改进，需要发布新的补丁版本。
+
+**决策**
+- 发布版本号使用 `0.3.13`，不复用已有 `v0.3.12` 标签。
+- 同步更新 `package.json`、`package-lock.json`、`src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml` 和 `src-tauri/Cargo.lock` 中 Folia 自身版本。
+- `CHANGELOG.md` 将当前 Unreleased 内容归档为 `0.3.13`，保留空的 Unreleased 作为后续开发入口。
+- 推送 `main` 后创建并推送 `v0.3.13` 标签，由现有 GitHub Actions Release workflow 构建多平台产物、生成 `latest.json` 并发布 GitHub Release。
+
+**验证**
+- `git diff --check`
+- `npm run typecheck`
+- `npm test`
+- `npm run lint`
+- `npm run build`
+- `cd src-tauri && cargo check`
+
+**影响**
+- 用户可通过 GitHub Release / 自动更新获取 Word JSON 与预设优化版本。
+
 ### [DEC-062] - 2026-05-31 - 内置公文与学术论文 Word 预设按公开标准收紧
 
 **背景**

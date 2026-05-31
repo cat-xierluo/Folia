@@ -74,6 +74,19 @@
 
 ### 文档与发布说明
 
+#### ISS-130 v0.3.13 Word JSON 与预设优化版本发布
+
+- **优先级:** P1
+- **类型:** L1
+- **状态:** 已完成，待 Release workflow 复验。
+- **问题:** Word JSON 完整模板、md2word 兼容、JSON v2 样式映射、公文/学术论文内置预设优化已经合并到远端 `main`，需要同步发布新补丁版本。
+- **建议实现:**
+  - 将前端、Tauri、Rust crate 和 lockfile 版本统一到 `0.3.13`。
+  - 将 `CHANGELOG.md` 的 Unreleased 内容归档到 `0.3.13`。
+  - 完成关键验证后提交并推送 `main`，再创建并推送 `v0.3.13` 标签触发 GitHub Release workflow。
+- **验收:** 远端 `main` 包含版本提交；远端存在 `v0.3.13` 标签；GitHub Actions Release workflow 开始构建并发布 GitHub Release。
+- **实现:** 已统一 `package.json`、`package-lock.json`、`src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml` 与 `src-tauri/Cargo.lock` 版本为 `0.3.13`；`CHANGELOG.md` 已将当前 Unreleased 归档为 `0.3.13`。发布前验证已通过，等待推送 `main` 与 `v0.3.13` 标签触发 Release workflow。
+
 #### ISS-125 v0.3.12 字体与导出回归修复版本发布
 
 - **优先级:** P1

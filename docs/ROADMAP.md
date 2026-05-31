@@ -166,6 +166,7 @@
 ## 进度日志
 
 - **2026-05-31**
+  - 准备发布 `v0.3.13`：归档 Word JSON / md2word 兼容、JSON v2 样式映射、预览与 DOCX 一致性修复、公文/学术论文内置预设优化，版本号统一到 `0.3.13`，发布前验证已通过，待推送标签触发 Release workflow。
   - 内置 Word 预设继续收紧：`report` 改为更贴近 GB/T 9704 的公文版心、2 号小标宋标题和 3 号仿宋正文；`academic` 改为更贴近 GB/T 7713.2 的学术论文字号字体体系，并补充预设回归测试。
   - Word JSON / md2word 兼容合并前 code review 完成跟进修复：`table.cell_margin` 对象可单独触发 md2word dxa 转 cm，JSON v2 表格样式的 `cell_margin` 在 DOCX 中同步展开为四边距，未配置的预览表格背景回退为透明。
 
