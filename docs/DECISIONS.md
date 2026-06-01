@@ -19,7 +19,7 @@
 - `v0.3.16` Release workflow `26738126995` 已成功完成，macOS x64、macOS aarch64、Windows 和 publish job 均为 success。
 - GitHub Release 已公开发布并包含 `latest.json`、macOS `.dmg` / `.app.tar.gz`、Windows `.exe` / `.msi` 及签名文件：https://github.com/cat-xierluo/Folia/releases/tag/v0.3.16
 - 按 `release-workflow` 要求补齐 `v0.3.16` Release Notes，并删除 `v0.3.14` / `v0.3.15` 失败 draft release；失败 tag 和 Actions 日志保留，用于追溯本轮 Windows 打包与编译问题。
-- Release Notes 正文不再写重复版本标题；已补齐 `v0.3.9` / `v0.3.11` / `v0.3.12` / `v0.3.13` 历史空白 Release Notes，并移除 `v0.3.7` / `v0.3.8` / `v0.3.10` / `v0.3.16` 正文开头的重复版本标题。
+- Release Notes 正文不再写重复版本标题；已补齐 `v0.3.9` / `v0.3.11` / `v0.3.12` / `v0.3.13` 历史空白 Release Notes，按固定结构重写 `v0.3.10` Release Notes，并移除 `v0.3.7` / `v0.3.8` / `v0.3.10` / `v0.3.16` 正文开头的重复版本标题。
 
 **影响**
 - 用户实际获取的补丁版本顺延为 `v0.3.16`；功能内容仍是默认文件打开、HTML 阅读预览和源码编辑修复。
