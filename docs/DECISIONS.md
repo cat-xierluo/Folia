@@ -16,7 +16,8 @@
 - 已重新执行 `git diff --check`、`npm run typecheck`、`npm test`、`npm run lint`、`npm run build`、`cd src-tauri && cargo check` 和 `npm run tauri:build:local`。
 - 本地 macOS `Info.plist` 已确认版本为 `0.3.16`，且仍包含 Markdown / HTML / Word 文件关联。
 - 本机尝试 `cargo check --target x86_64-pc-windows-msvc` 时被缺少 Windows C 工具链阻断，失败点在 `ring` 的 C 编译环境，不作为 Folia 代码验证结果；Windows 仍以后续 GitHub Actions 为准。
-- 发布后需确认 `v0.3.16` Release workflow 的 macOS、Windows 和 publish job 均成功。
+- `v0.3.16` Release workflow `26738126995` 已成功完成，macOS x64、macOS aarch64、Windows 和 publish job 均为 success。
+- GitHub Release 已公开发布并包含 `latest.json`、macOS `.dmg` / `.app.tar.gz`、Windows `.exe` / `.msi` 及签名文件：https://github.com/cat-xierluo/Folia/releases/tag/v0.3.16
 
 **影响**
 - 用户实际获取的补丁版本顺延为 `v0.3.16`；功能内容仍是默认文件打开、HTML 阅读预览和源码编辑修复。

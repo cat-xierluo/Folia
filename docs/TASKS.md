@@ -119,7 +119,7 @@
 
 - **优先级:** P1
 - **类型:** L1
-- **状态:** 进行中，待 v0.3.16 Release workflow 复验。
+- **状态:** 已完成。
 - **问题:** 默认文件打开、HTML 阅读预览和源码编辑修复已经完成；`v0.3.14` 标签触发的 Release workflow 在 Windows WiX MSI 打包阶段失败，`v0.3.15` 标签触发的 Release workflow 在 Windows Rust 编译阶段失败，GitHub Release 均未公开发布，需要顺延发布新的补丁版本，同时带上已合入的 Release workflow Gitee 同步超时保护。
 - **建议实现:**
   - 将前端、Tauri、Rust crate 和 lockfile 版本统一到 `0.3.16`。
@@ -128,7 +128,7 @@
   - 修复 `v0.3.15` 中 Tauri `Manager` trait import 被平台条件错误包裹导致的 Windows 编译失败。
   - 完成关键验证后提交并推送 `main`，再创建并推送 `v0.3.16` 标签触发 GitHub Release workflow。
 - **验收:** 远端 `main` 包含版本提交；远端存在 `v0.3.16` 标签；GitHub Actions Release workflow 成功完成；GitHub Release 可访问并包含 `latest.json`。
-- **实现:** `v0.3.14` 已确认未公开发布，失败原因为 Windows MSI `light.exe` 打包阶段；`v0.3.15` 已确认未公开发布，失败原因为 Windows 编译找不到 `app.state()` 所需的 `Manager` trait。本轮已顺延到 `0.3.16`，保留文件关联描述 ASCII 修复，并恢复 `Manager` 全平台导入。本地验证已通过 `git diff --check`、`npm run typecheck`、`npm test`、`npm run lint`、`npm run build`、`cd src-tauri && cargo check` 和 `npm run tauri:build:local`；本地 `Info.plist` 已确认包含 `0.3.16` 版本号和 Markdown / HTML / Word 文件关联。Release workflow 结果待本轮发布完成后补充。
+- **实现:** `v0.3.14` 已确认未公开发布，失败原因为 Windows MSI `light.exe` 打包阶段；`v0.3.15` 已确认未公开发布，失败原因为 Windows 编译找不到 `app.state()` 所需的 `Manager` trait。本轮已顺延到 `0.3.16`，保留文件关联描述 ASCII 修复，并恢复 `Manager` 全平台导入。本地验证已通过 `git diff --check`、`npm run typecheck`、`npm test`、`npm run lint`、`npm run build`、`cd src-tauri && cargo check` 和 `npm run tauri:build:local`；本地 `Info.plist` 已确认包含 `0.3.16` 版本号和 Markdown / HTML / Word 文件关联。Release workflow `26738126995` 已成功完成，macOS x64、macOS aarch64、Windows 和 publish job 均通过；GitHub Release 已公开发布并包含 `latest.json`、macOS `.dmg` / `.app.tar.gz`、Windows `.exe` / `.msi` 及签名文件：https://github.com/cat-xierluo/Folia/releases/tag/v0.3.16
 
 #### ISS-131 Release workflow Gitee 同步超时保护
 
@@ -1130,7 +1130,7 @@
 
 ## 进度日志
 
-- **2026-06-01** 顺延 ISS-135 到 v0.3.16：`v0.3.14` 标签触发的 Release run `26736730556` 中 macOS 产物成功，但 Windows MSI 在 WiX `light.exe` 阶段失败，publish job 被跳过且 GitHub Release 未公开发布；`v0.3.15` 标签触发的 Release run `26737581091` 中 macOS 产物成功，但 Windows Rust 编译因 `Manager` trait import 条件错误失败。本轮保留文件关联能力，将 Windows 文件类型描述改为 ASCII 兼容文本，恢复 `Manager` 全平台导入，并把版本号统一到 `0.3.16`。本地验证已通过 `git diff --check`、`npm run typecheck`、`npm test`、`npm run lint`、`npm run build`、`cd src-tauri && cargo check` 和 `npm run tauri:build:local`；Release run 结果待本轮发布完成后补充。
+- **2026-06-01** 完成 ISS-135 / v0.3.16 发布：`v0.3.14` 标签触发的 Release run `26736730556` 中 macOS 产物成功，但 Windows MSI 在 WiX `light.exe` 阶段失败，publish job 被跳过且 GitHub Release 未公开发布；`v0.3.15` 标签触发的 Release run `26737581091` 中 macOS 产物成功，但 Windows Rust 编译因 `Manager` trait import 条件错误失败。本轮保留文件关联能力，将 Windows 文件类型描述改为 ASCII 兼容文本，恢复 `Manager` 全平台导入，并把版本号统一到 `0.3.16`。本地验证已通过 `git diff --check`、`npm run typecheck`、`npm test`、`npm run lint`、`npm run build`、`cd src-tauri && cargo check` 和 `npm run tauri:build:local`；Release run `26738126995` 成功完成 macOS x64、macOS aarch64、Windows 和 publish job，GitHub Release 已公开并包含 `latest.json` 与 Windows `.exe` / `.msi` 产物：https://github.com/cat-xierluo/Folia/releases/tag/v0.3.16
 
 - **2026-06-01** 完成 ISS-132 / ISS-133 / ISS-134，并准备发布 ISS-135 / v0.3.14：补齐桌面文件关联和系统打开事件链路，前端启动时优先处理系统传入文件再恢复上次文件；`.html/.htm` 文件改为提取正文后安全直读预览，保留受控对齐、垂直对齐和空白样式；HTML 阅读页进入“编辑源码”新增真实 CodeMirror 回归保护，确保源码编辑区拿到当前原始文件内容。版本号已统一到 `0.3.14`；验证：`git diff --cached --check`、`npm run typecheck`、`npm test`、`npm run lint`、`npm run build`、`cd src-tauri && cargo check`、`npm run tauri:build:local` 均通过；本地 `Info.plist` 已确认包含 `0.3.14` 版本号和 Markdown / HTML / Word 文件关联。Release run `26736730556` 的 Windows MSI 打包失败，改由 v0.3.15 修复后重新发布。
 
