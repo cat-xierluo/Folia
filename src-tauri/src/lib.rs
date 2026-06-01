@@ -4,7 +4,8 @@ use std::{
 };
 
 #[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
-use tauri::{Emitter, Manager};
+use tauri::Emitter;
+use tauri::Manager;
 
 struct OpenedPaths(Mutex<Vec<String>>);
 

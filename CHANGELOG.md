@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-## [0.3.15]
+## [0.3.16]
 
 ### Changed
 
@@ -15,7 +15,8 @@ All notable changes to this project will be documented in this file.
 - 修复将 Folia 设为 Markdown / HTML / Word 默认打开应用后，双击文件不会直接加载的问题；macOS 运行中打开文件会进入同一窗口，Windows 启动参数打开链路也会读取系统传入路径。
 - 修复 `.html` 文件预览仍按 Markdown 链路渲染，导致残留 HTML 符号、白色源码框、右对齐和空行语义丢失的问题；HTML 阅读页现在提取正文后走安全直读预览，并保留受控的对齐与空白样式。
 - 修复 HTML 阅读页点击“编辑源码”可能显示空白的问题，新增真实 CodeMirror 渲染回归保护，确保源码编辑区拿到当前完整文档内容。
-- 修复 `v0.3.14` 发布草稿在 Windows MSI 打包阶段因文件关联描述包含非 ASCII 字符而失败的问题；文件关联描述改为 WiX 兼容文本，Windows `.exe` / `.msi` 产物可继续一起发布。
+- 修复 `v0.3.14` 发布草稿在 Windows MSI 打包阶段失败的问题；文件关联描述改为 WiX 兼容文本，Windows `.exe` / `.msi` 产物可继续一起发布。
+- 修复 `v0.3.15` 发布草稿的 Windows 编译失败问题，保留 Windows 启动参数打开链路所需的 Tauri `Manager` trait。
 
 ## [0.3.13]
 

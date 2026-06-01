@@ -2,6 +2,25 @@
 
 ## 第一部分：决策记录
 
+### [DEC-068] - 2026-06-01 - 顺延发布 v0.3.16 并修复 Windows 编译回归
+
+**背景**
+`v0.3.15` Release workflow 中 macOS ARM / Intel 构建成功，但 Windows job 未进入 WiX 打包阶段即在 Rust 编译失败：`pending_opened_paths` 需要 Tauri `Manager` trait 提供 `app.state()`，而上一轮为消除 Windows 未使用告警时将 `Manager` import 也放入了 macOS/iOS/Android 条件编译。
+
+**决策**
+- 不改写已推送的 `v0.3.15` 标签，发布版本顺延到 `0.3.16`。
+- `tauri::Manager` 保持全平台导入，`tauri::Emitter` 仅在 macOS/iOS/Android 打开事件桥接中按平台导入。
+- 继续保留 `v0.3.15` 的 Windows 文件关联描述 ASCII 化修复。
+
+**验证**
+- 已重新执行 `git diff --check`、`npm run typecheck`、`npm test`、`npm run lint`、`npm run build`、`cd src-tauri && cargo check` 和 `npm run tauri:build:local`。
+- 本地 macOS `Info.plist` 已确认版本为 `0.3.16`，且仍包含 Markdown / HTML / Word 文件关联。
+- 本机尝试 `cargo check --target x86_64-pc-windows-msvc` 时被缺少 Windows C 工具链阻断，失败点在 `ring` 的 C 编译环境，不作为 Folia 代码验证结果；Windows 仍以后续 GitHub Actions 为准。
+- 发布后需确认 `v0.3.16` Release workflow 的 macOS、Windows 和 publish job 均成功。
+
+**影响**
+- 用户实际获取的补丁版本顺延为 `v0.3.16`；功能内容仍是默认文件打开、HTML 阅读预览和源码编辑修复。
+
 ### [DEC-067] - 2026-06-01 - 顺延发布 v0.3.15 并修复 Windows MSI 文件关联打包
 
 **背景**
@@ -17,6 +36,7 @@
 - 已重新执行 `git diff --check`、`npm run typecheck`、`npm test`、`npm run lint`、`npm run build`、`cd src-tauri && cargo check` 和 `npm run tauri:build:local`。
 - 本地 macOS `Info.plist` 已确认版本为 `0.3.15`，且仍包含 Markdown / HTML / Word 文件关联。
 - 发布后需确认 `v0.3.15` Release workflow 的 macOS、Windows 和 publish job 均成功，且 Release 包含 `latest.json`。
+- `v0.3.15` Release workflow 后续确认 Windows 编译失败，原因是 `Manager` trait import 被错误地放入平台条件；改由 `v0.3.16` 修复后重新发布。
 
 **影响**
 - 用户实际获取的补丁版本为 `v0.3.15`；内容包含 `v0.3.14` 准备的默认文件打开、HTML 阅读预览和源码编辑修复。
