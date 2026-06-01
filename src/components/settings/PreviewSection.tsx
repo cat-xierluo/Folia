@@ -1,11 +1,18 @@
 import { useState } from 'react';
 import {
   getSettings,
-  PREVIEW_FONT_FAMILY_OPTIONS,
+  PREVIEW_CHINESE_FONT_FAMILY_OPTIONS,
+  PREVIEW_HEADING_FONT_FAMILY_OPTIONS,
+  PREVIEW_LATIN_FONT_FAMILY_OPTIONS,
   updateSettings,
   type AppSettings,
 } from '../../services/settingsService';
-import type { PreviewFontFamily, PreviewWidth } from '../../services/settingsService';
+import type {
+  PreviewChineseFontFamily,
+  PreviewHeadingFontFamily,
+  PreviewLatinFontFamily,
+  PreviewWidth,
+} from '../../services/settingsService';
 
 const FONT_SIZES = [13, 14, 15, 16, 18];
 const LINE_HEIGHTS = [1.5, 1.6, 1.7, 1.8, 2.0, 2.5];
@@ -25,17 +32,83 @@ export function PreviewSection() {
 
       <div className="settings-row">
         <div>
-          <div className="settings-label">预览字体</div>
+          <div className="settings-label">中文字体</div>
         </div>
-        <select
-          className="settings-select"
-          value={settings.previewFontFamily}
-          onChange={(e) => handleChange({ previewFontFamily: e.target.value as PreviewFontFamily })}
-        >
-          {PREVIEW_FONT_FAMILY_OPTIONS.map((font) => (
-            <option key={font.value} value={font.value}>{font.label}</option>
-          ))}
-        </select>
+        <div className="settings-font-control">
+          <select
+            aria-label="中文字体"
+            className="settings-select"
+            value={settings.previewChineseFontFamily}
+            onChange={(e) => handleChange({ previewChineseFontFamily: e.target.value as PreviewChineseFontFamily })}
+          >
+            {PREVIEW_CHINESE_FONT_FAMILY_OPTIONS.map((font) => (
+              <option key={font.value} value={font.value}>{font.label}</option>
+            ))}
+          </select>
+          {settings.previewChineseFontFamily === 'Custom' && (
+            <input
+              aria-label="自定义中文字体名"
+              className="settings-input settings-font-input"
+              value={settings.previewChineseCustomFont}
+              onChange={(e) => handleChange({ previewChineseCustomFont: e.target.value })}
+              placeholder="字体名称"
+            />
+          )}
+        </div>
+      </div>
+
+      <div className="settings-row">
+        <div>
+          <div className="settings-label">英文字体</div>
+        </div>
+        <div className="settings-font-control">
+          <select
+            aria-label="英文字体"
+            className="settings-select"
+            value={settings.previewLatinFontFamily}
+            onChange={(e) => handleChange({ previewLatinFontFamily: e.target.value as PreviewLatinFontFamily })}
+          >
+            {PREVIEW_LATIN_FONT_FAMILY_OPTIONS.map((font) => (
+              <option key={font.value} value={font.value}>{font.label}</option>
+            ))}
+          </select>
+          {settings.previewLatinFontFamily === 'Custom' && (
+            <input
+              aria-label="自定义英文字体名"
+              className="settings-input settings-font-input"
+              value={settings.previewLatinCustomFont}
+              onChange={(e) => handleChange({ previewLatinCustomFont: e.target.value })}
+              placeholder="Font name"
+            />
+          )}
+        </div>
+      </div>
+
+      <div className="settings-row">
+        <div>
+          <div className="settings-label">标题字体</div>
+        </div>
+        <div className="settings-font-control">
+          <select
+            aria-label="标题字体"
+            className="settings-select"
+            value={settings.previewHeadingFontFamily}
+            onChange={(e) => handleChange({ previewHeadingFontFamily: e.target.value as PreviewHeadingFontFamily })}
+          >
+            {PREVIEW_HEADING_FONT_FAMILY_OPTIONS.map((font) => (
+              <option key={font.value} value={font.value}>{font.label}</option>
+            ))}
+          </select>
+          {settings.previewHeadingFontFamily === 'Custom' && (
+            <input
+              aria-label="自定义标题字体名"
+              className="settings-input settings-font-input"
+              value={settings.previewHeadingCustomFont}
+              onChange={(e) => handleChange({ previewHeadingCustomFont: e.target.value })}
+              placeholder="字体名称"
+            />
+          )}
+        </div>
       </div>
 
       <div className="settings-row">

@@ -2,6 +2,34 @@
 
 ## 第一部分：决策记录
 
+### [DEC-071] - 2026-06-01 - 重做 Markdown 阅读字体设置并准备发布 v0.3.18
+
+**背景**
+用户反馈 Folia 默认阅读字体仍不够好看，且 Settings / 预览中“中文优化 / 中文宋体”等预设作为主入口不自然。当前 Markdown 标题还存在 H1/H2 使用衬线、H3/H4 回到非衬线的层级割裂。远端最新公开版本为 `v0.3.17`，本轮字体设置重做需要作为新的补丁版本发布。
+
+**决策**
+- 发布版本顺延为 `0.3.18`，不改写已公开的 `v0.3.17`。
+- Settings / 预览改为中文字体、英文字体、标题字体三组选择；默认入口统一为“默认”，中文和英文支持常见系统字体与自定义字体名。
+- 阅读字体栈由英文字体栈 → 中文字体栈 → 默认 reading 栈组合生成；Markdown 阅读预览、`.docx` HTML 预览和 Vditor 即时渲染编辑共用这套变量。
+- 标题字体默认跟随正文；用户选择标题字体时统一覆盖 H1-H6，不再按标题层级混用衬线/非衬线。
+- 旧版 `Chinese Optimized`、`Chinese Serif`、`Iowan Old Style`、`Georgia`、`System Default` 通过 `fontDefaultsVersion = 3` 迁移到新字段，尽量保留用户语义选择。
+- Word 纸张预览继续只由导出预设控制，不跟随 Markdown 阅读字体设置。
+
+**验证**
+- `npm test -- src/services/settingsService.test.ts src/components/settings/PreviewSection.test.tsx`
+- `npm run typecheck`
+- `cd src-tauri && cargo check`
+- `git diff --check && git diff --cached --check`
+- `npm run test:e2e -- --grep "preview font settings"`
+- `npm test`
+- `npm run lint`
+- `npm run build`
+
+**影响**
+- 新用户默认看到普通“默认”字体入口，不需要理解“中文优化 / 中文宋体”预设。
+- 纯中文长文、中英文混排和标题层级默认观感更统一。
+- 旧用户升级后旧字体选择会迁移到中文/英文/标题字段，不直接丢失偏好。
+
 ### [DEC-070] - 2026-06-01 - 发布 v0.3.17 系统路径打开读写修复版本
 
 **背景**

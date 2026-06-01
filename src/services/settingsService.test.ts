@@ -21,6 +21,8 @@ import {
   removeExportPreset,
   removeCustomExportPreset,
   removeCustomHtmlExportPreset,
+  resolvePreviewFontFamily,
+  resolvePreviewHeadingFontFamily,
   setExportPreset,
   setExportPresetEnabled,
   setHtmlExportPreset,
@@ -66,14 +68,19 @@ describe('settingsService', () => {
     expect(getSettings().exportPresetId).toBe('legal');
     expect(getSettings().autoUpdateCheck).toBe(true);
     expect(getSettings().wechatCustomCss).toBe('');
-    expect(getSettings().previewFontFamily).toBe('Chinese Optimized');
+    expect(getSettings()).toMatchObject({
+      previewFontFamily: 'Default',
+      previewChineseFontFamily: 'Default',
+      previewLatinFontFamily: 'Default',
+      previewHeadingFontFamily: 'Body',
+    });
 
     localStorage.setItem('folia-settings', '{invalid json');
 
     expect(getSettings().exportPresetId).toBe('legal');
     expect(getSettings().autoUpdateCheck).toBe(true);
     expect(getSettings().wechatCustomCss).toBe('');
-    expect(getSettings().previewFontFamily).toBe('Chinese Optimized');
+    expect(getSettings().previewFontFamily).toBe('Default');
   });
 
   it('migrates legacy export settings without recursive reads', () => {
@@ -114,21 +121,80 @@ describe('settingsService', () => {
     expect(getSettings().locale).toBe('zh-CN');
   });
 
-  it('normalizes preview font presets and migrates the old default once', () => {
-    updateSettings({ previewFontFamily: 'Chinese Serif' });
-    expect(getSettings().previewFontFamily).toBe('Chinese Serif');
-
-    localStorage.setItem('folia-settings', JSON.stringify({ previewFontFamily: 'Iowan Old Style' }));
+  it('normalizes preview font choices and migrates legacy preview presets', () => {
+    updateSettings({
+      previewChineseFontFamily: 'Songti SC',
+      previewLatinFontFamily: 'Georgia',
+      previewHeadingFontFamily: 'Latin',
+    });
     expect(getSettings()).toMatchObject({
-      previewFontFamily: 'Chinese Optimized',
-      fontDefaultsVersion: 2,
+      previewChineseFontFamily: 'Songti SC',
+      previewLatinFontFamily: 'Georgia',
+      previewHeadingFontFamily: 'Latin',
     });
 
-    updateSettings({ previewFontFamily: 'Iowan Old Style' });
-    expect(getSettings().previewFontFamily).toBe('Iowan Old Style');
+    localStorage.setItem('folia-settings', JSON.stringify({
+      previewFontFamily: 'Iowan Old Style',
+      fontDefaultsVersion: 2,
+    }));
+    expect(getSettings()).toMatchObject({
+      previewFontFamily: 'Default',
+      previewChineseFontFamily: 'Songti SC',
+      previewLatinFontFamily: 'Iowan Old Style',
+      previewHeadingFontFamily: 'Latin',
+      fontDefaultsVersion: 3,
+    });
 
-    localStorage.setItem('folia-settings', JSON.stringify({ previewFontFamily: 'Unsupported Font' }));
-    expect(getSettings().previewFontFamily).toBe('Chinese Optimized');
+    localStorage.setItem('folia-settings', JSON.stringify({
+      previewFontFamily: 'Chinese Serif',
+      fontDefaultsVersion: 2,
+    }));
+    expect(getSettings()).toMatchObject({
+      previewChineseFontFamily: 'Songti SC',
+      previewLatinFontFamily: 'Georgia',
+      previewHeadingFontFamily: 'Body',
+    });
+
+    localStorage.setItem('folia-settings', JSON.stringify({
+      previewChineseFontFamily: 'Unsupported Font',
+      previewLatinFontFamily: 'Unsupported Font',
+      previewHeadingFontFamily: 'Unsupported Font',
+      fontDefaultsVersion: 3,
+    }));
+    expect(getSettings()).toMatchObject({
+      previewFontFamily: 'Default',
+      previewChineseFontFamily: 'Default',
+      previewLatinFontFamily: 'Default',
+      previewHeadingFontFamily: 'Body',
+    });
+  });
+
+  it('resolves combined Chinese, English, and heading font stacks', () => {
+    const settings = updateSettings({
+      previewChineseFontFamily: 'Songti SC',
+      previewLatinFontFamily: 'Georgia',
+      previewHeadingFontFamily: 'Body',
+    });
+
+    expect(resolvePreviewFontFamily(settings)).toContain('Georgia');
+    expect(resolvePreviewFontFamily(settings)).toContain('"Songti SC"');
+    expect(resolvePreviewHeadingFontFamily(settings)).toBe(
+      'var(--preview-font-family, var(--reading-font-family, var(--font-reading)))',
+    );
+
+    const customSettings = updateSettings({
+      previewChineseFontFamily: 'Custom',
+      previewChineseCustomFont: '霞鹜文楷; bad',
+      previewLatinFontFamily: 'Custom',
+      previewLatinCustomFont: 'IBM Plex Serif',
+      previewHeadingFontFamily: 'Custom',
+      previewHeadingCustomFont: 'Source Han Serif SC',
+    });
+
+    expect(customSettings.previewChineseCustomFont).toBe('霞鹜文楷 bad');
+    expect(resolvePreviewFontFamily(customSettings)).toContain('"IBM Plex Serif"');
+    expect(resolvePreviewFontFamily(customSettings)).toContain('"霞鹜文楷 bad"');
+    expect(resolvePreviewHeadingFontFamily(customSettings)).toContain('"Source Han Serif SC"');
   });
 
   it('keeps old settings compatible with the default empty WeChat custom CSS', () => {

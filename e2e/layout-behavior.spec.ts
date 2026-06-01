@@ -538,6 +538,42 @@ test('general settings can switch the interface to Japanese', async ({ page }) =
   await expect(page.getByRole('button', { name: 'HTML 書き出し', exact: true })).toBeVisible();
 });
 
+test('preview font settings split Chinese, English, and heading choices', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: '设置' }).click();
+  await page.getByRole('button', { name: '预览', exact: true }).click();
+
+  await expect(page.getByLabel('中文字体')).toHaveValue('Default');
+  await expect(page.getByLabel('英文字体')).toHaveValue('Default');
+  await expect(page.getByLabel('标题字体')).toHaveValue('Body');
+
+  await page.getByLabel('中文字体').selectOption('Songti SC');
+  await page.getByLabel('英文字体').selectOption('Georgia');
+  await page.getByLabel('标题字体').selectOption('Latin');
+
+  const fontState = await page.evaluate(() => {
+    const app = document.querySelector<HTMLElement>('.app-layout');
+    const settings = JSON.parse(localStorage.getItem('folia-settings') || '{}') as {
+      previewChineseFontFamily?: string;
+      previewLatinFontFamily?: string;
+      previewHeadingFontFamily?: string;
+    };
+    const style = app ? getComputedStyle(app) : null;
+    return {
+      settings,
+      reading: style?.getPropertyValue('--reading-font-family') ?? '',
+      heading: style?.getPropertyValue('--reading-heading-font-family') ?? '',
+    };
+  });
+
+  expect(fontState.settings.previewChineseFontFamily).toBe('Songti SC');
+  expect(fontState.settings.previewLatinFontFamily).toBe('Georgia');
+  expect(fontState.settings.previewHeadingFontFamily).toBe('Latin');
+  expect(fontState.reading).toContain('Georgia');
+  expect(fontState.reading).toContain('Songti SC');
+  expect(fontState.heading).toContain('Georgia');
+});
+
 test('Word export settings make the paper preview expandable', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: '设置' }).click();

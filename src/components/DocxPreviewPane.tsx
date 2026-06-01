@@ -1,6 +1,6 @@
 import '../styles/preview.css';
 import { useSettings } from '../hooks/useSettings';
-import { resolvePreviewFontFamily } from '../services/settingsService';
+import { resolvePreviewFontFamily, resolvePreviewHeadingFontFamily } from '../services/settingsService';
 
 type DocxPreviewPaneProps = {
   html: string;
@@ -8,7 +8,8 @@ type DocxPreviewPaneProps = {
 
 export function DocxPreviewPane({ html }: DocxPreviewPaneProps) {
   const settings = useSettings();
-  const previewFontFamily = resolvePreviewFontFamily(settings.previewFontFamily);
+  const previewFontFamily = resolvePreviewFontFamily(settings);
+  const previewHeadingFontFamily = resolvePreviewHeadingFontFamily(settings);
 
   return (
     <div
@@ -18,6 +19,7 @@ export function DocxPreviewPane({ html }: DocxPreviewPaneProps) {
         '--preview-line-height': `${settings.previewLineHeight}`,
         '--preview-width': `${settings.previewWidth}px`,
         '--preview-font-family': previewFontFamily,
+        '--preview-heading-font-family': previewHeadingFontFamily,
       } as React.CSSProperties}
     >
       <div

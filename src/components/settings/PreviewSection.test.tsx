@@ -28,8 +28,27 @@ describe('PreviewSection', () => {
       root.render(React.createElement(PreviewSection));
     });
 
-    expect(host.textContent).toContain('预览字体');
+    expect(host.textContent).toContain('中文字体');
+    expect(host.textContent).toContain('英文字体');
+    expect(host.textContent).toContain('标题字体');
     expect(host.textContent).toContain('预览宽度');
     expect(host.querySelector('button')).toBeNull();
+  });
+
+  it('shows custom font inputs only when custom choices are selected', async () => {
+    await act(async () => {
+      root.render(React.createElement(PreviewSection));
+    });
+
+    expect(host.querySelector('[aria-label="自定义中文字体名"]')).toBeNull();
+
+    const chineseSelect = host.querySelector<HTMLSelectElement>('select[aria-label="中文字体"]');
+    expect(chineseSelect).not.toBeNull();
+    await act(async () => {
+      chineseSelect!.value = 'Custom';
+      chineseSelect!.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+
+    expect(host.querySelector('[aria-label="自定义中文字体名"]')).not.toBeNull();
   });
 });

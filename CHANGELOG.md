@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.3.18]
+
+### Changed
+
+- Settings / 预览字体改为中文字体、英文字体、标题字体三组选择，默认入口统一为“默认”，并支持自定义字体名；Markdown 阅读预览、`.docx` HTML 预览和即时渲染编辑同步使用新字体栈。
+- Markdown H1-H6 默认跟随正文或统一标题字体，标题层级改用字号、间距和渐进字重表达，不再按层级混用衬线/非衬线。
+
 ## [0.3.17]
 
 ### Fixed

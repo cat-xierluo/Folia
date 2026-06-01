@@ -1,8 +1,14 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import type { OpenedFile, TocItem } from '../types/document';
 import { createEmptyFile } from '../types/document';
-import { getExportPresetConfig, getLastOpenedPath, setLastOpenedPath } from '../services/settingsService';
+import {
+  getExportPresetConfig,
+  getLastOpenedPath,
+  resolvePreviewFontFamily,
+  resolvePreviewHeadingFontFamily,
+  setLastOpenedPath,
+} from '../services/settingsService';
 import { firstOpenableDocumentPath, isOpenableDocumentPath } from '../services/fileDrop';
 import { prefersStableHtmlPreview } from '../services/documentViewMode';
 import { useSettings } from '../hooks/useSettings';
@@ -677,9 +683,14 @@ export function AppLayout() {
       </Suspense>
     </div>
   );
+  const appStyle = {
+    fontSize: `${settings.zoomLevel}%`,
+    '--reading-font-family': resolvePreviewFontFamily(settings),
+    '--reading-heading-font-family': resolvePreviewHeadingFontFamily(settings),
+  } as CSSProperties;
 
   return (
-    <div className="app-layout" data-theme={settings.theme} style={{ fontSize: `${settings.zoomLevel}%` }}>
+    <div className="app-layout" data-theme={settings.theme} style={appStyle}>
       <Toolbar
         dirty={file.dirty}
         fileName={file.name}

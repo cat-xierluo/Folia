@@ -665,7 +665,7 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   padding: 10px clamp(24px, 7vw, 104px);
   background: var(--bg);
   color: var(--fg);
-  font-family: var(--font-reading);
+  font-family: var(--reading-font-family, var(--font-reading));
   font-size: 15px;
   line-height: 1.72;
 }
@@ -677,21 +677,45 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 
 .wysiwyg-editor-pane .vditor-ir h1,
 .wysiwyg-editor-pane .vditor-ir h2,
+.wysiwyg-editor-pane .vditor-ir h3,
+.wysiwyg-editor-pane .vditor-ir h4,
+.wysiwyg-editor-pane .vditor-ir h5,
+.wysiwyg-editor-pane .vditor-ir h6,
 .wysiwyg-editor-pane .vditor-wysiwyg h1,
-.wysiwyg-editor-pane .vditor-wysiwyg h2 {
-  font-family: var(--font-display);
-  font-weight: 400;
+.wysiwyg-editor-pane .vditor-wysiwyg h2,
+.wysiwyg-editor-pane .vditor-wysiwyg h3,
+.wysiwyg-editor-pane .vditor-wysiwyg h4,
+.wysiwyg-editor-pane .vditor-wysiwyg h5,
+.wysiwyg-editor-pane .vditor-wysiwyg h6 {
+  font-family: var(--reading-heading-font-family, var(--reading-font-family, var(--font-reading)));
   letter-spacing: 0;
 }
 
 .wysiwyg-editor-pane .vditor-ir h1,
 .wysiwyg-editor-pane .vditor-wysiwyg h1 {
   font-size: 28px;
+  font-weight: 600;
 }
 
 .wysiwyg-editor-pane .vditor-ir h2,
 .wysiwyg-editor-pane .vditor-wysiwyg h2 {
   font-size: 22px;
+  font-weight: 580;
+}
+
+.wysiwyg-editor-pane .vditor-ir h3,
+.wysiwyg-editor-pane .vditor-wysiwyg h3 {
+  font-size: 18px;
+  font-weight: 560;
+}
+
+.wysiwyg-editor-pane .vditor-ir h4,
+.wysiwyg-editor-pane .vditor-ir h5,
+.wysiwyg-editor-pane .vditor-ir h6,
+.wysiwyg-editor-pane .vditor-wysiwyg h4,
+.wysiwyg-editor-pane .vditor-wysiwyg h5,
+.wysiwyg-editor-pane .vditor-wysiwyg h6 {
+  font-weight: 540;
 }
 
 .wysiwyg-editor-pane .vditor-ir table,
@@ -2420,6 +2444,18 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   outline: 2px solid oklch(58% 0.16 35 / 0.18);
   outline-offset: 1px;
   border-color: var(--accent);
+}
+
+.settings-font-control {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: min(100%, 280px);
+}
+
+.settings-font-input {
+  width: 136px;
 }
 
 .settings-wechat-css-row {

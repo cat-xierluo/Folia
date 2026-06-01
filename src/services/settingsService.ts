@@ -39,7 +39,7 @@ import {
 const STORAGE_KEY = 'folia-settings';
 const LEGACY_KEY = 'folia-export-settings';
 const LAST_FILE_KEY = 'folia-last-opened-file';
-const FONT_DEFAULTS_VERSION = 2;
+const FONT_DEFAULTS_VERSION = 3;
 
 export const SETTINGS_CHANGED_EVENT = 'folia-settings-changed';
 export const STANDARD_CUSTOM_EXPORT_PRESET_LIMIT = STANDARD_PRESET_SLOT_LIMIT;
@@ -65,11 +65,37 @@ export class CustomHtmlExportPresetLimitError extends Error {
 
 export type EditorFontFamily = 'IBM Plex Mono' | 'JetBrains Mono' | 'SF Mono' | 'System Default';
 export type PreviewFontFamily =
+  | 'Default'
+  | 'System Sans'
+  | 'System Serif'
   | 'Chinese Optimized'
   | 'Chinese Serif'
   | 'Iowan Old Style'
   | 'Georgia'
   | 'System Default';
+export type PreviewChineseFontFamily =
+  | 'Default'
+  | 'PingFang SC'
+  | 'Microsoft YaHei'
+  | 'Source Han Sans SC'
+  | 'Noto Sans CJK SC'
+  | 'Songti SC'
+  | 'Custom';
+export type PreviewLatinFontFamily =
+  | 'Default'
+  | 'System UI'
+  | 'Helvetica Neue'
+  | 'Segoe UI'
+  | 'Avenir Next'
+  | 'Georgia'
+  | 'Iowan Old Style'
+  | 'Custom';
+export type PreviewHeadingFontFamily =
+  | 'Body'
+  | 'Chinese'
+  | 'Latin'
+  | 'System Serif'
+  | 'Custom';
 export type DefaultEncoding = 'UTF-8' | 'GBK' | 'GB18030';
 export type PreviewWidth = 640 | 680 | 720 | 800;
 export type AppLocale = 'zh-CN' | 'en-US' | 'ja-JP';
@@ -78,27 +104,58 @@ export const PREVIEW_FONT_FAMILY_OPTIONS: ReadonlyArray<{
   value: PreviewFontFamily;
   label: string;
 }> = [
-  { value: 'Chinese Optimized', label: '中文优化' },
-  { value: 'System Default', label: '系统默认' },
-  { value: 'Chinese Serif', label: '中文宋体' },
-  { value: 'Iowan Old Style', label: 'Iowan Old Style' },
-  { value: 'Georgia', label: 'Georgia' },
+  { value: 'Default', label: '默认' },
+  { value: 'System Sans', label: '系统无衬线' },
+  { value: 'System Serif', label: '系统衬线' },
 ];
 
-export function resolvePreviewFontFamily(fontFamily: PreviewFontFamily): string {
-  switch (fontFamily) {
-    case 'Chinese Optimized':
-      return 'var(--font-reading)';
-    case 'Chinese Serif':
-      return 'var(--font-serif-reading)';
-    case 'System Default':
-      return 'var(--font-body)';
-    case 'Iowan Old Style':
-      return `'Iowan Old Style', var(--font-display)`;
-    case 'Georgia':
-      return `Georgia, var(--font-serif-reading)`;
-  }
-}
+export const PREVIEW_CHINESE_FONT_FAMILY_OPTIONS: ReadonlyArray<{
+  value: PreviewChineseFontFamily;
+  label: string;
+}> = [
+  { value: 'Default', label: '默认' },
+  { value: 'PingFang SC', label: '苹方' },
+  { value: 'Microsoft YaHei', label: '微软雅黑' },
+  { value: 'Source Han Sans SC', label: '思源黑体' },
+  { value: 'Noto Sans CJK SC', label: 'Noto Sans CJK' },
+  { value: 'Songti SC', label: '宋体' },
+  { value: 'Custom', label: '自定义' },
+];
+
+export const PREVIEW_LATIN_FONT_FAMILY_OPTIONS: ReadonlyArray<{
+  value: PreviewLatinFontFamily;
+  label: string;
+}> = [
+  { value: 'Default', label: '默认' },
+  { value: 'System UI', label: '系统界面' },
+  { value: 'Helvetica Neue', label: 'Helvetica Neue' },
+  { value: 'Segoe UI', label: 'Segoe UI' },
+  { value: 'Avenir Next', label: 'Avenir Next' },
+  { value: 'Georgia', label: 'Georgia' },
+  { value: 'Iowan Old Style', label: 'Iowan Old Style' },
+  { value: 'Custom', label: '自定义' },
+];
+
+export const PREVIEW_HEADING_FONT_FAMILY_OPTIONS: ReadonlyArray<{
+  value: PreviewHeadingFontFamily;
+  label: string;
+}> = [
+  { value: 'Body', label: '跟随正文' },
+  { value: 'Chinese', label: '跟随中文字体' },
+  { value: 'Latin', label: '跟随英文字体' },
+  { value: 'System Serif', label: '系统衬线' },
+  { value: 'Custom', label: '自定义' },
+];
+
+type PreviewFontSettings = {
+  previewFontFamily: PreviewFontFamily;
+  previewChineseFontFamily: PreviewChineseFontFamily;
+  previewLatinFontFamily: PreviewLatinFontFamily;
+  previewHeadingFontFamily: PreviewHeadingFontFamily;
+  previewChineseCustomFont: string;
+  previewLatinCustomFont: string;
+  previewHeadingCustomFont: string;
+};
 
 export interface AppSettings {
   // 通用
@@ -128,6 +185,12 @@ export interface AppSettings {
   editorSpellCheck: boolean;
   // 预览
   previewFontFamily: PreviewFontFamily;
+  previewChineseFontFamily: PreviewChineseFontFamily;
+  previewLatinFontFamily: PreviewLatinFontFamily;
+  previewHeadingFontFamily: PreviewHeadingFontFamily;
+  previewChineseCustomFont: string;
+  previewLatinCustomFont: string;
+  previewHeadingCustomFont: string;
   previewFontSize: number;
   previewLineHeight: number;
   previewWidth: PreviewWidth;
@@ -157,7 +220,13 @@ const defaults: AppSettings = {
   editorWordWrap: true,
   editorLineNumbers: true,
   editorSpellCheck: false,
-  previewFontFamily: 'Chinese Optimized',
+  previewFontFamily: 'Default',
+  previewChineseFontFamily: 'Default',
+  previewLatinFontFamily: 'Default',
+  previewHeadingFontFamily: 'Body',
+  previewChineseCustomFont: '',
+  previewLatinCustomFont: '',
+  previewHeadingCustomFont: '',
   previewFontSize: 15,
   previewLineHeight: 1.7,
   previewWidth: 680,
@@ -194,7 +263,156 @@ function normalizeLocale(value: unknown): AppLocale {
 function normalizePreviewFontFamily(value: unknown): PreviewFontFamily {
   return PREVIEW_FONT_FAMILY_OPTIONS.some((option) => option.value === value)
     ? value as PreviewFontFamily
-    : 'Chinese Optimized';
+    : 'Default';
+}
+
+function normalizePreviewChineseFontFamily(value: unknown): PreviewChineseFontFamily {
+  return PREVIEW_CHINESE_FONT_FAMILY_OPTIONS.some((option) => option.value === value)
+    ? value as PreviewChineseFontFamily
+    : 'Default';
+}
+
+function normalizePreviewLatinFontFamily(value: unknown): PreviewLatinFontFamily {
+  return PREVIEW_LATIN_FONT_FAMILY_OPTIONS.some((option) => option.value === value)
+    ? value as PreviewLatinFontFamily
+    : 'Default';
+}
+
+function normalizePreviewHeadingFontFamily(value: unknown): PreviewHeadingFontFamily {
+  return PREVIEW_HEADING_FONT_FAMILY_OPTIONS.some((option) => option.value === value)
+    ? value as PreviewHeadingFontFamily
+    : 'Body';
+}
+
+function normalizeCustomFontName(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  return value
+    .replace(/["'`;{}]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80);
+}
+
+function quoteFontName(name: string): string {
+  if (!name || /^-/.test(name) || /^[a-z-]+$/i.test(name)) return name;
+  return `"${name}"`;
+}
+
+function customFontStack(name: string): string[] {
+  const normalized = normalizeCustomFontName(name);
+  return normalized ? [quoteFontName(normalized)] : [];
+}
+
+function previewLatinFontStack(settings: Pick<PreviewFontSettings, 'previewLatinFontFamily' | 'previewLatinCustomFont'>): string[] {
+  switch (settings.previewLatinFontFamily) {
+    case 'System UI':
+      return ['-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'system-ui'];
+    case 'Helvetica Neue':
+      return ['"Helvetica Neue"', 'Helvetica', 'Arial'];
+    case 'Segoe UI':
+      return ['"Segoe UI"', 'Arial'];
+    case 'Avenir Next':
+      return ['"Avenir Next"', 'Avenir', '"Helvetica Neue"', 'Arial'];
+    case 'Georgia':
+      return ['Georgia', '"Times New Roman"'];
+    case 'Iowan Old Style':
+      return ['"Iowan Old Style"', 'Charter', 'Georgia'];
+    case 'Custom':
+      return customFontStack(settings.previewLatinCustomFont);
+    case 'Default':
+      return ['-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', '"Helvetica Neue"', 'Arial'];
+  }
+}
+
+function previewChineseFontStack(settings: Pick<PreviewFontSettings, 'previewChineseFontFamily' | 'previewChineseCustomFont'>): string[] {
+  switch (settings.previewChineseFontFamily) {
+    case 'PingFang SC':
+      return ['"PingFang SC"', '"Hiragino Sans GB"'];
+    case 'Microsoft YaHei':
+      return ['"Microsoft YaHei UI"', '"Microsoft YaHei"'];
+    case 'Source Han Sans SC':
+      return ['"Source Han Sans SC"', '"Noto Sans CJK SC"'];
+    case 'Noto Sans CJK SC':
+      return ['"Noto Sans CJK SC"', '"Source Han Sans SC"'];
+    case 'Songti SC':
+      return ['"Songti SC"', 'STSong', '"Noto Serif CJK SC"', '"Source Han Serif SC"'];
+    case 'Custom':
+      return customFontStack(settings.previewChineseCustomFont);
+    case 'Default':
+      return [
+        '"PingFang SC"',
+        '"Hiragino Sans GB"',
+        '"Microsoft YaHei UI"',
+        '"Microsoft YaHei"',
+        '"Noto Sans CJK SC"',
+        '"Source Han Sans SC"',
+        '"Noto Sans SC"',
+      ];
+  }
+}
+
+function previewBaseFontStack(fontFamily: PreviewFontFamily): string[] {
+  switch (fontFamily) {
+    case 'System Sans':
+    case 'System Default':
+      return ['var(--font-body)'];
+    case 'System Serif':
+    case 'Chinese Serif':
+      return ['var(--font-serif-reading)'];
+    case 'Iowan Old Style':
+      return ['"Iowan Old Style"', 'var(--font-display)'];
+    case 'Georgia':
+      return ['Georgia', 'var(--font-serif-reading)'];
+    case 'Chinese Optimized':
+    case 'Default':
+      return ['var(--font-reading)'];
+  }
+}
+
+function joinFontStack(parts: string[]): string {
+  const seen = new Set<string>();
+  const stack = parts.filter((part) => {
+    if (!part || seen.has(part)) return false;
+    seen.add(part);
+    return true;
+  });
+  return stack.join(', ');
+}
+
+export function resolvePreviewFontFamily(settings: PreviewFontSettings): string {
+  return joinFontStack([
+    ...previewLatinFontStack(settings),
+    ...previewChineseFontStack(settings),
+    ...previewBaseFontStack(settings.previewFontFamily),
+  ]);
+}
+
+export function resolvePreviewHeadingFontFamily(settings: PreviewFontSettings): string {
+  switch (settings.previewHeadingFontFamily) {
+    case 'Chinese':
+      return joinFontStack([
+        ...previewChineseFontStack(settings),
+        ...previewLatinFontStack(settings),
+        ...previewBaseFontStack(settings.previewFontFamily),
+      ]);
+    case 'Latin':
+      return joinFontStack([
+        ...previewLatinFontStack(settings),
+        ...previewChineseFontStack(settings),
+        ...previewBaseFontStack(settings.previewFontFamily),
+      ]);
+    case 'System Serif':
+      return joinFontStack(['Georgia', '"Times New Roman"', 'var(--font-serif-reading)', 'serif']);
+    case 'Custom': {
+      const customStack = customFontStack(settings.previewHeadingCustomFont);
+      return joinFontStack([
+        ...customStack,
+        'var(--preview-font-family, var(--reading-font-family, var(--font-reading)))',
+      ]);
+    }
+    case 'Body':
+      return 'var(--preview-font-family, var(--reading-font-family, var(--font-reading)))';
+  }
 }
 
 function normalizeWechatCustomCss(value: unknown): string {
@@ -282,6 +500,61 @@ function normalizeHtmlExportPresetId(
   return firstEnabledHtmlExportPresetId(customHtmlExportPresets, disabledHtmlExportPresetIds);
 }
 
+function migratePreviewFontSettings(stored: Partial<AppSettings>): Partial<AppSettings> {
+  const next = { ...stored };
+  const legacyFontFamily = typeof next.previewFontFamily === 'string'
+    ? next.previewFontFamily
+    : undefined;
+
+  switch (legacyFontFamily) {
+    case 'Chinese Serif':
+      next.previewFontFamily = 'Default';
+      next.previewChineseFontFamily = 'Songti SC';
+      next.previewLatinFontFamily = 'Georgia';
+      next.previewHeadingFontFamily = 'Body';
+      break;
+    case 'Iowan Old Style':
+      next.previewFontFamily = 'Default';
+      next.previewChineseFontFamily = 'Songti SC';
+      next.previewLatinFontFamily = 'Iowan Old Style';
+      next.previewHeadingFontFamily = 'Latin';
+      break;
+    case 'Georgia':
+      next.previewFontFamily = 'Default';
+      next.previewChineseFontFamily = 'Songti SC';
+      next.previewLatinFontFamily = 'Georgia';
+      next.previewHeadingFontFamily = 'Latin';
+      break;
+    case 'System Default':
+      next.previewFontFamily = 'System Sans';
+      next.previewChineseFontFamily = 'Default';
+      next.previewLatinFontFamily = 'Default';
+      next.previewHeadingFontFamily = 'Body';
+      break;
+    case 'System Sans':
+    case 'System Serif':
+    case 'Default':
+      next.previewFontFamily = legacyFontFamily;
+      next.previewChineseFontFamily = normalizePreviewChineseFontFamily(next.previewChineseFontFamily);
+      next.previewLatinFontFamily = normalizePreviewLatinFontFamily(next.previewLatinFontFamily);
+      next.previewHeadingFontFamily = normalizePreviewHeadingFontFamily(next.previewHeadingFontFamily);
+      break;
+    case 'Chinese Optimized':
+    default:
+      next.previewFontFamily = 'Default';
+      next.previewChineseFontFamily = 'Default';
+      next.previewLatinFontFamily = 'Default';
+      next.previewHeadingFontFamily = 'Body';
+      break;
+  }
+
+  next.previewChineseCustomFont = normalizeCustomFontName(next.previewChineseCustomFont);
+  next.previewLatinCustomFont = normalizeCustomFontName(next.previewLatinCustomFont);
+  next.previewHeadingCustomFont = normalizeCustomFontName(next.previewHeadingCustomFont);
+  next.fontDefaultsVersion = FONT_DEFAULTS_VERSION;
+  return next;
+}
+
 function migrateLegacySettings(stored: Partial<AppSettings>): Partial<AppSettings> {
   const next = { ...stored };
   let changed = false;
@@ -325,10 +598,7 @@ function migrateLegacySettings(stored: Partial<AppSettings>): Partial<AppSetting
   }
 
   if (next.fontDefaultsVersion !== FONT_DEFAULTS_VERSION) {
-    if (next.previewFontFamily === 'Iowan Old Style') {
-      next.previewFontFamily = 'Chinese Optimized';
-    }
-    next.fontDefaultsVersion = FONT_DEFAULTS_VERSION;
+    Object.assign(next, migratePreviewFontSettings(next));
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...defaults, ...next }));
     } catch {
@@ -381,6 +651,12 @@ export function getSettings(): AppSettings {
       license,
       wechatCustomCss: normalizeWechatCustomCss(stored.wechatCustomCss),
       previewFontFamily: normalizePreviewFontFamily(stored.previewFontFamily),
+      previewChineseFontFamily: normalizePreviewChineseFontFamily(stored.previewChineseFontFamily),
+      previewLatinFontFamily: normalizePreviewLatinFontFamily(stored.previewLatinFontFamily),
+      previewHeadingFontFamily: normalizePreviewHeadingFontFamily(stored.previewHeadingFontFamily),
+      previewChineseCustomFont: normalizeCustomFontName(stored.previewChineseCustomFont),
+      previewLatinCustomFont: normalizeCustomFontName(stored.previewLatinCustomFont),
+      previewHeadingCustomFont: normalizeCustomFontName(stored.previewHeadingCustomFont),
     };
   } catch {
     return { ...defaults };
@@ -410,6 +686,24 @@ export function updateSettings(patch: Partial<AppSettings>): AppSettings {
     locale: normalizeLocale(patch.locale ?? current.locale),
     fontDefaultsVersion: FONT_DEFAULTS_VERSION,
     previewFontFamily: normalizePreviewFontFamily(patch.previewFontFamily ?? current.previewFontFamily),
+    previewChineseFontFamily: normalizePreviewChineseFontFamily(
+      patch.previewChineseFontFamily ?? current.previewChineseFontFamily,
+    ),
+    previewLatinFontFamily: normalizePreviewLatinFontFamily(
+      patch.previewLatinFontFamily ?? current.previewLatinFontFamily,
+    ),
+    previewHeadingFontFamily: normalizePreviewHeadingFontFamily(
+      patch.previewHeadingFontFamily ?? current.previewHeadingFontFamily,
+    ),
+    previewChineseCustomFont: normalizeCustomFontName(
+      patch.previewChineseCustomFont ?? current.previewChineseCustomFont,
+    ),
+    previewLatinCustomFont: normalizeCustomFontName(
+      patch.previewLatinCustomFont ?? current.previewLatinCustomFont,
+    ),
+    previewHeadingCustomFont: normalizeCustomFontName(
+      patch.previewHeadingCustomFont ?? current.previewHeadingCustomFont,
+    ),
     wechatCustomCss: normalizeWechatCustomCss(patch.wechatCustomCss ?? current.wechatCustomCss),
     customExportPresets,
     disabledExportPresetIds,

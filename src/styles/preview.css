@@ -23,21 +23,28 @@
 }
 
 /* Override Vditor defaults with legal-document-friendly styles */
+.preview-content h1,
+.preview-content h2,
+.preview-content h3,
+.preview-content h4,
+.preview-content h5,
+.preview-content h6 {
+  font-family: var(--preview-heading-font-family, var(--preview-font-family, var(--font-reading)));
+  letter-spacing: 0;
+  color: var(--fg);
+}
+
 .preview-content h1 {
   font-size: 28px;
   margin: 0 0 20px;
   text-align: center;
-  font-family: var(--font-display);
-  font-weight: 400;
-  color: var(--fg);
+  font-weight: 600;
 }
 
 .preview-content h2 {
   font-size: 22px;
   margin: 32px 0 14px;
-  font-family: var(--font-display);
-  font-weight: 400;
-  color: var(--fg);
+  font-weight: 580;
   padding-bottom: 6px;
   border-bottom: 1px solid var(--border);
 }
@@ -45,14 +52,20 @@
 .preview-content h3 {
   font-size: 18px;
   margin: 24px 0 10px;
-  font-weight: 500;
-  color: var(--fg);
+  font-weight: 560;
 }
 
 .preview-content h4 {
   font-size: 16px;
   margin: 20px 0 8px;
-  font-weight: 500;
+  font-weight: 540;
+}
+
+.preview-content h5,
+.preview-content h6 {
+  font-size: 15px;
+  margin: 18px 0 8px;
+  font-weight: 520;
 }
 
 .preview-content p {

@@ -3,7 +3,7 @@ import '../styles/preview.css';
 import type { TocItem } from '../types/document';
 import { useSettings } from '../hooks/useSettings';
 import { detectMarkdownRenderFeatures } from '../services/markdownFeatureDetector';
-import { resolvePreviewFontFamily } from '../services/settingsService';
+import { resolvePreviewFontFamily, resolvePreviewHeadingFontFamily } from '../services/settingsService';
 import { VDITOR_PREVIEW_I18N } from '../services/vditorPreviewConfig';
 import { createHtmlReadingPreviewHtml } from '../services/htmlReadingPreviewService';
 
@@ -23,7 +23,8 @@ export function PreviewPane({ source, tocIds, wideTables = false, renderMode = '
     () => detectMarkdownRenderFeatures(deferredSource),
     [deferredSource],
   );
-  const previewFontFamily = resolvePreviewFontFamily(settings.previewFontFamily);
+  const previewFontFamily = resolvePreviewFontFamily(settings);
+  const previewHeadingFontFamily = resolvePreviewHeadingFontFamily(settings);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -85,6 +86,7 @@ export function PreviewPane({ source, tocIds, wideTables = false, renderMode = '
         '--preview-line-height': `${settings.previewLineHeight}`,
         '--preview-width': `${settings.previewWidth}px`,
         '--preview-font-family': previewFontFamily,
+        '--preview-heading-font-family': previewHeadingFontFamily,
       } as React.CSSProperties}
     >
       <div
