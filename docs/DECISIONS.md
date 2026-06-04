@@ -2,6 +2,35 @@
 
 ## 第一部分：决策记录
 
+### [DEC-072] - 2026-06-05 - 修复桌面生产包空白页并准备发布 v0.3.19
+
+**背景**
+用户反馈最新版本通过正常打开、双击打开和右键打开后，主页面都是空白。复查 `v0.3.18` 生产构建发现两个发布级风险：Tauri 桌面包内嵌页面使用 Vite 默认的绝对 `/assets/...` 路径，WebView 从本地文件加载时可能找不到前端 JS/CSS；源码模式相关 CodeMirror 依赖被 `editor-vendor` 的 `maxSize` 任意切分，生产环境可能出现 `Class extends value undefined is not a constructor or null`，导致页面白屏。
+
+**决策**
+- 发布版本顺延为 `0.3.19`，不改写已公开的 `v0.3.18`。
+- Vite 生产构建设置 `base: './'`，让桌面包生成的 `index.html` 使用相对资源路径。
+- CodeMirror vendor 按包边界拆分为 `editor-core-vendor`、`editor-language-vendor`、`editor-ui-vendor`，不再对编辑器依赖使用任意 `maxSize` 切分。
+- 新增 `src/build/viteConfig.test.ts`，将相对资源路径和编辑器拆包策略作为发布回归保护。
+- 交互式浏览器冒烟测试在本地工具侧卡住后停止，改以构建产物检查、E2E 和本地 Tauri 打包验证为准。
+
+**验证**
+- `npm test -- src/build/viteConfig.test.ts`
+- `npm run typecheck`
+- `npm run build`
+- `dist/index.html` 已确认使用 `./assets/...`
+- `npm test`
+- `npm run lint`
+- `npm run test:e2e -- --workers=1`
+- `cd src-tauri && cargo check`
+- `npm run tauri:build:local`
+- `git diff --check`
+- 本地 `Folia.app` 已确认 `CFBundleShortVersionString` 和 `CFBundleVersion` 均为 `0.3.19`。
+
+**影响**
+- 桌面包启动时不再依赖绝对根路径加载前端资源，降低正常打开、双击打开、右键打开后主窗口空白的风险。
+- 源码模式的 CodeMirror 依赖拆分更稳定，避免类继承关系被任意 chunk 边界打散。
+
 ### [DEC-071] - 2026-06-01 - 重做 Markdown 阅读字体设置并发布 v0.3.18
 
 **背景**

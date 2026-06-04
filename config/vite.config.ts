@@ -8,6 +8,7 @@ const nodeModule = String.raw`node_modules[\\/]`
 // https://vite.dev/config/
 export default defineConfig({
   root: projectRoot,
+  base: './',
   plugins: [react()],
   build: {
     rolldownOptions: {
@@ -20,10 +21,19 @@ export default defineConfig({
               priority: 50,
             },
             {
-              name: 'editor-vendor',
-              test: new RegExp(`${nodeModule}(@codemirror|@uiw|style-mod|w3c-keyname|crelt)[\\/]`),
+              name: 'editor-core-vendor',
+              test: new RegExp(`${nodeModule}(@codemirror[\\/](state|view)|style-mod|w3c-keyname|crelt)[\\/]`),
+              priority: 47,
+            },
+            {
+              name: 'editor-language-vendor',
+              test: new RegExp(`${nodeModule}(@codemirror[\\/](language|lang-markdown)|@lezer)[\\/]`),
+              priority: 46,
+            },
+            {
+              name: 'editor-ui-vendor',
+              test: new RegExp(`${nodeModule}(@codemirror[\\/](autocomplete|commands|lint|search|theme-one-dark)|@uiw)[\\/]`),
               priority: 45,
-              maxSize: 450_000,
             },
             {
               name: 'tauri-vendor',

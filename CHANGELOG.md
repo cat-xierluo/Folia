@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.3.19]
+
+### Fixed
+
+- 修复 `v0.3.18` 桌面端打开后主页面可能空白的问题：生产包资源改为相对路径，避免 Tauri WebView 从嵌入页面加载 `/assets/...` 失败。
+- 修复生产构建进入“源码模式”可能白屏的问题：CodeMirror 相关依赖按包边界拆分 vendor chunk，不再通过任意 `maxSize` 切分打散类继承顺序。
+- 新增 Vite 构建配置回归测试，覆盖桌面包相对资源路径和 CodeMirror 拆包策略。
+
 ## [0.3.18]
 
 ### Changed

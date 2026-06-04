@@ -32,6 +32,19 @@
 
 ### 桌面打开与 HTML 阅读
 
+#### ISS-139 v0.3.18 桌面端打开主页面空白
+
+- **优先级:** P1
+- **类型:** L1
+- **状态:** 已完成，待发布复验。
+- **问题:** 用户反馈最新版本通过正常打开、双击打开或右键打开后，主页面都是空白，没有内容显示。排查确认 `v0.3.18` 生产包存在两类白屏风险：Tauri WebView 加载 Vite 生成的绝对 `/assets/...` 资源路径失败；源码模式相关 CodeMirror 依赖被 `editor-vendor` 的任意 `maxSize` 拆包打散，可能出现 `Class extends value undefined is not a constructor or null`。
+- **建议实现:**
+  - Vite 生产构建改为相对资源路径，保证桌面包内嵌页面可从本地目录加载 JS/CSS。
+  - CodeMirror 相关 vendor 按包边界显式拆分，不再对编辑器依赖使用任意大小切分。
+  - 增加构建配置回归测试，避免后续发布再次生成绝对资源路径或打散编辑器依赖。
+- **验收:** 生产构建的 `dist/index.html` 使用 `./assets/...`；编辑器相关 chunk 不再包含 `maxSize` 任意切分；源码模式生产构建不再触发 CodeMirror 类继承白屏；版本发布为 `v0.3.19`。
+- **实现:** `config/vite.config.ts` 已设置 `base: './'`，并将 CodeMirror 相关依赖拆为 `editor-core-vendor`、`editor-language-vendor`、`editor-ui-vendor` 三组，移除编辑器 vendor 的 `maxSize`。新增 `src/build/viteConfig.test.ts` 覆盖相对资源路径和编辑器拆包策略。版本号已统一到 `0.3.19`；验证已通过 `npm test -- src/build/viteConfig.test.ts`、`npm run typecheck`、`npm run build`、`npm test`、`npm run lint`、`npm run test:e2e -- --workers=1`、`cd src-tauri && cargo check`、`npm run tauri:build:local`、`git diff --check`；`dist/index.html` 已确认使用 `./assets/...`，本地 `Folia.app` 已确认版本号为 `0.3.19`。
+
 #### ISS-136 v0.3.16 后双击打开与源码编辑仍未生效
 
 - **优先级:** P1
@@ -1170,6 +1183,8 @@
 - **实现:** 新增 `src/services/word/docxXml.test.ts`，使用 `markdownToDocx()` 生成真实 `.docx` Blob，并通过 JSZip 解压检查 `word/document.xml` 中的 `w:gridSpan`、`w:vMerge`、`w:tblHeader` 和表格行数。测试同时发现 HTML 表格正文行会输出 `w:tblHeader w:val="false"`，已修正为仅真正的 `thead` 行写入 `tableHeader: true`。
 
 ## 进度日志
+
+- **2026-06-05** 完成 ISS-139 并准备发布 v0.3.19：修复 `v0.3.18` 桌面端打开主页面空白问题。Vite 生产构建改为 `base: './'`，桌面包内的 `index.html` 使用 `./assets/...` 相对路径；CodeMirror 相关 vendor 按 `editor-core-vendor`、`editor-language-vendor`、`editor-ui-vendor` 包边界拆分，不再通过 `maxSize` 任意切分编辑器依赖。新增 `src/build/viteConfig.test.ts` 构建配置回归测试。版本号已统一到 `0.3.19`；验证：`npm test -- src/build/viteConfig.test.ts`、`npm run typecheck`、`npm run build`、`npm test`、`npm run lint`、`npm run test:e2e -- --workers=1`、`cd src-tauri && cargo check`、`npm run tauri:build:local`、`git diff --check` 均通过；本地 `Folia.app` 已确认版本号为 `0.3.19`。
 
 - **2026-06-01** 完成 ISS-138 并发布 v0.3.18：Settings / 预览字体改为中文字体、英文字体、标题字体三组选择，默认入口统一为“默认”，并支持自定义字体名；Markdown 阅读预览、`.docx` HTML 预览和 Vditor 即时渲染编辑共用新字体栈；H1-H6 默认跟随正文或统一标题字体，不再按层级混用衬线/非衬线。版本号已统一到 `0.3.18`；验证：`npm test -- src/services/settingsService.test.ts src/components/settings/PreviewSection.test.tsx`、`npm run typecheck`、`cd src-tauri && cargo check`、`git diff --check && git diff --cached --check`、`npm run test:e2e -- --grep "preview font settings"`、`npm test`、`npm run lint`、`npm run build` 均通过。已推送发布提交 `6d78a35` 与 tag `v0.3.18`；Release workflow run `26757112158` 成功完成，GitHub Release 已公开并包含 `latest.json`、macOS `.dmg` / `.app.tar.gz`、Windows `.exe` / `.msi` 及签名文件：https://github.com/cat-xierluo/Folia/releases/tag/v0.3.18。Gitee 同步步骤最终成功，耗时约 18 分 40 秒。
 
