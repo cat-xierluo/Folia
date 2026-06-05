@@ -798,13 +798,18 @@ test('floating toc is available by default and can be pinned', async ({ page }) 
   await expect(page.getByRole('button', { name: '再次点击取消固定大纲' })).toBeVisible();
   await page.mouse.move(20, 20);
   await expect(page.locator('.floating-toc-panel')).toBeVisible();
-  await page.getByRole('button', { name: '再次点击取消固定大纲' }).click();
-  await expect(toc).not.toHaveClass(/pinned/);
-  await page.getByRole('button', { name: '点击固定大纲' }).click();
+
   const editorAfterPin = await page.locator('.wysiwyg-editor-pane').boundingBox();
+  const tocAfterPin = await toc.boundingBox();
   expect(editorBeforePin).not.toBeNull();
   expect(editorAfterPin).not.toBeNull();
-  expect(Math.round(editorAfterPin!.width)).toBe(Math.round(editorBeforePin!.width));
+  expect(tocAfterPin).not.toBeNull();
+  expect(tocAfterPin!.width).toBeGreaterThanOrEqual(200);
+  expect(editorAfterPin!.x).toBeGreaterThan(editorBeforePin!.x + 180);
+  expect(editorAfterPin!.width).toBeLessThan(editorBeforePin!.width - 180);
+
+  await page.getByRole('button', { name: '再次点击取消固定大纲' }).click();
+  await expect(toc).not.toHaveClass(/pinned/);
 });
 
 test('floating toc tracks WYSIWYG scroll after the editor mounts', async ({ page }) => {

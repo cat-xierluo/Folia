@@ -719,7 +719,6 @@ export function AppLayout() {
       >
         {isDocx ? docxPane : (
           <>
-            {editorPane}
             <FloatingToc
               items={toc}
               activeIndex={activeTocIndex}
@@ -727,6 +726,7 @@ export function AppLayout() {
               onPinnedChange={setTocPinned}
               onNavigate={handleTocNavigate}
             />
+            {editorPane}
           </>
         )}
         {rightPanelMode !== 'none' && !isDocx && (

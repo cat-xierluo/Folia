@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file.
 ### Changed
 
 - `README.md` §"官方网站" 链接改到 `https://cat-xierluo.github.io/personal-site/folia/`，移除"调试官方静态网站"小节和相关 `npm run website:build` 命令提示。
+- 浮动大纲固定后改为左侧常驻栏，占用独立阅读空间，避免大纲面板覆盖正文；固定状态下可通过面板右上角按钮取消固定。
 
 ## [0.3.19]
 

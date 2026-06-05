@@ -360,8 +360,28 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   pointer-events: none;
 }
 
+
+.floating-toc.pinned {
+  position: relative;
+  top: 0;
+  left: 0;
+  width: 260px;
+  min-width: 200px;
+  max-width: 40vw;
+  max-height: 100%;
+  flex-shrink: 0;
+  pointer-events: auto;
+  border-right: 1px solid var(--border-soft);
+  background: var(--toc-panel-bg);
+  overflow-y: auto;
+}
+
 .right-panel-open .floating-toc {
   left: 20px;
+}
+
+.right-panel-open .floating-toc.pinned {
+  left: 0;
 }
 
 .floating-toc-rail {
@@ -381,6 +401,10 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   pointer-events: auto;
 }
 
+.floating-toc.pinned .floating-toc-rail {
+  display: none;
+}
+
 .floating-toc-rail::-webkit-scrollbar {
   display: none;
 }
@@ -392,7 +416,11 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   left: 18px;
   width: 8px;
   height: 100%;
-  pointer-events: auto;
+  pointer-events: none;
+}
+
+.floating-toc.pinned::after {
+  display: none;
 }
 
 .floating-toc-rail:focus-visible {
@@ -460,11 +488,26 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 }
 
 .floating-toc:hover .floating-toc-panel,
-.floating-toc:focus-within .floating-toc-panel,
-.floating-toc.pinned .floating-toc-panel {
+.floating-toc:focus-within .floating-toc-panel {
   opacity: 1;
   visibility: visible;
   transform: translateX(0);
+  pointer-events: auto;
+}
+
+.floating-toc.pinned .floating-toc-panel {
+  position: relative;
+  top: 0;
+  left: 0;
+  width: 100%;
+  max-height: 100%;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  backdrop-filter: none;
+  opacity: 1;
+  visibility: visible;
+  transform: none;
   pointer-events: auto;
 }
 
@@ -491,6 +534,31 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   color: var(--muted);
   font-family: var(--font-mono);
   font-size: 10.5px;
+}
+
+.floating-toc-unpin {
+  display: none;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  line-height: 1;
+}
+
+.floating-toc-unpin:hover {
+  background: var(--control-hover-bg);
+  color: var(--fg);
+}
+
+.floating-toc.pinned .floating-toc-unpin {
+  display: block;
+}
+
+.floating-toc.pinned .floating-toc-header small {
+  display: none;
 }
 
 .floating-toc-header small {

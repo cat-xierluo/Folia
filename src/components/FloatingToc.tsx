@@ -49,7 +49,15 @@ export function FloatingToc({
       <div id="floating-toc-panel" className="floating-toc-panel">
         <div className="floating-toc-header">
           <span>{t('tocTitle')}</span>
-          <small>{railLabel}</small>
+          <button
+            type="button"
+            className="floating-toc-unpin"
+            aria-label={railLabel}
+            title={railLabel}
+            onClick={() => onPinnedChange(false)}
+          >
+            ✕
+          </button>
         </div>
         <nav className="floating-toc-list" aria-label={t('documentTocLabel')}>
           {items.map((item, index) => (
