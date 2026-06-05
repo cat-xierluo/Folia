@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WechatPreviewPane } from './WechatPreviewPane';
 import { getSettings, updateSettings } from '../services/settingsService';
-import type { CustomHtmlExportPresetId, HtmlExportPreset } from '../services/htmlExportPresets';
+import { BUILT_IN_HTML_EXPORT_PRESETS, type CustomHtmlExportPresetId, type HtmlExportPreset } from '../services/htmlExportPresets';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -354,8 +354,9 @@ describe('WechatPreviewPane', () => {
     const select = queryPresetSelect(host);
     const options = Array.from(select.options).map((option) => [option.value, option.textContent]);
     expect(options.map(([value]) => value)).toEqual([
-      'html-wechat-style',
-      'html-ip',
+      ...BUILT_IN_HTML_EXPORT_PRESETS
+        .map((preset) => preset.id)
+        .filter((id) => id !== 'html-ai'),
       customId,
     ]);
     expect(options.map(([, label]) => label)).toContain('面板绿色');

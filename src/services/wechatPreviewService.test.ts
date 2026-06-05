@@ -69,19 +69,33 @@ describe('wechatPreviewService', () => {
     expect(WECHAT_ARTICLE_CLASS).toBe(HTML_EXPORT_ARTICLE_CLASS);
   });
 
-  it('ships three simple built-in HTML export presets from the md2wechat theme files', () => {
+  it('ships the built-in HTML export presets', () => {
     expect(BUILT_IN_HTML_EXPORT_PRESETS.map((preset) => preset.id)).toEqual([
       'html-wechat-style',
       'html-ai',
       'html-ip',
+      'html-magazine',
+      'html-minimal',
+      'html-dark',
+      'html-blog',
+      'html-parchment',
+      'html-tech',
+      'html-academic',
     ]);
     expect(BUILT_IN_HTML_EXPORT_PRESETS.map((preset) => preset.name)).toEqual([
       '简洁图文',
       '清爽正文',
       '正式文档',
+      '杂志风',
+      '极简',
+      '暗色优雅',
+      '博客风',
+      '羊皮纸',
+      '科技感',
+      '学术',
     ]);
     expect(BUILT_IN_HTML_EXPORT_PRESETS.every((preset) => preset.css.includes('.note-to-mp'))).toBe(true);
-    expect(BUILT_IN_HTML_EXPORT_PRESETS.every((preset) => preset.source.includes('MIT'))).toBe(true);
+    expect(BUILT_IN_HTML_EXPORT_PRESETS.every((preset) => preset.source.length > 0)).toBe(true);
   });
 
   it('keeps hidden legacy base presets available for imported custom CSS presets', () => {

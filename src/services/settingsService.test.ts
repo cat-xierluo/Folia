@@ -29,7 +29,7 @@ import {
   setHtmlExportPresetEnabled,
   updateSettings,
 } from './settingsService';
-import type { CustomHtmlExportPresetId, HtmlExportPreset } from './htmlExportPresets';
+import { BUILT_IN_HTML_EXPORT_PRESETS, type CustomHtmlExportPresetId, type HtmlExportPreset } from './htmlExportPresets';
 import { importPresetFromJson, listPresets, type CustomPresetId, type PresetConfig } from './word';
 
 function customPreset(id: string, name: string) {
@@ -216,11 +216,9 @@ describe('settingsService', () => {
     expect(settings.htmlExportPresetId).toBe('html-wechat-style');
     expect(getHtmlExportPreset()).toBe('html-wechat-style');
     expect(getHtmlExportPresetConfig().name).toBe('简洁图文');
-    expect(listEnabledHtmlExportPresets().map((preset) => preset.id)).toEqual([
-      'html-wechat-style',
-      'html-ai',
-      'html-ip',
-    ]);
+    expect(listEnabledHtmlExportPresets().map((preset) => preset.id)).toEqual(
+      BUILT_IN_HTML_EXPORT_PRESETS.map((preset) => preset.id),
+    );
   });
 
   it('migrates legacy WeChat custom CSS into a default custom HTML export preset', () => {
@@ -272,11 +270,7 @@ describe('settingsService', () => {
 
   it('keeps at least one enabled HTML export preset when all built-ins are disabled', () => {
     updateSettings({
-      disabledHtmlExportPresetIds: [
-        'html-wechat-style',
-        'html-ai',
-        'html-ip',
-      ],
+      disabledHtmlExportPresetIds: BUILT_IN_HTML_EXPORT_PRESETS.map((preset) => preset.id),
     });
 
     expect(getHtmlExportPreset()).toBe('html-wechat-style');
