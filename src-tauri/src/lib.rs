@@ -5,9 +5,12 @@ use std::{
 
 #[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
 use tauri::Emitter;
-use tauri::Manager;
+use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 
 struct OpenedPaths(Mutex<Vec<String>>);
+
+const HTML_ANYTHING_URL: &str = "http://localhost:3000";
+const HTML_ANYTHING_IMPORT_KEY: &str = "folia-import-markdown";
 
 #[tauri::command]
 fn pending_opened_paths(app: tauri::AppHandle) -> Vec<String> {
@@ -36,6 +39,84 @@ fn write_opened_document(path: String, content: String) -> Result<(), String> {
   std::fs::write(&path, content).map_err(|error| format!("failed to write document: {error}"))
 }
 
+#[tauri::command]
+fn open_html_anything(
+  app: tauri::AppHandle,
+  content: Option<String>,
+  file_name: Option<String>,
+) -> Result<(), String> {
+  let label = "html-anything";
+  let import_script = html_anything_import_script(content, file_name)?;
+
+  // 如果窗口已存在，直接聚焦
+  if let Some(window) = app.get_webview_window(label) {
+    if let Some(script) = import_script {
+      window
+        .eval(script)
+        .map_err(|e| format!("failed to import markdown into html-anything: {e}"))?;
+    }
+    let _ = window.show();
+    let _ = window.set_focus();
+    return Ok(());
+  }
+
+  // 创建新窗口加载 localhost:3000
+  let mut builder = WebviewWindowBuilder::new(
+    &app,
+    label,
+    WebviewUrl::External(HTML_ANYTHING_URL.parse().unwrap()),
+  )
+  .title("Anything HTML")
+  .inner_size(1200.0, 800.0);
+
+  if let Some(script) = import_script {
+    builder = builder.initialization_script(script);
+  }
+
+  builder
+    .build()
+    .map_err(|e| format!("failed to open html-anything: {e}"))?;
+
+  Ok(())
+}
+
+fn html_anything_import_script(
+  content: Option<String>,
+  file_name: Option<String>,
+) -> Result<Option<String>, String> {
+  let Some(content) = content else {
+    return Ok(None);
+  };
+
+  if content.is_empty() {
+    return Ok(None);
+  }
+
+  let payload = serde_json::json!({
+    "source": "folia",
+    "content": content,
+    "fileName": file_name.filter(|name| !name.trim().is_empty()).unwrap_or_else(|| "Folia Markdown".into()),
+  });
+  let payload_json = serde_json::to_string(&payload)
+    .map_err(|e| format!("failed to encode html-anything import payload: {e}"))?;
+  let key_json = serde_json::to_string(HTML_ANYTHING_IMPORT_KEY)
+    .map_err(|e| format!("failed to encode html-anything import key: {e}"))?;
+
+  Ok(Some(format!(
+    r#"(function () {{
+  if (window.location.origin !== {origin}) return;
+  var payload = {payload};
+  payload.importedAt = new Date().toISOString();
+  localStorage.setItem({key}, JSON.stringify(payload));
+  window.dispatchEvent(new CustomEvent({key}, {{ detail: payload }}));
+}})();"#,
+    origin = serde_json::to_string(HTML_ANYTHING_URL)
+      .map_err(|e| format!("failed to encode html-anything origin: {e}"))?,
+    key = key_json,
+    payload = payload_json,
+  )))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
@@ -47,8 +128,15 @@ pub fn run() {
     .invoke_handler(tauri::generate_handler![
       pending_opened_paths,
       read_opened_document,
-      write_opened_document
+      write_opened_document,
+      open_html_anything
     ])
+    .on_window_event(|window, event| {
+      if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+        api.prevent_close();
+        let _ = window.hide();
+      }
+    })
     .setup(|app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(
