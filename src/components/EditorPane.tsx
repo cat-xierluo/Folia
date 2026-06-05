@@ -1,8 +1,7 @@
-import { useMemo } from 'react';
-import CodeMirror from '@uiw/react-codemirror';
-import { markdown } from '@codemirror/lang-markdown';
+import { useEffect, useRef } from 'react';
 import { EditorState } from '@codemirror/state';
-import { EditorView } from '@codemirror/view';
+import { EditorView, keymap, drawSelection, highlightActiveLine, highlightSpecialChars } from '@codemirror/view';
+import { markdown } from '@codemirror/lang-markdown';
 import { useSettings } from '../hooks/useSettings';
 
 type EditorPaneProps = {
@@ -12,54 +11,102 @@ type EditorPaneProps = {
 
 export function EditorPane({ source, onChange }: EditorPaneProps) {
   const settings = useSettings();
+  const containerRef = useRef<HTMLDivElement>(null);
+  const viewRef = useRef<EditorView | null>(null);
+  const onChangeRef = useRef(onChange);
+  const sourceRef = useRef(source);
+
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
+
+  useEffect(() => {
+    sourceRef.current = source;
+
+    const view = viewRef.current;
+    if (!view) return;
+
+    const currentSource = view.state.doc.toString();
+    if (currentSource === source) return;
+
+    view.dispatch({
+      changes: { from: 0, to: currentSource.length, insert: source },
+    });
+  }, [source]);
+
   const editorFontFamily = settings.editorFontFamily === 'System Default'
     ? 'var(--font-mono)'
     : `'${settings.editorFontFamily}', var(--font-mono)`;
 
-  const extensions = useMemo(() => {
-    const exts: Parameters<typeof CodeMirror>[0]['extensions'] = [markdown()];
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
 
-    if (settings.editorTabSize !== 4) {
-      exts.push(EditorState.tabSize.of(settings.editorTabSize));
-    }
-
-    if (settings.editorWordWrap) {
-      exts.push(EditorView.lineWrapping);
-    }
-
-    exts.push(
+    const extensions = [
+      markdown(),
+      drawSelection(),
+      highlightActiveLine(),
+      highlightSpecialChars(),
+      EditorView.lineWrapping,
+      EditorState.allowMultipleSelections.of(true),
+      keymap.of([
+        { key: 'Mod-z', run: () => false },
+        { key: 'Mod-Shift-z', run: () => false },
+      ]),
+      EditorView.updateListener.of((update) => {
+        if (update.docChanged) {
+          onChangeRef.current(update.state.doc.toString());
+        }
+      }),
       EditorView.theme({
         '&': {
           fontFamily: editorFontFamily,
+          height: '100%',
         },
         '.cm-content': {
           fontSize: `${settings.editorFontSize}px`,
           fontFamily: editorFontFamily,
+          caretColor: 'var(--accent)',
         },
         '.cm-gutters': {
           fontFamily: editorFontFamily,
+          fontSize: '11px',
+          color: 'var(--border)',
+          background: 'transparent',
+          borderRight: 'none',
         },
-      })
-    );
+        '.cm-activeLine, .cm-activeLineGutter': {
+          background: 'var(--control-active-bg)',
+        },
+        '&.cm-focused': {
+          outline: 'none',
+        },
+      }),
+    ];
 
-    return exts;
-  }, [editorFontFamily, settings.editorFontSize, settings.editorTabSize, settings.editorWordWrap]);
+    if (settings.editorTabSize !== 4) {
+      extensions.push(EditorState.tabSize.of(settings.editorTabSize));
+    }
+
+    const state = EditorState.create({
+      doc: sourceRef.current,
+      extensions,
+    });
+
+    const view = new EditorView({
+      state,
+      parent: container,
+    });
+
+    viewRef.current = view;
+
+    return () => {
+      view.destroy();
+      viewRef.current = null;
+    };
+  }, [editorFontFamily, settings.editorFontSize, settings.editorTabSize]);
 
   return (
-    <div className="editor-pane">
-      <CodeMirror
-        value={source}
-        height="100%"
-        extensions={extensions}
-        onChange={onChange}
-        spellCheck={settings.editorSpellCheck}
-        theme="light"
-        basicSetup={{
-          lineNumbers: settings.editorLineNumbers,
-          searchKeymap: true,
-          history: true,
-        }}
-      />
-    </div>
+    <div className="editor-pane" ref={containerRef} />
   );
 }
