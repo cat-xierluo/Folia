@@ -185,6 +185,15 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   border-color: color-mix(in oklch, var(--accent) 28%, transparent);
 }
 
+.app-toolbar button.discard-draft-button {
+  color: var(--danger);
+}
+
+.app-toolbar button.discard-draft-button:hover {
+  background: color-mix(in oklch, var(--danger) 10%, var(--control-hover-bg));
+  border-color: color-mix(in oklch, var(--danger) 34%, transparent);
+}
+
 .app-toolbar button.toolbar-update-button {
   width: auto;
   min-width: 0;

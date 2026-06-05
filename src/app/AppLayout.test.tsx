@@ -192,4 +192,50 @@ describe('AppLayout update flow', () => {
     expect(editorPaneMock.renderCount).toBeGreaterThan(0);
     expect(editorPaneMock.source).toBe(source);
   });
+
+  it('restores the previous file after discarding a new Markdown draft', async () => {
+    const content = '# 原文件';
+    fileServiceMock.openFile.mockResolvedValue({
+      path: '/tmp/original.md',
+      name: 'original.md',
+      content,
+      dirty: false,
+      lastSavedContent: content,
+      fileType: 'markdown',
+    });
+
+    await act(async () => {
+      root.render(<AppLayout />);
+      await flushPromises();
+    });
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', metaKey: true }));
+      await flushPromises();
+      await flushPromises();
+    });
+
+    expect(host.textContent).toContain('original.md');
+
+    const newButton = host.querySelector<HTMLButtonElement>('button[aria-label="新建 Markdown"]');
+    expect(newButton).toBeTruthy();
+
+    await act(async () => {
+      newButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await flushPromises();
+    });
+
+    expect(host.textContent).toContain('未命名');
+
+    const discardButton = host.querySelector<HTMLButtonElement>('button[aria-label="放弃新建 Markdown"]');
+    expect(discardButton).toBeTruthy();
+
+    await act(async () => {
+      discardButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await flushPromises();
+    });
+
+    expect(host.textContent).toContain('original.md');
+    expect(host.textContent).not.toContain('未命名');
+  });
 });
