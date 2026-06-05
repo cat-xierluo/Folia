@@ -2932,6 +2932,7 @@ a.about-info-value:hover {
   flex-direction: column;
   align-items: center;
   gap: 6px;
+  padding-top: 4px;
   color: var(--muted);
   font-size: 11px;
   line-height: 1.3;
