@@ -30,6 +30,23 @@
 
 ## 待处理
 
+### 跨仓协调
+
+#### ISS-005 Folia 仓官网 cleanup（迁出到 personal-site）
+
+- **优先级:** P1
+- **类型:** L2
+- **状态:** 已完成，待 PR 合并。
+- **问题:** Folia 官网内容已迁到独立仓 `cat-xierluo/personal-site` 统一管理，Folia 主仓仍保留 `website/` 子目录、`scripts/run-website.mjs` 转发脚本和 `deploy-website.yml` GitHub Pages workflow，根目录还有 `website:dev` / `website:build` / `website:preview` 等 npm 转发脚本和官网构建相关依赖；官网分散在两仓会形成发布源不一致的隐患。
+- **建议实现:**
+  - 删 Folia 仓 `website/` 目录、官网转发脚本和 Pages 部署 workflow。
+  - 删 `package.json` 中 `website:*` 脚本和官网构建相关 npm 依赖。
+  - 更新 `README.md` §"官方网站" 链接到 `https://cat-xierluo.github.io/personal-site/folia/`，移除官网调试小节和 `npm run website:build` 提示。
+  - 更新 `docs/ARCHITECTURE.md`，将"官方网站发布"小节改为引用 `personal-site` 仓的 `src/pages/folia.astro`。
+  - 在 `CHANGELOG.md` §"Unreleased" 记录本次清理，在 `docs/DECISIONS.md` 记录决策条目。
+- **验收:** Folia 仓 `git ls-files | grep -E '^website/|website:|deploy-website'` 全部为空；`npm install` 不再触发官网依赖；`docs/ARCHITECTURE.md` 与 `README.md` 官网链接一致指向 personal-site。
+- **实现:** 在独立 worktree `chore/iss-005-folia-cleanup`（基于 `origin/main`）下完成：删除 `website/` 目录、`scripts/run-website.mjs`、`.github/workflows/deploy-website.yml`；`package.json` 移除 `website:dev` / `website:build` / `website:preview` 脚本；`README.md` §"官方网站" 链接改为 `https://cat-xierluo.github.io/personal-site/folia/`，移除"调试官方静态网站"小节；`docs/ARCHITECTURE.md` 移除"网站放在独立 `website/` 目录"段落，"官方网站发布"小节改为引用 `personal-site` 仓的 `src/pages/folia.astro`；`CHANGELOG.md` §"Unreleased" 新增 Removed / Changed 段；`docs/DECISIONS.md` 新增 DEC-073 决策条目；`docs/TASKS.md` 即本条。验证：`git ls-files | grep -E '^website/|run-website\.mjs|deploy-website\.yml'` 为空；`grep -R "website:" package.json` 仅保留 `tauri:build:local` 等桌面命令；`git diff --check` 通过。下一步：在 worktree 内提交 → push `chore/iss-005-folia-cleanup` → `gh pr create` → 走 L2 闭环。
+
 ### 桌面打开与 HTML 阅读
 
 #### ISS-139 v0.3.18 桌面端打开主页面空白

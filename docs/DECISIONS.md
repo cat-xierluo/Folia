@@ -2,6 +2,31 @@
 
 ## 第一部分：决策记录
 
+### [DEC-073] - 2026-06-05 - Folia 仓官网 cleanup 并迁出到 personal-site
+
+**背景**
+Folia 官网内容已迁到独立仓 `cat-xierluo/personal-site` 统一管理（`src/pages/folia.astro`），发布地址为 `https://cat-xierluo.github.io/personal-site/folia/`。Folia 主仓仍保留 `website/` 子目录、`scripts/run-website.mjs` 转发脚本和 `.github/workflows/deploy-website.yml` Pages workflow；根目录还附带 `website:dev` / `website:build` / `website:preview` 三个转发脚本和官网构建相关 npm 依赖。官网同时在两仓维护会造成发布源、依赖图和 GitHub Pages 配置冲突，违背"桌面应用代码仓库保持单一职责"的项目约定。
+
+**决策**
+- Folia 仓删除 `website/` 目录、官网转发脚本 `scripts/run-website.mjs` 和 GitHub Pages 部署 workflow `deploy-website.yml`。
+- `package.json` 移除 `website:dev` / `website:build` / `website:preview` 三个 npm scripts；同步删除与官网构建相关的 npm 依赖。
+- `README.md` §"官方网站" 链接改为 `https://cat-xierluo.github.io/personal-site/folia/`，移除"调试官方静态网站"小节和 `npm run website:build` 提示。
+- `docs/ARCHITECTURE.md` 移除"网站放在独立 `website/` 目录"段落；"官方网站发布"小节改为引用 `personal-site` 仓的 `src/pages/folia.astro` 和部署地址。
+- `CHANGELOG.md` §"Unreleased" 新增 Removed / Changed 段，`docs/TASKS.md` 记录 ISS-005 完成。
+- 桌面应用 Vite 构建、官网 Astro 构建和 GitHub Pages 部署三件事由 `Folio` / `personal-site` 两个仓各自独立负责，不再交叉。
+
+**验证**
+- `git ls-files | grep -E '^website/|run-website\.mjs|deploy-website\.yml'` 输出为空。
+- `grep -R "website:" package.json` 不再包含 `website:dev` / `website:build` / `website:preview`。
+- `npm install` 不再触发官网依赖安装。
+- `git diff --check` 通过。
+- 在 worktree `chore/iss-005-folia-cleanup` 提 PR 后由 L2 闭环合并。
+
+**影响**
+- Folia 主仓恢复为单一桌面应用代码仓库，根目录配置和脚本只服务 Tauri + Vite + Vitest + Playwright。
+- 官网内容、详情页、GitHub Pages 部署与产品发布解耦；personal-site 仓可以独立迭代 i18n、wechat QR 等扩展项，不阻塞 Folia 发布。
+- 后续 Folia 仓 README 提到的"官方网站"统一指向 personal-site，避免文档链接和实际部署地址漂移。
+
 ### [DEC-072] - 2026-06-05 - 修复桌面生产包空白页并发布 v0.3.19
 
 **背景**

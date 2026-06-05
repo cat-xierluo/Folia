@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Removed
+
+- 删 `website/` Astro 子目录、官网构建转发脚本 `scripts/run-website.mjs` 和 GitHub Pages 部署 workflow `deploy-website.yml`，官网已迁到独立仓 `cat-xierluo/personal-site` 统一管理。
+- 删 `package.json` 中的 `website:dev` / `website:build` / `website:preview` 转发脚本和官网构建相关 npm 依赖；`docs/ARCHITECTURE.md` 改为引用 `personal-site` 仓维护的产品详情页。
+
+### Changed
+
+- `README.md` §"官方网站" 链接改到 `https://cat-xierluo.github.io/personal-site/folia/`，移除"调试官方静态网站"小节和相关 `npm run website:build` 命令提示。
+
 ## [0.3.19]
 
 ### Fixed
