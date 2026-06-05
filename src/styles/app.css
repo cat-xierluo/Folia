@@ -1842,6 +1842,7 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   align-items: center;
   justify-content: center;
   z-index: 2000;
+  /* Start from a visible opacity so the first paint is non-blank. */
   animation: settings-overlay-in 120ms ease-out both;
 }
 
@@ -1854,8 +1855,9 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   border-radius: 5px;
   overflow: hidden;
   box-shadow: 0 6px 32px var(--shadow-soft);
+  /* Transform-only entrance so the first frame is fully visible. */
   animation: settings-modal-in 140ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
-  will-change: opacity, transform;
+  will-change: transform;
 }
 
 .settings-overlay--loading {
@@ -1918,8 +1920,9 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 }
 
 @keyframes settings-overlay-in {
+  /* Skip the invisible-from-zero state so the first paint is visible. */
   from {
-    opacity: 0;
+    opacity: 0.7;
   }
   to {
     opacity: 1;
@@ -1927,12 +1930,11 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 }
 
 @keyframes settings-modal-in {
+  /* Transform-only entrance — no opacity animation, first frame is fully visible. */
   from {
-    opacity: 0;
     transform: translateY(6px) scale(0.985);
   }
   to {
-    opacity: 1;
     transform: translateY(0) scale(1);
   }
 }

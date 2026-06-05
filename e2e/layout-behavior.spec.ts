@@ -899,3 +899,80 @@ test('appearance settings switch the app into dark theme', async ({ page }) => {
   const tocBg = await page.locator('.floating-toc-panel').evaluate((el) => getComputedStyle(el).backgroundColor);
   expect(tocBg).not.toBe('rgb(255, 255, 255)');
 });
+
+test('settings modal first frame is non-blank on cold start (no preload window)', async ({ page }) => {
+  /* Cold start: navigate to the page, dismiss any preload window by NOT
+     hovering the settings button first, then click immediately. The first
+     frame after clicking must already be non-blank — the entrance animation
+     must NOT start from opacity 0. */
+  await page.goto('/');
+
+  const settingsButton = page.getByRole('button', { name: '设置' });
+  await settingsButton.click({ noWaitAfter: true });
+
+  /* Inspect the first frame synchronously. */
+  const firstFrame = await page.evaluate(() => {
+    const overlay = document.querySelector('.settings-overlay') as HTMLElement | null;
+    const modal = document.querySelector('.settings-modal') as HTMLElement | null;
+    if (!overlay || !modal) {
+      return { overlay: false, modal: false, overlayOpacity: 0, modalOpacity: 0 };
+    }
+    const overlayStyle = getComputedStyle(overlay);
+    const modalStyle = getComputedStyle(modal);
+    return {
+      overlay: true,
+      modal: true,
+      overlayOpacity: parseFloat(overlayStyle.opacity),
+      modalOpacity: parseFloat(modalStyle.opacity),
+    };
+  });
+
+  expect(firstFrame.overlay).toBe(true);
+  expect(firstFrame.modal).toBe(true);
+  /* The entrance animation must not start from an invisible state — first
+     frame opacity must be at least 50%, so the user never sees a blank
+     overlay / modal before the animation starts. */
+  expect(firstFrame.overlayOpacity).toBeGreaterThan(0.5);
+  expect(firstFrame.modalOpacity).toBeGreaterThan(0.5);
+
+  /* After the entrance animation settles, the modal must be fully visible. */
+  await waitForElementAnimations(page, '.settings-modal');
+  await expect(page.locator('.settings-modal-content')).toBeVisible();
+});
+
+test('settings modal first frame is non-blank after cache is cleared', async ({ page }) => {
+  /* Cache clear: open the page, clear localStorage, reload, then click
+     settings. This simulates a user who has cleared browser data and
+     reopens the app — the settings chunk must still resolve fast enough
+     to avoid a blank first frame. */
+  await page.goto('/');
+  await page.evaluate(() => {
+    window.localStorage.clear();
+  });
+  await page.reload();
+
+  const settingsButton = page.getByRole('button', { name: '设置' });
+  await settingsButton.click({ noWaitAfter: true });
+
+  const firstFrame = await page.evaluate(() => {
+    const overlay = document.querySelector('.settings-overlay') as HTMLElement | null;
+    const modal = document.querySelector('.settings-modal') as HTMLElement | null;
+    if (!overlay || !modal) {
+      return { overlay: false, modal: false, overlayOpacity: 0, modalOpacity: 0 };
+    }
+    return {
+      overlay: true,
+      modal: true,
+      overlayOpacity: parseFloat(getComputedStyle(overlay).opacity),
+      modalOpacity: parseFloat(getComputedStyle(modal).opacity),
+    };
+  });
+
+  expect(firstFrame.overlay).toBe(true);
+  expect(firstFrame.modal).toBe(true);
+  expect(firstFrame.overlayOpacity).toBeGreaterThan(0.5);
+  expect(firstFrame.modalOpacity).toBeGreaterThan(0.5);
+
+  await waitForElementAnimations(page, '.settings-modal');
+  await expect(page.locator('.settings-modal-content')).toBeVisible();
+});

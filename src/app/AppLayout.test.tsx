@@ -66,6 +66,16 @@ vi.mock('../components/WysiwygEditorPane', () => ({
   WysiwygEditorPane: () => null,
 }));
 
+vi.mock('../components/SettingsPage', () => ({
+  SettingsPage: () => (
+    <div className="settings-overlay" data-testid="settings-page-stub">
+      <div className="settings-modal">
+        <div className="settings-modal-content">settings-page-content</div>
+      </div>
+    </div>
+  ),
+}));
+
 function flushPromises(): Promise<void> {
   return Promise.resolve();
 }
@@ -191,5 +201,65 @@ describe('AppLayout update flow', () => {
 
     expect(editorPaneMock.renderCount).toBeGreaterThan(0);
     expect(editorPaneMock.source).toBe(source);
+  });
+});
+
+describe('AppLayout settings first-open', () => {
+  let host: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    Object.defineProperty(window, '__TAURI_INTERNALS__', {
+      configurable: true,
+      value: {},
+    });
+    host = document.createElement('div');
+    document.body.append(host);
+    root = createRoot(host);
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    host.remove();
+    delete (window as typeof window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+    vi.clearAllMocks();
+  });
+
+  it('preloads the settings chunk immediately on mount, without a 500ms delay', async () => {
+    await act(async () => {
+      root.render(<AppLayout />);
+      await flushPromises();
+    });
+
+    /* No timer advancement — the preload must already be in flight. */
+    expect(host.querySelector('.settings-overlay')).toBeNull();
+  });
+
+  it('renders the real settings page on the first frame after opening, not the skeleton fallback', async () => {
+    await act(async () => {
+      root.render(<AppLayout />);
+      await flushPromises();
+    });
+
+    const settingsButton = host.querySelector<HTMLButtonElement>('button[aria-label="设置"]');
+    expect(settingsButton).not.toBeNull();
+
+    /* After the preload Promise resolves and the click is flushed, the
+       settings overlay must be in the DOM with the real content rather than
+       the SettingsPageFallback skeleton. */
+    await act(async () => {
+      settingsButton!.click();
+      /* Multiple microtask flushes to settle: dynamic import → Suspense
+         resolve → React commit. */
+      for (let i = 0; i < 5; i += 1) {
+        await flushPromises();
+      }
+    });
+
+    const overlay = host.querySelector('.settings-overlay');
+    expect(overlay).not.toBeNull();
+    expect(overlay!.classList.contains('settings-overlay--loading')).toBe(false);
+    expect(host.querySelector('[data-testid="settings-page-stub"]')).not.toBeNull();
+    expect(host.textContent).toContain('settings-page-content');
   });
 });

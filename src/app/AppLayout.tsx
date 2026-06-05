@@ -155,27 +155,10 @@ export function AppLayout() {
   }, [settings.theme]);
 
   useEffect(() => {
-    if (import.meta.env.MODE === 'test') return;
-
-    let idleId: number | undefined;
-    const timeout = window.setTimeout(() => {
-      const preload = () => {
-        void preloadSettingsPage();
-      };
-
-      if ('requestIdleCallback' in window) {
-        idleId = window.requestIdleCallback(preload, { timeout: 1200 });
-      } else {
-        preload();
-      }
-    }, 500);
-
-    return () => {
-      window.clearTimeout(timeout);
-      if (idleId !== undefined && 'cancelIdleCallback' in window) {
-        window.cancelIdleCallback(idleId);
-      }
-    };
+    /* Kick off the settings chunk immediately on mount so the modal is fully
+       loaded by the time the user first opens it. The dynamic import is small
+       (≈10KB after ISS-126) and runs in parallel with the initial render. */
+    void preloadSettingsPage();
   }, []);
 
   const handleOpen = useCallback(async () => {
