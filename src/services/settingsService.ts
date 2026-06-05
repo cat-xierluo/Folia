@@ -387,6 +387,20 @@ export function resolvePreviewFontFamily(settings: PreviewFontSettings): string 
   ]);
 }
 
+export function resolvePreviewChineseFontFamily(settings: PreviewFontSettings): string {
+  return joinFontStack([
+    ...previewChineseFontStack(settings),
+    'sans-serif',
+  ]);
+}
+
+export function resolvePreviewLatinFontFamily(settings: PreviewFontSettings): string {
+  return joinFontStack([
+    ...previewLatinFontStack(settings),
+    'sans-serif',
+  ]);
+}
+
 export function resolvePreviewHeadingFontFamily(settings: PreviewFontSettings): string {
   switch (settings.previewHeadingFontFamily) {
     case 'Chinese':

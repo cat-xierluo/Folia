@@ -23,6 +23,8 @@ import {
   removeCustomHtmlExportPreset,
   resolvePreviewFontFamily,
   resolvePreviewHeadingFontFamily,
+  resolvePreviewChineseFontFamily,
+  resolvePreviewLatinFontFamily,
   setExportPreset,
   setExportPresetEnabled,
   setHtmlExportPreset,
@@ -195,6 +197,23 @@ describe('settingsService', () => {
     expect(resolvePreviewFontFamily(customSettings)).toContain('"IBM Plex Serif"');
     expect(resolvePreviewFontFamily(customSettings)).toContain('"霞鹜文楷 bad"');
     expect(resolvePreviewHeadingFontFamily(customSettings)).toContain('"Source Han Serif SC"');
+    expect(resolvePreviewChineseFontFamily(customSettings)).toContain('"霞鹜文楷 bad"');
+    expect(resolvePreviewLatinFontFamily(customSettings)).toContain('"IBM Plex Serif"');
+  });
+
+  it('exposes Chinese and Latin font stacks independent of the base preset', () => {
+    const settings = getSettings();
+    settings.previewChineseFontFamily = 'Songti SC';
+    settings.previewLatinFontFamily = 'Iowan Old Style';
+    settings.previewFontFamily = 'Default';
+
+    const chinese = resolvePreviewChineseFontFamily(settings);
+    const latin = resolvePreviewLatinFontFamily(settings);
+
+    expect(chinese).toContain('Songti SC');
+    expect(chinese).not.toContain('Iowan Old Style');
+    expect(latin).toContain('Iowan Old Style');
+    expect(latin).not.toContain('Songti SC');
   });
 
   it('keeps old settings compatible with the default empty WeChat custom CSS', () => {

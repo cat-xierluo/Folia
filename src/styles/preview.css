@@ -29,9 +29,44 @@
 .preview-content h4,
 .preview-content h5,
 .preview-content h6 {
-  font-family: var(--preview-heading-font-family, var(--preview-font-family, var(--font-reading)));
+  font-family: var(--preview-heading-font-family, var(--preview-font-family, var(--font-reading))) !important;
   letter-spacing: 0;
   color: var(--fg);
+}
+
+/* Per-script font cascade so Chinese and Latin stay in sync with the
+   preview-side selectors. Direct child selectors carry equal specificity to
+   Vditor's `.vditor-reset *` rules, and Vditor's CSS is loaded after
+   preview.css via dynamic import, so we append `!important` to win the
+   cascade. This keeps font changes reactive to settings updates without
+   forcing Vditor to re-parse the Markdown source. */
+.preview-content > p,
+.preview-content > ul,
+.preview-content > ol,
+.preview-content > blockquote,
+.preview-content > pre,
+.preview-content > table,
+.preview-content > dl,
+.preview-content > figure,
+.preview-content > details,
+.preview-content > section,
+.preview-content > article,
+.preview-content > aside,
+.preview-content > header,
+.preview-content > footer,
+.preview-content > main,
+.preview-content > nav {
+  font-family: var(--preview-latin-font-family, var(--preview-font-family, var(--font-body))) !important;
+}
+
+.preview-content li,
+.preview-content li > p,
+.preview-content td,
+.preview-content th,
+.preview-content blockquote > p,
+.preview-content dd,
+.preview-content dt {
+  font-family: var(--preview-latin-font-family, var(--preview-font-family, var(--font-body))) !important;
 }
 
 .preview-content h1 {

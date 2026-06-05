@@ -3,7 +3,7 @@ import '../styles/preview.css';
 import type { TocItem } from '../types/document';
 import { useSettings } from '../hooks/useSettings';
 import { detectMarkdownRenderFeatures } from '../services/markdownFeatureDetector';
-import { resolvePreviewFontFamily, resolvePreviewHeadingFontFamily } from '../services/settingsService';
+import { resolvePreviewFontFamily, resolvePreviewHeadingFontFamily, resolvePreviewChineseFontFamily, resolvePreviewLatinFontFamily } from '../services/settingsService';
 import { VDITOR_PREVIEW_I18N } from '../services/vditorPreviewConfig';
 import { createHtmlReadingPreviewHtml } from '../services/htmlReadingPreviewService';
 
@@ -25,6 +25,8 @@ export function PreviewPane({ source, tocIds, wideTables = false, renderMode = '
   );
   const previewFontFamily = resolvePreviewFontFamily(settings);
   const previewHeadingFontFamily = resolvePreviewHeadingFontFamily(settings);
+  const previewChineseFontFamily = resolvePreviewChineseFontFamily(settings);
+  const previewLatinFontFamily = resolvePreviewLatinFontFamily(settings);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -87,6 +89,8 @@ export function PreviewPane({ source, tocIds, wideTables = false, renderMode = '
         '--preview-width': `${settings.previewWidth}px`,
         '--preview-font-family': previewFontFamily,
         '--preview-heading-font-family': previewHeadingFontFamily,
+        '--preview-chinese-font-family': previewChineseFontFamily,
+        '--preview-latin-font-family': previewLatinFontFamily,
       } as React.CSSProperties}
     >
       <div

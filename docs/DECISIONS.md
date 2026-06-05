@@ -2,6 +2,29 @@
 
 ## 第一部分：决策记录
 
+### [DEC-075] - 2026-06-05 - 阅读字体设置走 CSS 变量而非 Vditor 重渲染
+
+**背景**
+ISS-143 反馈在设置页切换中文字体、英文字体或标题字体后，主阅读预览面板不实时更新，需要切换文件或重新触发渲染才会生效，体验割裂。Vditor 自带 `font-family` 比当前 `.preview-content` 选择器优先级更高，仅靠 CSS 变量从 wrapper 级联无法生效。
+
+**决策**
+- 新增 `resolvePreviewChineseFontFamily` / `resolvePreviewLatinFontFamily` 两个 resolve 函数，按中 / 英角色分别输出解析后的字体栈；`PreviewPane` / `DocxPreviewPane` 在 `style` 上同步写入 `--preview-chinese-font-family` / `--preview-latin-font-family`。
+- `.preview-content` 直接子元素（p / ul / ol / blockquote / pre / table / figure / section / article / aside / header / footer / main / nav）以及 `li / li > p / td / th / blockquote > p / dd / dt` 选择器以新变量覆盖 `font-family`；标题元素继续消费 `--preview-heading-font-family` 并加 `!important` 以稳压 Vditor 自带样式。
+- 不重新调用 `Vditor.preview()`：CSS 变量变化即可让浏览器重算 `font-family`，避免每次切字体都重新解析 Markdown 引发闪白。
+- CodeMirror 源码模式 `editorFontFamily` 已通过 `useMemo` deps 覆盖，无需新增逻辑。
+- 暂不引入"settings version"机制：当前每个 resolve 函数都是纯函数，调用站点直接基于 settings 重新计算 style prop，等出现明显的"无关设置触发 re-render"再补。
+
+**验证**
+- `npm test`（200 用例，含新增 2 个 resolve 单测）
+- `npm run lint`
+- `npm run build`
+- `git diff --check`
+
+**影响**
+- 中 / 英 / 标题字体设置变更在 < 100ms 内反映到主阅读预览，体感即时。
+- `!important` 进一步覆盖 Vditor 自带字体；未来若升级 Vditor 且默认样式调整，需要复测 `.preview-content > *` 与 li/td/th 子选择器是否仍生效。
+- `useSettings` 仍返回完整 `AppSettings`，切换任一设置都会触发 `PreviewPane` 重新计算 style；如出现"无关字段变更也导致 preview 重新解析"的性能问题，再考虑加 settings version。
+
 ### [DEC-074] - 2026-06-05 - 固定大纲改为左侧常驻栏
 
 **背景**

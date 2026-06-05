@@ -13,6 +13,11 @@ All notable changes to this project will be documented in this file.
 
 - `README.md` §"官方网站" 链接改到 `https://cat-xierluo.github.io/personal-site/folia/`，移除"调试官方静态网站"小节和相关 `npm run website:build` 命令提示。
 - 浮动大纲固定后改为左侧常驻栏，占用独立阅读空间，避免大纲面板覆盖正文；固定状态下可通过面板右上角按钮取消固定。
+- 阅读预览和 `.docx` HTML 预览支持按中文字体、英文字体独立响应设置变更：通过新增的 `--preview-chinese-font-family` / `--preview-latin-font-family` CSS 变量直接消费 `useSettings` 同步写入根容器的字串，Vditor 渲染实例无需重新解析 Markdown；标题字体仍走 `--preview-heading-font-family`，对 Vditor 生成的标题元素以 `!important` 优先于自带 `font-family`。
+
+### Fixed
+
+- 修复在设置页切换中文字体、英文字体或标题字体后，主阅读预览面板不实时更新的问题：以前 CSS 变量变化被 Vditor 自带 `font-family` 覆盖，需要切换文件或重新触发渲染才会生效；现在 CSS 变量直接控制正文 / 列表 / 表格 / 引用等 Vditor 元素的字体并以 `!important` 优先于其默认样式。
 
 ## [0.3.19]
 

@@ -109,6 +109,20 @@
 - **验收:** HTML 文件从阅读页进入源码模式后能显示原始 HTML；回归测试覆盖真实编辑器文本。
 - **实现:** 新增 `src/app/AppLayoutSourceEditor.test.tsx`，通过真实 CodeMirror DOM 断言 HTML 源码可见；源码切换链路继续复用 `file.content`。
 
+#### ISS-143 阅读字体调整后预览区实时刷新
+
+- **优先级:** P1
+- **类型:** L2
+- **状态:** 已完成。
+- **问题:** 在设置页切换中文字体、英文字体或标题字体后，主阅读预览面板不实时更新，需要切换文件或重新触发渲染才生效；用户感受割裂。Vditor 自带 `font-family` 设置比当前 `.preview-content` 选择器优先级更高，导致 CSS 变量变化被覆盖。
+- **建议实现:**
+  - 新增 `resolvePreviewChineseFontFamily` / `resolvePreviewLatinFontFamily`，按中/英角色分别输出解析后的字体栈，落到 `--preview-chinese-font-family` / `--preview-latin-font-family` CSS 变量。
+  - `.preview-shell` 在 `PreviewPane` / `DocxPreviewPane` 同步写入上述变量，`.preview-content` 直接子元素（p / ul / ol / blockquote / pre / table / li / td / th 等）以新变量覆盖 Vditor 默认 `font-family`。
+  - 标题元素继续消费 `--preview-heading-font-family` 并加 `!important` 以稳压 Vditor 默认。
+  - 不依赖 Vditor 重新解析 Markdown：CSS 变量变化即可让浏览器重新计算 `font-family`，避免每次切字体都重渲染整页。
+- **验收:** 在设置页连续切换中/英/标题字体，主阅读预览在 < 100ms 内可见字体变化且不闪白；CodeMirror 源码编辑字体随 `editorFontFamily` 实时刷新；`settingsService.test.ts` 新增 `resolvePreviewChineseFontFamily` / `resolvePreviewLatinFontFamily` 单测，`npm test`、`npm run lint`、`npm run build`、`git diff --check` 通过。
+- **实现:** 在 `src/services/settingsService.ts` 导出 `resolvePreviewChineseFontFamily` / `resolvePreviewLatinFontFamily`；`PreviewPane.tsx` / `DocxPreviewPane.tsx` 在 `style` 上写入新 CSS 变量；`src/styles/preview.css` 在 `.preview-content > p/ul/...` 与 `li/td/th/...` 选择器上覆盖 `font-family`；`settingsService.test.ts` 增补两个 resolve 函数独立验证。验证：`npm test`（200 用例）、`npm run lint`、`npm run build` 全部通过。
+
 #### ISS-133 HTML 文件阅读预览渲染残留源码符号
 
 - **优先级:** P1
