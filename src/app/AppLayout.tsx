@@ -136,6 +136,8 @@ export function AppLayout() {
   const updateDownloadVersionRef = useRef<string | null>(null);
   const mainContentRef = useRef<HTMLDivElement>(null);
   const [file, setFile] = useState<OpenedFile>(createEmptyFile());
+  const [newDraftReturnFile, setNewDraftReturnFile] = useState<OpenedFile | null>(null);
+  const [newDraftActive, setNewDraftActive] = useState(false);
   const [toc, setToc] = useState<TocItem[]>([]);
   const [tocPinned, setTocPinned] = useState(false);
   const [activeTocIndex, setActiveTocIndex] = useState(0);
@@ -182,6 +184,8 @@ export function AppLayout() {
     const { openFile } = await import('../services/fileService');
     const opened = await openFile(settings.defaultEncoding);
     if (opened) {
+      setNewDraftActive(false);
+      setNewDraftReturnFile(null);
       setFile(opened);
       setToc(extractToc(opened.content));
       if (opened.path) setLastOpenedPath(opened.path);
@@ -194,9 +198,41 @@ export function AppLayout() {
     }
   }, [settings.defaultEncoding]);
 
+  const handleNew = useCallback(() => {
+    reopenAttempted.current = true;
+    if (!newDraftActive) {
+      setNewDraftReturnFile(file);
+    }
+    setNewDraftActive(true);
+    setFile(createEmptyFile());
+    setToc([]);
+    setHtmlPresentationVisible(false);
+    setEditorMode('wysiwyg');
+    setRightPanelMode('none');
+  }, [file, newDraftActive]);
+
+  const handleDiscardNewDraft = useCallback(() => {
+    if (!newDraftActive) return;
+
+    const restored = newDraftReturnFile ?? createEmptyFile();
+    setFile(restored);
+    setToc(restored.fileType === 'docx' ? [] : extractToc(restored.content));
+    setNewDraftActive(false);
+    setNewDraftReturnFile(null);
+    setHtmlPresentationVisible(false);
+
+    if (restored.fileType === 'docx') {
+      setRightPanelMode('none');
+    } else {
+      setEditorMode('wysiwyg');
+    }
+  }, [newDraftActive, newDraftReturnFile]);
+
   const handleOpenPath = useCallback(async (path: string) => {
     const { openPath } = await import('../services/fileService');
     const opened = await openPath(path, settings.defaultEncoding);
+    setNewDraftActive(false);
+    setNewDraftReturnFile(null);
     setFile(opened);
     setToc(opened.fileType === 'docx' ? [] : extractToc(opened.content));
     setLastOpenedPath(path);
@@ -212,6 +248,10 @@ export function AppLayout() {
     if (file.fileType === 'docx') return;
     const { saveFile } = await import('../services/fileService');
     const updated = await saveFile(file);
+    if (updated.path) {
+      setNewDraftActive(false);
+      setNewDraftReturnFile(null);
+    }
     setFile(updated);
     if (updated.path) setLastOpenedPath(updated.path);
   }, [file]);
@@ -220,6 +260,10 @@ export function AppLayout() {
     if (file.fileType === 'docx') return;
     const { saveFileAs } = await import('../services/fileService');
     const updated = await saveFileAs(file);
+    if (updated.path) {
+      setNewDraftActive(false);
+      setNewDraftReturnFile(null);
+    }
     setFile(updated);
     if (updated.path) setLastOpenedPath(updated.path);
   }, [file]);
@@ -337,11 +381,12 @@ export function AppLayout() {
       if (mod && e.key === 'o') { e.preventDefault(); handleOpen(); }
       if (mod && e.key === 's' && !e.shiftKey) { e.preventDefault(); handleSave(); }
       if (mod && e.key === 's' && e.shiftKey) { e.preventDefault(); handleSaveAs(); }
+      if (mod && e.key.toLowerCase() === 'w' && newDraftActive) { e.preventDefault(); handleDiscardNewDraft(); }
       if (mod && e.shiftKey && e.key === 'E') { e.preventDefault(); handleExportWord(); }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [handleOpen, handleSave, handleSaveAs, handleExportWord]);
+  }, [handleOpen, handleSave, handleSaveAs, handleDiscardNewDraft, handleExportWord, newDraftActive]);
 
   useEffect(() => {
     const handler = async (e: DragEvent) => {
@@ -441,7 +486,7 @@ export function AppLayout() {
   }, [handleOpenPath, isTauriRuntime]);
 
   useEffect(() => {
-    if (!systemOpenChecked || !settings.reopenLastFile || file.path || reopenAttempted.current) return;
+    if (!systemOpenChecked || !settings.reopenLastFile || file.path || reopenAttempted.current || newDraftActive) return;
     const lastPath = getLastOpenedPath();
     if (!lastPath) return;
     reopenAttempted.current = true;
@@ -466,7 +511,7 @@ export function AppLayout() {
         window.cancelIdleCallback(idleId);
       }
     };
-  }, [file.path, handleOpenPath, settings.reopenLastFile, systemOpenChecked]);
+  }, [file.path, handleOpenPath, newDraftActive, settings.reopenLastFile, systemOpenChecked]);
 
   useEffect(() => {
     if (!settings.autoUpdateCheck || autoUpdateCheckStarted.current || !isTauriRuntime) return;
@@ -698,9 +743,12 @@ export function AppLayout() {
         wordPreviewVisible={rightPanelMode === 'word'}
         wechatPreviewVisible={rightPanelMode === 'wechat'}
         editingDisabled={isDocx}
+        newDraftActive={newDraftActive}
         onToggleEditorMode={handleToggleEditorMode}
         onToggleWordPreview={handleToggleWordPreview}
         onToggleWechatPreview={handleToggleWechatPreview}
+        onNew={handleNew}
+        onDiscardNewDraft={handleDiscardNewDraft}
         onOpen={handleOpen}
         onSave={handleSave}
         onSaveAs={handleSaveAs}

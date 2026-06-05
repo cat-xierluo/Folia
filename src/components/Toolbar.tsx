@@ -1,12 +1,14 @@
 import {
   BookOpenText,
   Braces,
+  FilePlus,
   FolderOpen,
   Newspaper,
   RefreshCw,
   Save,
   SaveAll,
   SlidersHorizontal,
+  X,
 } from 'lucide-react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useSettings } from '../hooks/useSettings';
@@ -27,9 +29,12 @@ type ToolbarProps = {
   wordPreviewVisible: boolean;
   wechatPreviewVisible: boolean;
   editingDisabled: boolean;
+  newDraftActive: boolean;
   onToggleEditorMode: () => void;
   onToggleWordPreview: () => void;
   onToggleWechatPreview: () => void;
+  onNew: () => void;
+  onDiscardNewDraft: () => void;
   onOpen: () => void;
   onSave: () => void;
   onSaveAs: () => void;
@@ -42,7 +47,7 @@ type ToolbarProps = {
 export function Toolbar({
   dirty, fileName,
   editorMode, wordPreviewVisible, wechatPreviewVisible, editingDisabled, onToggleEditorMode, onToggleWordPreview, onToggleWechatPreview,
-  onOpen, onSave, onSaveAs, onOpenSettings, onPreloadSettings, updateStatus, onRestartUpdate,
+  newDraftActive, onNew, onDiscardNewDraft, onOpen, onSave, onSaveAs, onOpenSettings, onPreloadSettings, updateStatus, onRestartUpdate,
 }: ToolbarProps) {
   const settings = useSettings();
   const t = (key: Parameters<typeof translate>[1]) => translate(settings.locale, key);
@@ -65,6 +70,20 @@ export function Toolbar({
     >
       <div className="toolbar-left">
         <div className="toolbar-group toolbar-file-actions" aria-label={t('toolbarFileGroup')}>
+          <button data-no-window-drag="true" onClick={onNew} title={t('toolbarNewTitle')} aria-label={t('toolbarNewLabel')}>
+            <FilePlus size={iconSize} strokeWidth={strokeWidth} />
+          </button>
+          {newDraftActive && (
+            <button
+              data-no-window-drag="true"
+              className="discard-draft-button"
+              onClick={onDiscardNewDraft}
+              title={t('toolbarDiscardNewDraftTitle')}
+              aria-label={t('toolbarDiscardNewDraftLabel')}
+            >
+              <X size={iconSize} strokeWidth={strokeWidth} />
+            </button>
+          )}
           <button data-no-window-drag="true" onClick={onOpen} title={t('toolbarOpenTitle')} aria-label={t('toolbarOpenLabel')}>
             <FolderOpen size={iconSize} strokeWidth={strokeWidth} />
           </button>
