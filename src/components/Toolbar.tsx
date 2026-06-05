@@ -1,6 +1,7 @@
 import {
   BookOpenText,
   Braces,
+  Columns2,
   FilePlus,
   FolderOpen,
   Newspaper,
@@ -29,10 +30,13 @@ type ToolbarProps = {
   wordPreviewVisible: boolean;
   wechatPreviewVisible: boolean;
   editingDisabled: boolean;
+  splitViewActive: boolean;
   newDraftActive: boolean;
   onToggleEditorMode: () => void;
   onToggleWordPreview: () => void;
   onToggleWechatPreview: () => void;
+  onToggleSplitView: () => void;
+  onOpenB: () => void;
   onNew: () => void;
   onDiscardNewDraft: () => void;
   onOpen: () => void;
@@ -46,8 +50,11 @@ type ToolbarProps = {
 
 export function Toolbar({
   dirty, fileName,
-  editorMode, wordPreviewVisible, wechatPreviewVisible, editingDisabled, onToggleEditorMode, onToggleWordPreview, onToggleWechatPreview,
-  newDraftActive, onNew, onDiscardNewDraft, onOpen, onSave, onSaveAs, onOpenSettings, onPreloadSettings, updateStatus, onRestartUpdate,
+  editorMode, wordPreviewVisible, wechatPreviewVisible, editingDisabled,
+  splitViewActive, newDraftActive,
+  onToggleEditorMode, onToggleWordPreview, onToggleWechatPreview,
+  onToggleSplitView, onOpenB,
+  onNew, onDiscardNewDraft, onOpen, onSave, onSaveAs, onOpenSettings, onPreloadSettings, updateStatus, onRestartUpdate,
 }: ToolbarProps) {
   const settings = useSettings();
   const t = (key: Parameters<typeof translate>[1]) => translate(settings.locale, key);
@@ -93,6 +100,20 @@ export function Toolbar({
           <button data-no-window-drag="true" onClick={onSaveAs} disabled={editingDisabled} title={t('toolbarSaveAsTitle')} aria-label={t('toolbarSaveAsLabel')}>
             <SaveAll size={iconSize} strokeWidth={strokeWidth} />
           </button>
+          <button
+            data-no-window-drag="true"
+            className={splitViewActive ? 'active' : ''}
+            onClick={onToggleSplitView}
+            title={splitViewActive ? '关闭对比视图' : '打开对比视图'}
+            aria-label="对比视图"
+          >
+            <Columns2 size={iconSize} strokeWidth={strokeWidth} />
+          </button>
+          {splitViewActive && (
+            <button data-no-window-drag="true" onClick={onOpenB} title="打开右侧文件" aria-label="打开右侧文件">
+              <FolderOpen size={iconSize} strokeWidth={strokeWidth} />
+            </button>
+          )}
         </div>
       </div>
       <div className="toolbar-title" data-tauri-drag-region aria-label={t('currentFileLabel')}>
@@ -163,6 +184,7 @@ export function Toolbar({
           >
             <Newspaper size={iconSize} strokeWidth={strokeWidth} />
           </button>
+
         </div>
         <div className="toolbar-group toolbar-navigation-actions" aria-label={t('toolbarNavGroup')}>
           <button
