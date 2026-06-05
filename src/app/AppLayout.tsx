@@ -900,6 +900,7 @@ export function AppLayout() {
     <div className="app-layout" data-theme={settings.theme} style={appStyle}>
       <Toolbar
         dirty={file.dirty}
+        fileContent={file.content}
         fileName={file.name}
         editorMode={editorMode}
         wordPreviewVisible={rightPanelMode === 'word'}

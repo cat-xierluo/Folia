@@ -4,6 +4,7 @@ import {
   Columns2,
   FilePlus,
   FolderOpen,
+  Globe,
   Newspaper,
   RefreshCw,
   Save,
@@ -12,6 +13,7 @@ import {
   X,
 } from 'lucide-react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { invoke } from '@tauri-apps/api/core';
 import { useSettings } from '../hooks/useSettings';
 import { translate } from '../services/i18n';
 import { handleTitlebarMouseDown } from '../services/titlebarDrag';
@@ -26,6 +28,7 @@ type UpdateToolbarStatus = {
 type ToolbarProps = {
   dirty: boolean;
   fileName: string;
+  fileContent: string;
   editorMode: EditorMode;
   wordPreviewVisible: boolean;
   wechatPreviewVisible: boolean;
@@ -49,7 +52,7 @@ type ToolbarProps = {
 };
 
 export function Toolbar({
-  dirty, fileName,
+  dirty, fileName, fileContent,
   editorMode, wordPreviewVisible, wechatPreviewVisible, editingDisabled,
   splitViewActive, newDraftActive,
   onToggleEditorMode, onToggleWordPreview, onToggleWechatPreview,
@@ -185,6 +188,18 @@ export function Toolbar({
             <Newspaper size={iconSize} strokeWidth={strokeWidth} />
           </button>
 
+          <button
+            data-no-window-drag="true"
+            onClick={() => invoke('open_html_anything', {
+              content: fileContent,
+              fileName,
+            }).catch((e) => console.warn('Failed to open Anything HTML:', e))}
+            disabled={editingDisabled}
+            title="把当前 Markdown 发送到 Anything HTML（需先启动 localhost:3000）"
+            aria-label="Anything HTML"
+          >
+            <Globe size={iconSize} strokeWidth={strokeWidth} />
+          </button>
         </div>
         <div className="toolbar-group toolbar-navigation-actions" aria-label={t('toolbarNavGroup')}>
           <button
