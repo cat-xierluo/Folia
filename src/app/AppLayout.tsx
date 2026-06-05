@@ -25,6 +25,7 @@ import { findHtmlTableBlocks } from '../services/htmlTableBlockService';
 import { Toolbar, type EditorMode } from '../components/Toolbar';
 import { StatusBar } from '../components/StatusBar';
 import { FloatingToc } from '../components/FloatingToc';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 
 const EditorPane = lazy(() =>
   import('../components/EditorPane').then((module) => ({ default: module.EditorPane })),
@@ -77,6 +78,15 @@ const HtmlTableEditor = lazy(() =>
 
 type AvailableUpdate = Extract<UpdateCheckResult, { status: 'available' }>;
 type RightPanelMode = 'none' | 'word' | 'wechat';
+type DropPosition = {
+  x: number;
+  y: number;
+  toLogical?: (scaleFactor: number) => { x: number; y: number };
+};
+type PositionPoint = {
+  x: number;
+  y: number;
+};
 type UpdateInstallState =
   | { phase: 'idle' }
   | { phase: 'downloading'; source: UpdateSource; update: AvailableUpdate }
@@ -127,6 +137,73 @@ function toUpdateErrorMessage(error: unknown): string {
   return '更新安装失败';
 }
 
+function uniqueDropPoints(points: PositionPoint[]): PositionPoint[] {
+  const seen = new Set<string>();
+
+  return points.filter((point) => {
+    if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) return false;
+    const key = `${Math.round(point.x * 100) / 100}:${Math.round(point.y * 100) / 100}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function dropPointCandidates(position: DropPosition, windowOrigin?: PositionPoint | null): PositionPoint[] {
+  const scaleFactor = window.devicePixelRatio || 1;
+  const points: PositionPoint[] = [
+    { x: position.x, y: position.y },
+  ];
+
+  if (typeof position.toLogical === 'function') {
+    points.push(position.toLogical(scaleFactor));
+  }
+
+  if (scaleFactor > 1) {
+    points.push({
+      x: position.x / scaleFactor,
+      y: position.y / scaleFactor,
+    });
+  }
+
+  if (windowOrigin) {
+    const relativePhysical = {
+      x: position.x - windowOrigin.x,
+      y: position.y - windowOrigin.y,
+    };
+    points.push(relativePhysical);
+
+    if (scaleFactor > 1) {
+      points.push({
+        x: relativePhysical.x / scaleFactor,
+        y: relativePhysical.y / scaleFactor,
+      });
+    }
+  }
+
+  return uniqueDropPoints(points);
+}
+
+function isPointInsideElement(point: PositionPoint, element: Element): boolean {
+  const rect = element.getBoundingClientRect();
+
+  return point.x >= rect.left
+    && point.x <= rect.right
+    && point.y >= rect.top
+    && point.y <= rect.bottom;
+}
+
+function isRightSplitDropPosition(
+  position: DropPosition,
+  rightPane: Element | null,
+  windowOrigin?: PositionPoint | null,
+): boolean {
+  if (!rightPane) return false;
+
+  return dropPointCandidates(position, windowOrigin)
+    .some((point) => isPointInsideElement(point, rightPane));
+}
+
 export function AppLayout() {
   const settings = useSettings();
   const isTauriRuntime = '__TAURI_INTERNALS__' in window;
@@ -135,7 +212,14 @@ export function AppLayout() {
   const autoUpdateCheckStarted = useRef(false);
   const updateDownloadVersionRef = useRef<string | null>(null);
   const mainContentRef = useRef<HTMLDivElement>(null);
+  const rightSplitPaneRef = useRef<HTMLDivElement>(null);
   const [file, setFile] = useState<OpenedFile>(createEmptyFile());
+  const [fileB, setFileB] = useState<OpenedFile | null>(null);
+  const [splitView, setSplitView] = useState(false);
+  const splitViewRef = useRef(splitView);
+  const hoveringSplitB = useRef(false);
+  const handleOpenPathRef = useRef<(path: string) => Promise<void>>(async () => {});
+  const handleOpenPathBRef = useRef<(path: string) => Promise<void>>(async () => {});
   const [toc, setToc] = useState<TocItem[]>([]);
   const [tocPinned, setTocPinned] = useState(false);
   const [activeTocIndex, setActiveTocIndex] = useState(0);
@@ -194,6 +278,32 @@ export function AppLayout() {
     }
   }, [settings.defaultEncoding]);
 
+  const handleOpenB = useCallback(async () => {
+    const { openFile } = await import('../services/fileService');
+    const opened = await openFile(settings.defaultEncoding);
+    if (opened) {
+      setFileB(opened);
+      if (!splitView) setSplitView(true);
+    }
+  }, [settings.defaultEncoding, splitView]);
+
+  const handleOpenPathB = useCallback(async (path: string) => {
+    const { openPath } = await import('../services/fileService');
+    const opened = await openPath(path, settings.defaultEncoding);
+    setFileB(opened);
+    if (!splitView) setSplitView(true);
+  }, [settings.defaultEncoding, splitView]);
+
+  const handleNew = useCallback(() => {
+    reopenAttempted.current = true;
+    setFile(createEmptyFile());
+    setToc([]);
+    setHtmlPresentationVisible(false);
+    setEditorMode('wysiwyg');
+    setRightPanelMode('none');
+  }, []);
+
+
   const handleOpenPath = useCallback(async (path: string) => {
     const { openPath } = await import('../services/fileService');
     const opened = await openPath(path, settings.defaultEncoding);
@@ -208,10 +318,21 @@ export function AppLayout() {
     }
   }, [settings.defaultEncoding]);
 
+  useEffect(() => {
+    splitViewRef.current = splitView;
+  }, [splitView]);
+
+  useEffect(() => {
+    handleOpenPathRef.current = handleOpenPath;
+    handleOpenPathBRef.current = handleOpenPathB;
+  }, [handleOpenPath, handleOpenPathB]);
+
   const handleSave = useCallback(async () => {
     if (file.fileType === 'docx') return;
     const { saveFile } = await import('../services/fileService');
     const updated = await saveFile(file);
+    if (updated.path) {
+    }
     setFile(updated);
     if (updated.path) setLastOpenedPath(updated.path);
   }, [file]);
@@ -220,6 +341,8 @@ export function AppLayout() {
     if (file.fileType === 'docx') return;
     const { saveFileAs } = await import('../services/fileService');
     const updated = await saveFileAs(file);
+    if (updated.path) {
+    }
     setFile(updated);
     if (updated.path) setLastOpenedPath(updated.path);
   }, [file]);
@@ -248,6 +371,15 @@ export function AppLayout() {
     setHtmlPresentationVisible(false);
     setEditorMode((mode) => mode === 'source' ? 'wysiwyg' : 'source');
   }, [file.fileType]);
+
+  const handleToggleSplitView = useCallback(() => {
+    if (splitView) {
+      setSplitView(false);
+      setFileB(null);
+    } else {
+      setSplitView(true);
+    }
+  }, [splitView]);
 
   const handleToggleWordPreview = useCallback(() => {
     if (file.fileType === 'docx') return;
@@ -334,6 +466,7 @@ export function AppLayout() {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
+      if (mod && e.key === 'n') { e.preventDefault(); handleNew(); }
       if (mod && e.key === 'o') { e.preventDefault(); handleOpen(); }
       if (mod && e.key === 's' && !e.shiftKey) { e.preventDefault(); handleSave(); }
       if (mod && e.key === 's' && e.shiftKey) { e.preventDefault(); handleSaveAs(); }
@@ -341,26 +474,43 @@ export function AppLayout() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [handleOpen, handleSave, handleSaveAs, handleExportWord]);
+  }, [handleNew, handleOpen, handleSave, handleSaveAs, handleExportWord]);
 
   useEffect(() => {
     const handler = async (e: DragEvent) => {
       e.preventDefault();
       e.stopPropagation();
+
       const items = e.dataTransfer?.files;
       if (!items || items.length === 0) return;
       const f = items[0];
       const path = (f as unknown as { path?: string }).path;
-      if (path && isOpenableDocumentPath(path)) await handleOpenPath(path);
+      if (!path || !isOpenableDocumentPath(path)) return;
+
+      const dropPosition = { x: e.clientX, y: e.clientY };
+      const shouldOpenRight = splitView
+        && (hoveringSplitB.current || isRightSplitDropPosition(dropPosition, rightSplitPaneRef.current));
+
+      hoveringSplitB.current = false;
+
+      if (shouldOpenRight) {
+        await handleOpenPathB(path);
+        return;
+      }
+
+      await handleOpenPath(path);
     };
-    const prevent = (e: DragEvent) => { e.preventDefault(); e.stopPropagation(); };
-    window.addEventListener('dragover', prevent);
+    const preventDragover = (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    window.addEventListener('dragover', preventDragover);
     window.addEventListener('drop', handler);
     return () => {
-      window.removeEventListener('dragover', prevent);
+      window.removeEventListener('dragover', preventDragover);
       window.removeEventListener('drop', handler);
     };
-  }, [handleOpenPath]);
+  }, [handleOpenPath, handleOpenPathB, splitView]);
 
   useEffect(() => {
     if (!isTauriRuntime) return;
@@ -371,8 +521,27 @@ export function AppLayout() {
     void getCurrentWindow()
       .onDragDropEvent((event) => {
         if (event.payload.type !== 'drop') return;
-        const path = firstOpenableDocumentPath(event.payload.paths);
-        if (path) void handleOpenPath(path);
+        const dropPayload = event.payload;
+        const path = firstOpenableDocumentPath(dropPayload.paths);
+        if (!path) return;
+
+        void (async () => {
+          const windowOrigin = await getCurrentWindow()
+            .innerPosition()
+            .then((position) => ({ x: position.x, y: position.y }))
+            .catch(() => null);
+
+          if (splitViewRef.current && isRightSplitDropPosition(
+            dropPayload.position,
+            rightSplitPaneRef.current,
+            windowOrigin,
+          )) {
+            await handleOpenPathBRef.current(path);
+            return;
+          }
+
+          await handleOpenPathRef.current(path);
+        })();
       })
       .then((fn) => {
         if (cancelled) {
@@ -387,7 +556,7 @@ export function AppLayout() {
       cancelled = true;
       unlisten?.();
     };
-  }, [handleOpenPath, isTauriRuntime]);
+  }, [isTauriRuntime]);
 
   useEffect(() => {
     if (!isTauriRuntime) return;
@@ -519,6 +688,7 @@ export function AppLayout() {
     rightPanelMode === 'wechat' && !isDocx ? 'wechat-preview-open' : '',
     shouldShowHtmlPresentation ? 'html-presentation-layout' : '',
     resizing ? 'is-resizing' : '',
+    splitView ? 'split-view' : '',
   ].filter(Boolean).join(' ');
 
   const resolveTocHeading = useCallback((item: TocItem, index: number): HTMLElement | null => {
@@ -596,17 +766,21 @@ export function AppLayout() {
       <span>Word 文件为只读</span>
     </div>
   ) : editorMode === 'source' ? (
-    <Suspense fallback={<div className="editor-pane lazy-pane"><span>源码编辑器加载中</span></div>}>
-      <EditorPane source={file.content} onChange={handleContentChange} />
-    </Suspense>
+    <ErrorBoundary key="source-editor">
+      <Suspense fallback={<div className="editor-pane lazy-pane"><span>源码编辑器加载中</span></div>}>
+        <EditorPane source={file.content} onChange={handleContentChange} />
+      </Suspense>
+    </ErrorBoundary>
   ) : shouldShowHtmlPresentation ? (
-    <Suspense fallback={<div className="html-presentation-pane lazy-pane" aria-label={t('htmlPresentationAria')} />}>
-      <HtmlPresentationPane
-        source={file.content}
-        filePath={file.path}
-        onBack={() => setHtmlPresentationVisible(false)}
-      />
-    </Suspense>
+    <ErrorBoundary key="html-presentation">
+      <Suspense fallback={<div className="html-presentation-pane lazy-pane" aria-label={t('htmlPresentationAria')} />}>
+        <HtmlPresentationPane
+          source={file.content}
+          filePath={file.path}
+          onBack={() => setHtmlPresentationVisible(false)}
+        />
+      </Suspense>
+    </ErrorBoundary>
   ) : shouldUseStableHtmlPreview ? (
     <div className="html-reading-pane" aria-label={t('htmlReadingTitle')}>
       <div className="html-reading-toolbar">
@@ -651,9 +825,11 @@ export function AppLayout() {
       </Suspense>
     </div>
   ) : (
-    <Suspense fallback={<div className="wysiwyg-editor-pane lazy-pane"><span>所见即所得编辑器加载中</span></div>}>
-      <WysiwygEditorPane source={file.content} onChange={handleContentChange} />
-    </Suspense>
+    <ErrorBoundary key="wysiwyg-editor">
+      <Suspense fallback={<div className="wysiwyg-editor-pane lazy-pane"><span>所见即所得编辑器加载中</span></div>}>
+        <WysiwygEditorPane source={file.content} onChange={handleContentChange} />
+      </Suspense>
+    </ErrorBoundary>
   );
 
   const rightPanel = rightPanelMode === 'word' && !isDocx ? (
@@ -698,9 +874,12 @@ export function AppLayout() {
         wordPreviewVisible={rightPanelMode === 'word'}
         wechatPreviewVisible={rightPanelMode === 'wechat'}
         editingDisabled={isDocx}
+        splitViewActive={splitView}
         onToggleEditorMode={handleToggleEditorMode}
         onToggleWordPreview={handleToggleWordPreview}
         onToggleWechatPreview={handleToggleWechatPreview}
+        onToggleSplitView={handleToggleSplitView}
+        onOpenB={handleOpenB}
         onOpen={handleOpen}
         onSave={handleSave}
         onSaveAs={handleSaveAs}
@@ -719,7 +898,6 @@ export function AppLayout() {
       >
         {isDocx ? docxPane : (
           <>
-            {editorPane}
             <FloatingToc
               items={toc}
               activeIndex={activeTocIndex}
@@ -727,6 +905,47 @@ export function AppLayout() {
               onPinnedChange={setTocPinned}
               onNavigate={handleTocNavigate}
             />
+            <div className="editor-pane-group">
+              <div className="editor-pane-wrapper">
+                <div className="editor-pane-label">{file.name}</div>
+                {editorPane}
+              </div>
+              {splitView && (
+                <>
+                  <div className="split-divider" />
+                  {fileB ? (
+                    <div
+                      ref={rightSplitPaneRef}
+                      className="editor-pane-wrapper"
+                      data-split-drop="true"
+                      onDragOver={(e) => { e.preventDefault(); hoveringSplitB.current = true; }}
+                      onDragLeave={() => { hoveringSplitB.current = false; }}
+                    >
+                      <div className="editor-pane-label">{fileB.name}</div>
+                      <ErrorBoundary key="source-editor-b">
+                        <Suspense fallback={<div className="editor-pane lazy-pane"><span>加载中</span></div>}>
+                          <WysiwygEditorPane source={fileB.content} onChange={(v) => setFileB(prev => prev ? { ...prev, content: v } : null)} />
+                        </Suspense>
+                      </ErrorBoundary>
+                    </div>
+                  ) : (
+                    <div
+                      ref={rightSplitPaneRef}
+                      className="editor-pane-wrapper split-drop-zone"
+                      data-split-drop="true"
+                      onDragOver={(e) => { e.preventDefault(); hoveringSplitB.current = true; }}
+                      onDragLeave={() => { hoveringSplitB.current = false; }}
+                    >
+                      <div className="editor-pane-label">等待文件</div>
+                      <div className="split-drop-hint">
+                        <span>拖拽文件到此处</span>
+                        <small>或点击上方 📂 按钮打开</small>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
           </>
         )}
         {rightPanelMode !== 'none' && !isDocx && (
