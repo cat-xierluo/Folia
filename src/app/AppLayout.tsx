@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import type { TocItem } from '../types/document';
+import { createEmptyFile, type TocItem } from '../types/document';
 import {
   getExportPresetConfig,
   getLastOpenedPath,
@@ -24,6 +24,7 @@ import type { HtmlTableBlock } from '../services/htmlTableBlockService';
 import { Toolbar } from '../components/Toolbar';
 import { StatusBar } from '../components/StatusBar';
 import { FloatingToc } from '../components/FloatingToc';
+import { TabBar } from '../components/TabBar';
 import type { SourceHeadingScrollRequest } from '../components/EditorPane';
 import { useSession } from '../hooks/useSession';
 
@@ -250,7 +251,7 @@ export function AppLayout() {
       tocRefreshTimerRef.current = null;
       setToc(extractToc(value));
     }, TOC_REFRESH_DEBOUNCE_MS);
-  }, []);
+  }, [updateActiveFile]);
 
   const handleToggleEditorMode = useCallback(() => {
     if (file.fileType === 'docx') return;
@@ -711,6 +712,13 @@ export function AppLayout() {
         onPreloadSettings={preloadSettingsPageInBackground}
         updateStatus={updateToolbarStatus}
         onRestartUpdate={handleRestartUpdate}
+      />
+      <TabBar
+        tabs={session.tabs}
+        activeTabId={session.activeTabId}
+        onSelect={session.switchTab}
+        onClose={(id) => session.closeTab(id, { confirmDirty: () => window.confirm('该标签有未保存改动，确定关闭。') })}
+        onNew={() => session.openInNewTab(createEmptyFile())}
       />
       <div
         ref={mainContentRef}
