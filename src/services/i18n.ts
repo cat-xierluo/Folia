@@ -121,6 +121,7 @@ const zhCN = {
   exportWordLabel: '导出 Word',
   closePreviewTitle: '关闭',
   closePreviewLabel: '关闭预览',
+  openFileTooLargeMessage: '该文件过大（超过 10MB），暂不支持打开。',
 };
 
 type I18nKey = keyof typeof zhCN;
@@ -240,6 +241,7 @@ const enUS: Record<I18nKey, string> = {
   exportWordLabel: 'Export Word',
   closePreviewTitle: 'Close',
   closePreviewLabel: 'Close preview',
+  openFileTooLargeMessage: 'This file is too large (over 10 MB) and cannot be opened.',
 };
 
 const jaJP: Record<I18nKey, string> = {
@@ -357,6 +359,7 @@ const jaJP: Record<I18nKey, string> = {
   exportWordLabel: 'Word に書き出し',
   closePreviewTitle: '閉じる',
   closePreviewLabel: 'プレビューを閉じる',
+  openFileTooLargeMessage: 'このファイルは大きすぎます（10MB 超）ため、開けません。',
 };
 
 const dictionaries: Record<AppLocale, Record<I18nKey, string>> = {

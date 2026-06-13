@@ -110,6 +110,10 @@ function SettingsPageFallback() {
   );
 }
 
+// TOC 提取是对全文的正则扫描；编辑超长文档时每键都跑会卡顿，
+// 故把 TOC 刷新防抖到输入停顿后执行（ISS-159）。文件内容本身仍每键同步落盘/保存。
+const TOC_REFRESH_DEBOUNCE_MS = 150;
+
 function extractToc(content: string): TocItem[] {
   const headings: TocItem[] = [];
   const regex = /^(#{1,6})\s+(.+)$/gm;
@@ -138,6 +142,8 @@ export function AppLayout() {
   const autoUpdateCheckStarted = useRef(false);
   const updateDownloadVersionRef = useRef<string | null>(null);
   const mainContentRef = useRef<HTMLDivElement>(null);
+  // 防抖挂起的 TOC 刷新定时器；卸载时清掉，避免 stale setToc（ISS-159）。
+  const tocRefreshTimerRef = useRef<number | null>(null);
   const [file, setFile] = useState<OpenedFile>(createEmptyFile());
   const [toc, setToc] = useState<TocItem[]>([]);
   const [tocSessionPinned, setTocSessionPinned] = useState(false);
@@ -157,6 +163,16 @@ export function AppLayout() {
     document.documentElement.dataset.theme = settings.theme;
     document.documentElement.style.colorScheme = settings.theme;
   }, [settings.theme]);
+
+  // 卸载时取消挂起的 TOC 防抖，避免离开后仍触发 stale setToc（ISS-159）。
+  useEffect(() => {
+    return () => {
+      if (tocRefreshTimerRef.current !== null) {
+        window.clearTimeout(tocRefreshTimerRef.current);
+        tocRefreshTimerRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     /* Kick off the settings chunk immediately on mount so the modal is fully
@@ -227,7 +243,14 @@ export function AppLayout() {
       content: value,
       dirty: value !== prev.lastSavedContent,
     }));
-    setToc(extractToc(value));
+    // extractToc 是全文正则扫描，超长文档每键都跑会卡顿；防抖到输入停顿后刷新（ISS-159）。
+    if (tocRefreshTimerRef.current !== null) {
+      window.clearTimeout(tocRefreshTimerRef.current);
+    }
+    tocRefreshTimerRef.current = window.setTimeout(() => {
+      tocRefreshTimerRef.current = null;
+      setToc(extractToc(value));
+    }, TOC_REFRESH_DEBOUNCE_MS);
   }, []);
 
   const handleToggleEditorMode = useCallback(() => {
@@ -600,7 +623,9 @@ export function AppLayout() {
       window.removeEventListener('resize', scheduleUpdate);
       observer?.disconnect();
     };
-  }, [editorMode, file.content, resolveTocHeading, toc, rightPanelMode]);
+    // 故意不含 file.content：内容变化通过上面的 MutationObserver 实时感知，
+    // 不应每键都 disconnect + 重新 observe 整棵 DOM（ISS-159）。toc 变化时重建即可。
+  }, [editorMode, resolveTocHeading, toc, rightPanelMode]);
 
   const editorPane = isDocx ? (
     <div className="editor-pane readonly-pane">

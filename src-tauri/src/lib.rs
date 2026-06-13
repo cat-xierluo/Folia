@@ -16,14 +16,41 @@ fn pending_opened_paths(app: tauri::AppHandle) -> Vec<String> {
   std::mem::take(&mut *paths)
 }
 
-#[tauri::command]
-fn read_opened_document(path: String) -> Result<Vec<u8>, String> {
-  let path = PathBuf::from(path);
-  if !is_openable_document_path(&path) {
+/// 单个受支持文档允许打开的最大字节数（ISS-159）。
+///
+/// 10MB Markdown 已远超常规长文档；超长文件此前会把 `Vec<u8>` 经 Tauri 序列化成
+/// JSON 数字数组，造成数倍内存峰值并卡死 WebView。这里在读取前用 metadata 拦截，
+/// 避免超大文件直接 OOM。如需放宽，调整该常量即可。
+const MAX_OPENED_DOCUMENT_BYTES: u64 = 10 * 1024 * 1024;
+
+/// 校验、限额并读取受支持文档的全部字节。返回 `Vec<u8>` 以便单测断言内容；
+/// `read_opened_document` 命令再将其包成原始字节 [`tauri::ipc::Response`]，
+/// 避免 `Vec<u8>` 被序列化成 JSON 数字数组导致的 IPC 内存膨胀。
+fn read_opened_document_bytes(path: &Path) -> Result<Vec<u8>, String> {
+  if !is_openable_document_path(path) {
     return Err("unsupported document type".into());
   }
 
-  std::fs::read(&path).map_err(|error| format!("failed to read document: {error}"))
+  // 先用 metadata 拦截超大文件，避免读入后才发现 OOM。
+  let metadata = std::fs::metadata(path)
+    .map_err(|error| format!("failed to read document: {error}"))?;
+  if metadata.len() > MAX_OPENED_DOCUMENT_BYTES {
+    return Err(format!(
+      "file too large: {} bytes exceeds the {} byte limit",
+      metadata.len(),
+      MAX_OPENED_DOCUMENT_BYTES
+    ));
+  }
+
+  std::fs::read(path).map_err(|error| format!("failed to read document: {error}"))
+}
+
+#[tauri::command]
+fn read_opened_document(path: String) -> Result<tauri::ipc::Response, String> {
+  let path = PathBuf::from(path);
+  // 用 tauri::ipc::Response 返回原始字节，前端 invoke 直接拿到 ArrayBuffer，
+  // 跳过 JSON 数字数组序列化，内存峰值从原始文件的数倍降到约一倍（ISS-159）。
+  Ok(tauri::ipc::Response::new(read_opened_document_bytes(&path)?))
 }
 
 #[tauri::command]
@@ -152,7 +179,7 @@ mod tests {
     let path = temp_path("opened.md");
     std::fs::write(&path, b"# opened").unwrap();
 
-    let bytes = read_opened_document(path.to_string_lossy().to_string()).unwrap();
+    let bytes = read_opened_document_bytes(&path).unwrap();
 
     assert_eq!(bytes, b"# opened");
     let _ = std::fs::remove_file(path);
@@ -163,9 +190,36 @@ mod tests {
     let path = temp_path("secret.txt");
     std::fs::write(&path, b"secret").unwrap();
 
-    let error = read_opened_document(path.to_string_lossy().to_string()).unwrap_err();
+    let error = read_opened_document_bytes(&path).unwrap_err();
 
     assert!(error.contains("unsupported document type"));
+    let _ = std::fs::remove_file(path);
+  }
+
+  #[test]
+  fn read_opened_document_rejects_oversized_files() {
+    // 超过 MAX_OPENED_DOCUMENT_BYTES 的文件在读取前就应被拦截（ISS-159）。
+    let path = temp_path("oversized.md");
+    std::fs::write(&path, vec![0u8; MAX_OPENED_DOCUMENT_BYTES as usize + 1]).unwrap();
+
+    let error = read_opened_document_bytes(&path).unwrap_err();
+
+    assert!(
+      error.contains("file too large"),
+      "expected size-limit error, got: {error}"
+    );
+    let _ = std::fs::remove_file(path);
+  }
+
+  #[test]
+  fn read_opened_document_accepts_file_at_size_limit() {
+    // 恰好等于上限的文件应可正常读取（边界：> 才拒绝）。
+    let path = temp_path("at-limit.md");
+    std::fs::write(&path, vec![0u8; MAX_OPENED_DOCUMENT_BYTES as usize]).unwrap();
+
+    let bytes = read_opened_document_bytes(&path).unwrap();
+
+    assert_eq!(bytes.len(), MAX_OPENED_DOCUMENT_BYTES as usize);
     let _ = std::fs::remove_file(path);
   }
 

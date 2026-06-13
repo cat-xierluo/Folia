@@ -21,6 +21,12 @@ function bytesOf(value: string): number[] {
   return Array.from(new TextEncoder().encode(value));
 }
 
+// 后端 read_opened_document 现以 tauri::ipc::Response 返回原始字节，
+// 前端 invoke 拿到的是 ArrayBuffer（ISS-159）。
+function arrayBufferOf(value: string): ArrayBuffer {
+  return new TextEncoder().encode(value).buffer;
+}
+
 describe('fileService', () => {
   afterEach(() => {
     delete (window as typeof window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
@@ -32,7 +38,7 @@ describe('fileService', () => {
       configurable: true,
       value: {},
     });
-    tauriCoreMock.invoke.mockResolvedValue(bytesOf('# 双击打开\n正文'));
+    tauriCoreMock.invoke.mockResolvedValue(arrayBufferOf('# 双击打开\n正文'));
     tauriFsMock.readTextFile.mockRejectedValue(new Error('frontend fs scope denied'));
 
     const opened = await openPath('/Users/demo/双击打开.md', 'UTF-8');
@@ -49,6 +55,19 @@ describe('fileService', () => {
       lastSavedContent: '# 双击打开\n正文',
       fileType: 'markdown',
     });
+  });
+
+  it('still decodes legacy number-array responses for robustness', async () => {
+    // 后端现已返回 ArrayBuffer；这里防御性地覆盖 number[] 旧形态仍能正确解码（ISS-159）。
+    Object.defineProperty(window, '__TAURI_INTERNALS__', {
+      configurable: true,
+      value: {},
+    });
+    tauriCoreMock.invoke.mockResolvedValue(bytesOf('# legacy\n正文'));
+
+    const opened = await openPath('/Users/demo/legacy.md', 'UTF-8');
+
+    expect(opened.content).toBe('# legacy\n正文');
   });
 
   it('keeps browser/test fallback on the filesystem plugin outside Tauri runtime', async () => {
