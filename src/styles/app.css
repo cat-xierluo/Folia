@@ -405,6 +405,34 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 .recent-page-secondary:focus-visible,
 .recent-page-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
+/* ===== Tab Context Menu ===== */
+.tab-context-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 140px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px var(--shadow-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.tab-context-menu button {
+  padding: 6px 12px;
+  border: none;
+  background: transparent;
+  color: var(--fg);
+  font-size: 13px;
+  font-family: var(--font-body);
+  text-align: left;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.tab-context-menu button:hover { background: var(--control-hover-bg); }
+.tab-context-menu button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
 .file-name {
   display: inline-flex;
   align-items: center;

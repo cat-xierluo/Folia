@@ -6,10 +6,11 @@ export interface TabBarProps {
   onSelect: (id: string) => void;
   onClose: (id: string) => void;
   onNew: () => void;
+  onContextMenu?: (id: string, x: number, y: number) => void;
 }
 
 /** 标签栏：独立一行，纯交互（不兼窗口拖拽）。i18n 三语留阶段二补，暂硬编码中文。 */
-export function TabBar({ tabs, activeTabId, onSelect, onClose, onNew }: TabBarProps) {
+export function TabBar({ tabs, activeTabId, onSelect, onClose, onNew, onContextMenu }: TabBarProps) {
   return (
     <div className="tabbar" role="tablist">
       <div className="tabbar-scroll">
@@ -24,6 +25,7 @@ export function TabBar({ tabs, activeTabId, onSelect, onClose, onNew }: TabBarPr
               aria-selected={active}
               title={tab.file.path || tab.file.name}
               onClick={() => onSelect(tab.id)}
+              onContextMenu={onContextMenu ? (e) => { e.preventDefault(); onContextMenu(tab.id, e.clientX, e.clientY); } : undefined}
             >
               {tab.file.dirty && <span data-dirty className="tabbar-dirty" />}
               <span className="tabbar-name">{tab.file.name}</span>

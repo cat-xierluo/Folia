@@ -26,6 +26,9 @@ export type SessionAction =
   | { type: 'openInNewTab'; file: OpenedFile }
   | { type: 'switchTab'; id: string }
   | { type: 'closeTab'; id: string; confirmed: boolean }
+  | { type: 'closeOthers'; id: string }
+  | { type: 'closeToRight'; id: string }
+  | { type: 'closeAll' }
   | { type: 'updateActiveFile'; updater: (f: OpenedFile) => OpenedFile }
   | { type: 'updateActiveTabMeta'; meta: Partial<Pick<Tab, 'editorMode' | 'rightPanelMode'>> }
   | { type: 'recordRecentFile'; file: OpenedFile };
@@ -61,6 +64,31 @@ export function sessionReducer(state: SessionState, action: SessionAction): Sess
       }
       const activeTabId = state.activeTabId === action.id ? tabs[tabs.length - 1].id : state.activeTabId;
       return { ...state, tabs, activeTabId };
+    }
+    case 'closeOthers': {
+      // 目标不存在时不变（防止菜单期间标签被删导致空 tabs + 幽灵 activeTabId，I-1）。
+      if (!state.tabs.some((t) => t.id === action.id)) return state;
+      // 保留目标标签 + 所有 dirty，关其他非 dirty（批量操作保护未保存草稿）。
+      const tabs = state.tabs.filter((t) => t.id === action.id || t.file.dirty);
+      if (tabs.length === state.tabs.length) return state;
+      return { ...state, tabs, activeTabId: action.id };
+    }
+    case 'closeToRight': {
+      const idIndex = state.tabs.findIndex((t) => t.id === action.id);
+      if (idIndex === -1) return state;
+      const tabs = state.tabs.filter((t, i) => i <= idIndex || t.file.dirty);
+      if (tabs.length === state.tabs.length) return state;
+      return { ...state, tabs, activeTabId: action.id };
+    }
+    case 'closeAll': {
+      const dirtyTabs = state.tabs.filter((t) => t.file.dirty);
+      if (dirtyTabs.length > 0) {
+        // 保留 dirty 时，若当前 active 仍在 dirty 中则保持，否则切到首个 dirty（I-2）。
+        const keepActive = dirtyTabs.some((t) => t.id === state.activeTabId) ? state.activeTabId : dirtyTabs[0].id;
+        return { ...state, tabs: dirtyTabs, activeTabId: keepActive };
+      }
+      const placeholder = makeTabFromFile(createEmptyFile(), true);
+      return { ...state, tabs: [placeholder], activeTabId: placeholder.id };
     }
     case 'updateActiveFile':
       return {

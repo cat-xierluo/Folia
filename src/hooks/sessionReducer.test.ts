@@ -122,6 +122,57 @@ describe('sessionReducer.closeTab', () => {
   });
 });
 
+describe('sessionReducer 批量关闭（closeOthers/closeToRight/closeAll）', () => {
+  it('closeOthers 保留目标与 dirty，关其他非 dirty', () => {
+    const t1 = makeTabFromFile(file('a.md'));
+    const t2 = makeTabFromFile(file('b.md', 'B', true));
+    const t3 = makeTabFromFile(file('c.md'));
+    const start = stateWith([t1, t2, t3], t3.id);
+    const next = sessionReducer(start, { type: 'closeOthers', id: t3.id });
+    expect(next.tabs.map((t) => t.file.name)).toEqual(['b.md', 'c.md']);
+    expect(next.activeTabId).toBe(t3.id);
+  });
+
+  it('closeToRight 关目标右侧非 dirty，保留目标/左侧/dirty', () => {
+    const t1 = makeTabFromFile(file('a.md'));
+    const t2 = makeTabFromFile(file('b.md'));
+    const t3 = makeTabFromFile(file('c.md', 'C', true));
+    const t4 = makeTabFromFile(file('d.md'));
+    const start = stateWith([t1, t2, t3, t4], t2.id);
+    const next = sessionReducer(start, { type: 'closeToRight', id: t2.id });
+    expect(next.tabs.map((t) => t.file.name)).toEqual(['a.md', 'b.md', 'c.md']);
+    expect(next.activeTabId).toBe(t2.id);
+  });
+
+  it('closeAll 全非 dirty 时补占位', () => {
+    const start = stateWith([makeTabFromFile(file('a.md')), makeTabFromFile(file('b.md'))], '');
+    const next = sessionReducer(start, { type: 'closeAll' });
+    expect(next.tabs).toHaveLength(1);
+    expect(next.tabs[0].isPlaceholder).toBe(true);
+  });
+
+  it('closeAll 有 dirty 时保留 dirty', () => {
+    const t1 = makeTabFromFile(file('a.md'));
+    const t2 = makeTabFromFile(file('b.md', 'B', true));
+    const start = stateWith([t1, t2], t1.id);
+    const next = sessionReducer(start, { type: 'closeAll' });
+    expect(next.tabs.map((t) => t.file.name)).toEqual(['b.md']);
+  });
+
+  it('closeOthers 目标不存在时不变（I-1 守卫）', () => {
+    const start = stateWith([makeTabFromFile(file('a.md')), makeTabFromFile(file('b.md'))], '');
+    expect(sessionReducer(start, { type: 'closeOthers', id: '不存在' })).toBe(start);
+  });
+
+  it('closeAll 全 dirty 时保留原 active（I-2）', () => {
+    const t1 = makeTabFromFile(file('a.md', 'A', true));
+    const t2 = makeTabFromFile(file('b.md', 'B', true));
+    const start = stateWith([t1, t2], t2.id);
+    const next = sessionReducer(start, { type: 'closeAll' });
+    expect(next.activeTabId).toBe(t2.id);
+  });
+});
+
 describe('sessionReducer.updateActiveFile', () => {
   it('修改当前标签内容', () => {
     const t1 = makeTabFromFile(file('a.md', 'A'));

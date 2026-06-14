@@ -26,6 +26,7 @@ import { StatusBar } from '../components/StatusBar';
 import { FloatingToc } from '../components/FloatingToc';
 import { TabBar } from '../components/TabBar';
 import { RecentFilesPage } from '../components/RecentFilesPage';
+import { ContextMenu } from '../components/ContextMenu';
 import type { SourceHeadingScrollRequest } from '../components/EditorPane';
 import { useSession } from '../hooks/useSession';
 
@@ -156,13 +157,17 @@ export function AppLayout() {
   const {
     activeFile: file,
     openInNewTab,
+    closeTab,
+    activeTabId,
     updateActiveFile,
     updateActiveTabMeta,
   } = session;
+  const confirmCloseDirty = useCallback(() => window.confirm('该标签有未保存改动，确定关闭吗？'), []);
   const [toc, setToc] = useState<TocItem[]>([]);
   const [tocSessionPinned, setTocSessionPinned] = useState(false);
   const [activeTocIndex, setActiveTocIndex] = useState(0);
   const [settingsVisible, setSettingsVisible] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{ tabId: string; x: number; y: number } | null>(null);
   const editorMode = session.editorMode;
   const [sourceHeadingScrollRequest, setSourceHeadingScrollRequest] = useState<SourceHeadingScrollRequest>();
   const rightPanelMode = session.rightPanelMode;
@@ -347,6 +352,11 @@ export function AppLayout() {
       if (e.key === 's' && e.altKey && !e.shiftKey) { e.preventDefault(); handleToggleEditorMode(); return; }
       if (e.key === 'p' && e.altKey && !e.shiftKey) { e.preventDefault(); handleToggleWordPreview(); return; }
       if (e.key === 'm' && e.altKey && !e.shiftKey) { e.preventDefault(); handleToggleWechatPreview(); return; }
+      if (e.key === 'w' && !e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        closeTab(activeTabId, { confirmDirty: confirmCloseDirty });
+        return;
+      }
       if (e.key === ',' && !e.shiftKey && !e.altKey) {
         e.preventDefault();
         void preloadSettingsPage();
@@ -355,7 +365,7 @@ export function AppLayout() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [handleOpen, handleSave, handleSaveAs, handleExportWord, handleToggleEditorMode, handleToggleWordPreview, handleToggleWechatPreview]);
+  }, [handleOpen, handleSave, handleSaveAs, handleExportWord, handleToggleEditorMode, handleToggleWordPreview, handleToggleWechatPreview, closeTab, activeTabId, confirmCloseDirty]);
 
   useEffect(() => {
     const handler = async (e: DragEvent) => {
@@ -718,7 +728,8 @@ export function AppLayout() {
         tabs={session.tabs}
         activeTabId={session.activeTabId}
         onSelect={session.switchTab}
-        onClose={(id) => session.closeTab(id, { confirmDirty: () => window.confirm('该标签有未保存改动，确定关闭。') })}
+        onContextMenu={(id, x, y) => setContextMenu({ tabId: id, x, y })}
+        onClose={(id) => session.closeTab(id, { confirmDirty: confirmCloseDirty })}
         onNew={() => session.openInNewTab(createEmptyFile())}
       />
       <div
@@ -764,6 +775,17 @@ export function AppLayout() {
         {rightPanel}
       </div>
       <StatusBar filePath={file.path} dirty={file.dirty} />
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onClose={() => setContextMenu(null)}
+          onCloseTab={() => session.closeTab(contextMenu.tabId, { confirmDirty: confirmCloseDirty })}
+          onCloseOthers={() => session.closeOthers(contextMenu.tabId)}
+          onCloseToRight={() => session.closeToRight(contextMenu.tabId)}
+          onCloseAll={() => session.closeAll()}
+        />
+      )}
       {settingsVisible && (
         <Suspense fallback={<SettingsPageFallback />}>
           <SettingsPage
