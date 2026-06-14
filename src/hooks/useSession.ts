@@ -85,6 +85,10 @@ export function useSession() {
   const closeToRight = useCallback((id: string) => { dispatch({ type: 'closeToRight', id }); }, []);
   const closeAll = useCallback(() => { dispatch({ type: 'closeAll' }); }, []);
 
+  const markPathInvalid = useCallback((id: string) => {
+    dispatch({ type: 'markPathInvalid', id });
+  }, []);
+
   const closeTab = useCallback(
     (id: string, options?: CloseOptions) => {
       const tab = state.tabs.find((t) => t.id === id);
@@ -111,6 +115,7 @@ export function useSession() {
     closeOthers,
     closeToRight,
     closeAll,
+    markPathInvalid,
     updateActiveFile,
     updateActiveTabMeta,
     recordRecentFile,

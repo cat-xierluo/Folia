@@ -31,7 +31,8 @@ export type SessionAction =
   | { type: 'closeAll' }
   | { type: 'updateActiveFile'; updater: (f: OpenedFile) => OpenedFile }
   | { type: 'updateActiveTabMeta'; meta: Partial<Pick<Tab, 'editorMode' | 'rightPanelMode'>> }
-  | { type: 'recordRecentFile'; file: OpenedFile };
+  | { type: 'recordRecentFile'; file: OpenedFile }
+  | { type: 'markPathInvalid'; id: string };
 
 export function sessionReducer(state: SessionState, action: SessionAction): SessionState {
   switch (action.type) {
@@ -106,6 +107,9 @@ export function sessionReducer(state: SessionState, action: SessionAction): Sess
       const filtered = state.recentFiles.filter((r) => r.path !== entry.path);
       return { ...state, recentFiles: [entry, ...filtered].slice(0, MAX_RECENT_FILES) };
     }
+    case 'markPathInvalid':
+      if (!state.tabs.some((t) => t.id === action.id)) return state;
+      return { ...state, tabs: state.tabs.map((t) => (t.id === action.id ? { ...t, pathInvalid: true } : t)) };
     default:
       return state;
   }
