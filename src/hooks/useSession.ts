@@ -100,6 +100,7 @@ export function useSession() {
     recentFiles: state.recentFiles,
     editorMode: (activeTab?.editorMode ?? 'wysiwyg') as EditorMode,
     rightPanelMode: (activeTab?.rightPanelMode ?? 'none') as RightPanelMode,
+    showHomePage: activeTab?.isPlaceholder ?? false,
     openInNewTab,
     switchTab,
     closeTab,
