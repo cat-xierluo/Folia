@@ -26,7 +26,8 @@ export function loadSession(): SessionState {
     const parsed: unknown = JSON.parse(raw);
     if (!isPersistedSession(parsed)) return emptySession();
     return {
-      tabs: parsed.tabs as Tab[],
+      // 补 isPlaceholder 默认值，防旧版数据（无该字段）恢复后 undefined 传播（M-1）。
+      tabs: parsed.tabs.map((t) => ({ ...t, isPlaceholder: t.isPlaceholder ?? false })) as Tab[],
       activeTabId: parsed.activeTabId,
       recentFiles: parsed.recentFiles,
     };

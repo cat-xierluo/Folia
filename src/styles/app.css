@@ -401,6 +401,9 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 .recent-page-item-name { font-size: 13px; color: var(--fg); font-weight: 500; }
 .recent-page-item-path { font-size: 11px; color: var(--muted); word-break: break-all; }
 .recent-page-empty { margin: 8px 0 0; color: var(--muted); font-size: 12px; }
+.recent-page-primary:focus-visible,
+.recent-page-secondary:focus-visible,
+.recent-page-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .file-name {
   display: inline-flex;
