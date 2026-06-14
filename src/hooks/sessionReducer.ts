@@ -8,8 +8,8 @@ export function newTabId(): string {
   return globalThis.crypto?.randomUUID?.() ?? `tab-${Date.now()}-${Math.random()}`;
 }
 
-export function makeTabFromFile(file: OpenedFile): Tab {
-  return { id: newTabId(), file, editorMode: 'wysiwyg', rightPanelMode: 'none', draftPersisted: true };
+export function makeTabFromFile(file: OpenedFile, isPlaceholder = false): Tab {
+  return { id: newTabId(), file, editorMode: 'wysiwyg', rightPanelMode: 'none', draftPersisted: true, isPlaceholder };
 }
 
 /** 启动引导：有持久化 tabs 则恢复（修正失效的 activeTabId），否则给一个空占位标签保证编辑器可用。 */
@@ -18,7 +18,7 @@ export function bootstrapSession(loaded: SessionState): SessionState {
     const activeId = loaded.tabs.some((t) => t.id === loaded.activeTabId) ? loaded.activeTabId : loaded.tabs[0].id;
     return { ...loaded, activeTabId: activeId };
   }
-  const placeholder = makeTabFromFile(createEmptyFile());
+  const placeholder = makeTabFromFile(createEmptyFile(), true);
   return { tabs: [placeholder], activeTabId: placeholder.id, recentFiles: loaded.recentFiles };
 }
 
@@ -33,14 +33,20 @@ export type SessionAction =
 export function sessionReducer(state: SessionState, action: SessionAction): SessionState {
   switch (action.type) {
     case 'openInNewTab': {
-      let tabs = [...state.tabs, makeTabFromFile(action.file)];
-      // LRU：超上限时优先关最旧的非 dirty、非激活标签（dirty 标签保留以免丢草稿）。
+      const active = state.tabs.find((t) => t.id === state.activeTabId);
+      // 当前 active 是干净占位标签时替换它，避免占位标签累积成「未命名」空标签（I-1）。
+      const replaceActivePlaceholder = !!active?.isPlaceholder && !active.file.dirty;
+      const newTab = makeTabFromFile(action.file);
+      let tabs = replaceActivePlaceholder
+        ? state.tabs.map((t) => (t.id === state.activeTabId ? newTab : t))
+        : [...state.tabs, newTab];
+      // LRU：超上限时优先关最旧的非 dirty、非新打开标签（dirty 与刚打开的保留）。
       while (tabs.length > MAX_TABS) {
-        const idx = tabs.findIndex((t) => t.id !== state.activeTabId && !t.file.dirty);
+        const idx = tabs.findIndex((t) => t.id !== newTab.id && !t.file.dirty);
         if (idx === -1) break;
         tabs = tabs.filter((_, i) => i !== idx);
       }
-      return { ...state, tabs, activeTabId: tabs[tabs.length - 1].id };
+      return { ...state, tabs, activeTabId: newTab.id };
     }
     case 'switchTab':
       return state.tabs.some((t) => t.id === action.id) ? { ...state, activeTabId: action.id } : state;
@@ -50,7 +56,7 @@ export function sessionReducer(state: SessionState, action: SessionAction): Sess
       if (tab.file.dirty && !action.confirmed) return state;
       const tabs = state.tabs.filter((t) => t.id !== action.id);
       if (tabs.length === 0) {
-        const placeholder = makeTabFromFile(createEmptyFile());
+        const placeholder = makeTabFromFile(createEmptyFile(), true);
         return { ...state, tabs: [placeholder], activeTabId: placeholder.id };
       }
       const activeTabId = state.activeTabId === action.id ? tabs[tabs.length - 1].id : state.activeTabId;

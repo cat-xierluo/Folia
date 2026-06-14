@@ -16,6 +16,7 @@ function makeTab(id: string, content = 'hello', dirty = false): SessionState['ta
     editorMode: 'wysiwyg',
     rightPanelMode: 'none',
     draftPersisted: true,
+    isPlaceholder: false,
   };
 }
 

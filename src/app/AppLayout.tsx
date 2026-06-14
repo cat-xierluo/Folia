@@ -25,6 +25,7 @@ import { Toolbar } from '../components/Toolbar';
 import { StatusBar } from '../components/StatusBar';
 import { FloatingToc } from '../components/FloatingToc';
 import { TabBar } from '../components/TabBar';
+import { RecentFilesPage } from '../components/RecentFilesPage';
 import type { SourceHeadingScrollRequest } from '../components/EditorPane';
 import { useSession } from '../hooks/useSession';
 
@@ -725,7 +726,14 @@ export function AppLayout() {
         className={mainContentClassName}
         style={{ '--right-panel-width': `${rightPanelWidth}px` } as React.CSSProperties}
       >
-        {isDocx ? docxPane : (
+        {session.showHomePage ? (
+          <RecentFilesPage
+            recentFiles={session.recentFiles}
+            onOpenFile={handleOpen}
+            onOpenRecent={(path) => { void handleOpenPath(path); }}
+            onNew={() => session.openInNewTab(createEmptyFile())}
+          />
+        ) : isDocx ? docxPane : (
           <>
             <FloatingToc
               items={toc}
