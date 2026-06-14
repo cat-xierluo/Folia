@@ -12,8 +12,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useSettings } from '../hooks/useSettings';
 import { translate } from '../services/i18n';
 import { handleTitlebarMouseDown } from '../services/titlebarDrag';
-
-export type EditorMode = 'wysiwyg' | 'source';
+import type { EditorMode } from '../types/session';
 
 type UpdateToolbarStatus = {
   phase: 'ready' | 'installing';

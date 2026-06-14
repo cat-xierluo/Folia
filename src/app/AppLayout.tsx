@@ -1,7 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import type { OpenedFile, TocItem } from '../types/document';
-import { createEmptyFile } from '../types/document';
+import { createEmptyFile, type TocItem } from '../types/document';
 import {
   getExportPresetConfig,
   getLastOpenedPath,
@@ -22,10 +21,12 @@ import {
 import { scheduleDelayedAutoUpdateCheck } from '../services/autoUpdateScheduler';
 import { translate } from '../services/i18n';
 import type { HtmlTableBlock } from '../services/htmlTableBlockService';
-import { Toolbar, type EditorMode } from '../components/Toolbar';
+import { Toolbar } from '../components/Toolbar';
 import { StatusBar } from '../components/StatusBar';
 import { FloatingToc } from '../components/FloatingToc';
+import { TabBar } from '../components/TabBar';
 import type { SourceHeadingScrollRequest } from '../components/EditorPane';
+import { useSession } from '../hooks/useSession';
 
 const EditorPane = lazy(() =>
   import('../components/EditorPane').then((module) => ({ default: module.EditorPane })),
@@ -79,7 +80,6 @@ const HtmlTableViewerOverlay = lazy(() =>
 );
 
 type AvailableUpdate = Extract<UpdateCheckResult, { status: 'available' }>;
-type RightPanelMode = 'none' | 'word' | 'wechat';
 type UpdateInstallState =
   | { phase: 'idle' }
   | { phase: 'downloading'; source: UpdateSource; update: AvailableUpdate }
@@ -151,14 +151,20 @@ export function AppLayout() {
       tocRefreshTimerRef.current = null;
     }
   }, []);
-  const [file, setFile] = useState<OpenedFile>(createEmptyFile());
+  const session = useSession();
+  const {
+    activeFile: file,
+    openInNewTab,
+    updateActiveFile,
+    updateActiveTabMeta,
+  } = session;
   const [toc, setToc] = useState<TocItem[]>([]);
   const [tocSessionPinned, setTocSessionPinned] = useState(false);
   const [activeTocIndex, setActiveTocIndex] = useState(0);
   const [settingsVisible, setSettingsVisible] = useState(false);
-  const [editorMode, setEditorMode] = useState<EditorMode>('wysiwyg');
+  const editorMode = session.editorMode;
   const [sourceHeadingScrollRequest, setSourceHeadingScrollRequest] = useState<SourceHeadingScrollRequest>();
-  const [rightPanelMode, setRightPanelMode] = useState<RightPanelMode>('none');
+  const rightPanelMode = session.rightPanelMode;
   const [rightPanelWidth, setRightPanelWidth] = useState(460);
   const [resizing, setResizing] = useState(false);
   const [htmlPresentationVisible, setHtmlPresentationVisible] = useState(false);
@@ -187,49 +193,39 @@ export function AppLayout() {
     const { openFile } = await import('../services/fileService');
     const opened = await openFile(settings.defaultEncoding);
     if (opened) {
-      setFile(opened);
+      openInNewTab(opened);
       cancelPendingTocRefresh();
       setToc(extractToc(opened.content));
       if (opened.path) setLastOpenedPath(opened.path);
       setHtmlPresentationVisible(false);
-      if (opened.fileType === 'docx') {
-        setRightPanelMode('none');
-      } else {
-        setEditorMode('wysiwyg');
-      }
     }
-  }, [settings.defaultEncoding, cancelPendingTocRefresh]);
+  }, [settings.defaultEncoding, cancelPendingTocRefresh, openInNewTab]);
 
   const handleOpenPath = useCallback(async (path: string) => {
     const { openPath } = await import('../services/fileService');
     const opened = await openPath(path, settings.defaultEncoding);
-    setFile(opened);
+    openInNewTab(opened);
     cancelPendingTocRefresh();
     setToc(opened.fileType === 'docx' ? [] : extractToc(opened.content));
     setLastOpenedPath(path);
     setHtmlPresentationVisible(false);
-    if (opened.fileType === 'docx') {
-      setRightPanelMode('none');
-    } else {
-      setEditorMode('wysiwyg');
-    }
-  }, [settings.defaultEncoding, cancelPendingTocRefresh]);
+  }, [settings.defaultEncoding, cancelPendingTocRefresh, openInNewTab]);
 
   const handleSave = useCallback(async () => {
     if (file.fileType === 'docx') return;
     const { saveFile } = await import('../services/fileService');
     const updated = await saveFile(file);
-    setFile(updated);
+    updateActiveFile(() => updated);
     if (updated.path) setLastOpenedPath(updated.path);
-  }, [file]);
+  }, [file, updateActiveFile]);
 
   const handleSaveAs = useCallback(async () => {
     if (file.fileType === 'docx') return;
     const { saveFileAs } = await import('../services/fileService');
     const updated = await saveFileAs(file);
-    setFile(updated);
+    updateActiveFile(() => updated);
     if (updated.path) setLastOpenedPath(updated.path);
-  }, [file]);
+  }, [file, updateActiveFile]);
 
   const handleExportWord = useCallback(async () => {
     if (!file.path || file.fileType === 'docx') return;
@@ -242,7 +238,7 @@ export function AppLayout() {
   }, [file]);
 
   const handleContentChange = useCallback((value: string) => {
-    setFile(prev => ({
+    updateActiveFile((prev) => ({
       ...prev,
       content: value,
       dirty: value !== prev.lastSavedContent,
@@ -255,25 +251,25 @@ export function AppLayout() {
       tocRefreshTimerRef.current = null;
       setToc(extractToc(value));
     }, TOC_REFRESH_DEBOUNCE_MS);
-  }, []);
+  }, [updateActiveFile]);
 
   const handleToggleEditorMode = useCallback(() => {
     if (file.fileType === 'docx') return;
     setHtmlPresentationVisible(false);
-    setEditorMode((mode) => mode === 'source' ? 'wysiwyg' : 'source');
-  }, [file.fileType]);
+    updateActiveTabMeta({ editorMode: editorMode === 'source' ? 'wysiwyg' : 'source' });
+  }, [file.fileType, editorMode, updateActiveTabMeta]);
 
   const handleToggleWordPreview = useCallback(() => {
     if (file.fileType === 'docx') return;
     setHtmlPresentationVisible(false);
-    setRightPanelMode((mode) => mode === 'word' ? 'none' : 'word');
-  }, [file.fileType]);
+    updateActiveTabMeta({ rightPanelMode: rightPanelMode === 'word' ? 'none' : 'word' });
+  }, [file.fileType, rightPanelMode, updateActiveTabMeta]);
 
   const handleToggleWechatPreview = useCallback(() => {
     if (file.fileType === 'docx') return;
     setHtmlPresentationVisible(false);
-    setRightPanelMode((mode) => mode === 'wechat' ? 'none' : 'wechat');
-  }, [file.fileType]);
+    updateActiveTabMeta({ rightPanelMode: rightPanelMode === 'wechat' ? 'none' : 'wechat' });
+  }, [file.fileType, rightPanelMode, updateActiveTabMeta]);
 
   const handleRightPanelResizerPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     const container = mainContentRef.current;
@@ -458,6 +454,8 @@ export function AppLayout() {
   }, [handleOpenPath, isTauriRuntime]);
 
   useEffect(() => {
+    // session 已恢复持久化标签时，跳过旧的单文件重开逻辑（多标签会话已取代 reopenLastFile）。
+    if (session.tabs.some((t) => t.file.path || t.file.content)) return;
     if (!systemOpenChecked || !settings.reopenLastFile || file.path || reopenAttempted.current) return;
     const lastPath = getLastOpenedPath();
     if (!lastPath) return;
@@ -483,7 +481,7 @@ export function AppLayout() {
         window.cancelIdleCallback(idleId);
       }
     };
-  }, [file.path, handleOpenPath, settings.reopenLastFile, systemOpenChecked]);
+  }, [file.path, handleOpenPath, settings.reopenLastFile, systemOpenChecked, session.tabs]);
 
   useEffect(() => {
     if (!settings.autoUpdateCheck || autoUpdateCheckStarted.current || !isTauriRuntime) return;
@@ -503,11 +501,11 @@ export function AppLayout() {
     const timeout = window.setTimeout(() => {
       void import('../services/fileService')
         .then(({ saveFile }) => saveFile(file))
-        .then((updated) => setFile(updated))
+        .then((updated) => updateActiveFile(() => updated))
         .catch((e) => console.error('Auto-save failed:', e));
     }, 800);
     return () => window.clearTimeout(timeout);
-  }, [file, settings.autoSave]);
+  }, [file, settings.autoSave, updateActiveFile]);
 
   useEffect(() => {
     if (!isTauriRuntime) return;
@@ -664,7 +662,7 @@ export function AppLayout() {
         previewWidth={rightPanelWidth}
         canExport={Boolean(file.path)}
         onExportWord={handleExportWord}
-        onClose={() => setRightPanelMode('none')}
+        onClose={() => updateActiveTabMeta({ rightPanelMode: 'none' })}
         filePath={file.path}
       />
     </Suspense>
@@ -673,7 +671,7 @@ export function AppLayout() {
       <WechatPreviewPane
         source={file.content}
         fileName={file.name}
-        onClose={() => setRightPanelMode('none')}
+        onClose={() => updateActiveTabMeta({ rightPanelMode: 'none' })}
         filePath={file.path}
       />
     </Suspense>
@@ -714,6 +712,13 @@ export function AppLayout() {
         onPreloadSettings={preloadSettingsPageInBackground}
         updateStatus={updateToolbarStatus}
         onRestartUpdate={handleRestartUpdate}
+      />
+      <TabBar
+        tabs={session.tabs}
+        activeTabId={session.activeTabId}
+        onSelect={session.switchTab}
+        onClose={(id) => session.closeTab(id, { confirmDirty: () => window.confirm('该标签有未保存改动，确定关闭。') })}
+        onNew={() => session.openInNewTab(createEmptyFile())}
       />
       <div
         ref={mainContentRef}
