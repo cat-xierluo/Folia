@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- 精简 Release 构建产物（DEC-093）：`src-tauri/tauri.conf.json` 的 `bundle.targets` 由 `"all"` 收窄为 `["dmg", "nsis"]`，Windows 不再生成冗余的 MSI 安装包，只保留 NSIS `.exe`；macOS 仍生成 `.dmg`。自动更新专用的 `.app.tar.gz` / `.nsis.zip` + `.sig` 产物不受影响（Tauri updater 依赖，无法精简）。
+
 ### Performance
 
 - 显著改善超长 Markdown 文件（数 MB / 数千行）打开时的白屏与编辑卡顿（ISS-159 / DEC-091）。**打开阶段**：Rust `read_opened_document` 由返回 `Vec<u8>`（被 Tauri 序列化成 JSON 数字数组，10MB 文件膨胀为 30-40MB、内存峰值达原始文件数倍并卡死 WebView）改为返回原始字节 `tauri::ipc::Response`，前端 `invoke` 直接拿到 `ArrayBuffer`，序列化膨胀消除、内存峰值降到约原始文件一倍。**编辑阶段**：`handleContentChange` 中的大纲（TOC）全文正则提取改为 150ms 防抖（文件内容仍每键同步保存）；active-heading 的 `MutationObserver` 不再依赖 `file.content`，避免每次按键都 `disconnect` 后重新 `observe` 整棵 DOM。

@@ -189,7 +189,7 @@ word/table-handler.ts 输出 docx Table；Markdown 管道表格使用专用 pars
 - 权限：默认 capabilities 需要同时包含 `updater:default`、`process:allow-restart` 和标题栏使用的 `core:window:allow-start-dragging` / `core:window:allow-toggle-maximize` / `core:window:allow-set-title`，否则更新重启或自定义标题栏窗口操作会被 Tauri ACL 拦截。
 - 签名：公钥写入 Tauri updater 配置；私钥位于本机 `~/.tauri/folia.key`，不得提交到仓库。
 - 本地完整打包：`npm run tauri build` 会生成 updater artifact，需要设置 `TAURI_SIGNING_PRIVATE_KEY` 和 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`。
-- 发布更新：推送 `v*` tag 后由 GitHub Actions 构建 macOS ARM / Intel 与 Windows 产物，生成统一 `latest.json` 并发布 Release。Windows 文件关联的 `description` 会进入 WiX MSI 字符串表，需保持 ASCII 兼容文本。
+- 发布更新：推送 `v*` tag 后由 GitHub Actions 构建 macOS ARM / Intel（`.dmg`）与 Windows（NSIS `.exe`）产物，生成统一 `latest.json` 并发布 Release。`bundle.targets` 已收窄为 `["dmg", "nsis"]`，不再生成 Windows MSI（DEC-093）；`fileAssociations.description` 保留 ASCII 文本作为历史兼容约束（NSIS 安装包不读取该字段，仅在未来恢复 MSI 时才生效）。
 - Manifest 生成：`npm run updater:manifest` 会扫描签名文件生成 `latest.json` / `latest-gitee.json`；CI 中要求 `darwin-aarch64`、`darwin-x86_64`、`windows-x86_64` 都存在，否则发布失败。
 
 ### 静态资源
