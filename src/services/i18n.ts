@@ -132,6 +132,15 @@ const zhCN = {
   tabMenuCloseOthers: '关闭其他',
   tabMenuCloseRight: '关闭右侧',
   tabMenuCloseAll: '全部关闭',
+  statusBarNoFile: '未打开文件',
+  statusBarCopyHint: '双击复制完整路径',
+  statusBarCopied: '已复制',
+  statusBarCopyFailed: '复制失败',
+  statusBarUnsaved: '未保存',
+  reloadingLabel: '重新加载中…',
+  fileLostLabel: '文件已丢失',
+  draftTooLargeLabel: '草稿过大未自动保存',
+  statusBarSaveAs: '另存为',
 };
 
 type I18nKey = keyof typeof zhCN;
@@ -262,6 +271,15 @@ const enUS: Record<I18nKey, string> = {
   tabMenuCloseOthers: 'Close others',
   tabMenuCloseRight: 'Close to the right',
   tabMenuCloseAll: 'Close all',
+  statusBarNoFile: 'No file open',
+  statusBarCopyHint: 'Double-click to copy full path',
+  statusBarCopied: 'Copied',
+  statusBarCopyFailed: 'Copy failed',
+  statusBarUnsaved: 'Unsaved',
+  reloadingLabel: 'Reloading…',
+  fileLostLabel: 'File missing',
+  draftTooLargeLabel: 'Draft too large to auto-save',
+  statusBarSaveAs: 'Save as',
 };
 
 const jaJP: Record<I18nKey, string> = {
@@ -390,6 +408,15 @@ const jaJP: Record<I18nKey, string> = {
   tabMenuCloseOthers: '他を閉じる',
   tabMenuCloseRight: '右側を閉じる',
   tabMenuCloseAll: 'すべて閉じる',
+  statusBarNoFile: 'ファイルを開いていません',
+  statusBarCopyHint: 'ダブルクリックでフルパスをコピー',
+  statusBarCopied: 'コピーしました',
+  statusBarCopyFailed: 'コピー失敗',
+  statusBarUnsaved: '未保存',
+  reloadingLabel: '再読み込み中…',
+  fileLostLabel: 'ファイルが見つかりません',
+  draftTooLargeLabel: '下書きが大きすぎて自動保存できません',
+  statusBarSaveAs: '名前を付けて保存',
 };
 
 const dictionaries: Record<AppLocale, Record<I18nKey, string>> = {

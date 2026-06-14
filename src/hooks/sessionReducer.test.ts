@@ -205,3 +205,27 @@ describe('sessionReducer.recordRecentFile', () => {
     expect(next.recentFiles).toHaveLength(0);
   });
 });
+
+describe('sessionReducer.markPathInvalid', () => {
+  it('标记指定 tab 为 pathInvalid', () => {
+    const t1 = makeTabFromFile(file('a.md'));
+    const start = stateWith([t1], t1.id);
+    const next = sessionReducer(start, { type: 'markPathInvalid', id: t1.id });
+    expect(next.tabs[0].pathInvalid).toBe(true);
+  });
+
+  it('id 不存在时不变', () => {
+    const t1 = makeTabFromFile(file('a.md'));
+    const start = stateWith([t1]);
+    expect(sessionReducer(start, { type: 'markPathInvalid', id: '不存在' })).toBe(start);
+  });
+
+  it('不影响其他标签', () => {
+    const t1 = makeTabFromFile(file('a.md'));
+    const t2 = makeTabFromFile(file('b.md'));
+    const start = stateWith([t1, t2], t1.id);
+    const next = sessionReducer(start, { type: 'markPathInvalid', id: t1.id });
+    expect(next.tabs[0].pathInvalid).toBe(true);
+    expect(next.tabs[1].pathInvalid).toBeUndefined();
+  });
+});

@@ -2107,6 +2107,42 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   font-weight: 500;
 }
 
+.status-notice {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 7px;
+  border-radius: 4px;
+  font-size: 10px;
+  line-height: 1.4;
+  flex-shrink: 0;
+}
+.status-notice--info { color: var(--muted, var(--border)); }
+.status-notice--warn {
+  color: oklch(52% 0.12 75);
+  background: color-mix(in oklch, oklch(52% 0.12 75) 12%, transparent);
+}
+.status-notice--error {
+  color: var(--danger);
+  background: color-mix(in oklch, var(--danger) 12%, transparent);
+}
+.status-notice-action {
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 5px;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+.status-notice-action:hover {
+  background: color-mix(in oklch, currentColor 14%, transparent);
+}
+
 /* ===== Settings Overlay & Modal ===== */
 
 .settings-overlay {

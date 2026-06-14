@@ -32,6 +32,7 @@ describe('StatusBar', () => {
   beforeEach(() => {
     writeTextMock.mockReset();
     writeTextRejection = null;
+    localStorage.clear();
     host = document.createElement('div');
     document.body.append(host);
     root = createRoot(host);
@@ -43,9 +44,18 @@ describe('StatusBar', () => {
     vi.clearAllTimers();
   });
 
-  function render(props: { filePath: string; dirty?: boolean }) {
+  function render(props: { filePath: string; dirty?: boolean; draftPersisted?: boolean; pathInvalid?: boolean; reloading?: boolean; onSaveAs?: () => void }) {
     act(() => {
-      root.render(<StatusBar filePath={props.filePath} dirty={props.dirty ?? false} />);
+      root.render(
+        <StatusBar
+          filePath={props.filePath}
+          dirty={props.dirty ?? false}
+          draftPersisted={props.draftPersisted}
+          pathInvalid={props.pathInvalid}
+          reloading={props.reloading}
+          onSaveAs={props.onSaveAs}
+        />,
+      );
     });
   }
 
@@ -146,5 +156,34 @@ describe('StatusBar', () => {
     });
     expect(host.querySelector('.status-copy-feedback')).toBeNull();
     expect(host.querySelector('.status-path')?.getAttribute('data-copy-state')).toBe('idle');
+  });
+
+  it('reloading 时显示「重新加载中」提示', () => {
+    render({ filePath: '/tmp/a.md', reloading: true });
+    expect(host.querySelector('.status-notice')?.textContent).toContain('重新加载中');
+    expect(host.querySelector('.status-notice')?.getAttribute('data-notice')).toBe('info');
+  });
+
+  it('pathInvalid 时显示「文件已丢失」与另存为按钮，点击触发 onSaveAs', () => {
+    const onSaveAs = vi.fn();
+    render({ filePath: '/tmp/a.md', pathInvalid: true, onSaveAs });
+    const notice = host.querySelector('.status-notice');
+    expect(notice?.textContent).toContain('文件已丢失');
+    expect(notice?.getAttribute('data-notice')).toBe('error');
+    const btn = host.querySelector<HTMLButtonElement>('.status-notice-action');
+    expect(btn).not.toBeNull();
+    act(() => { btn!.click(); });
+    expect(onSaveAs).toHaveBeenCalledTimes(1);
+  });
+
+  it('draftPersisted=false 时显示「草稿过大未自动保存」提示', () => {
+    render({ filePath: '/tmp/a.md', draftPersisted: false });
+    expect(host.querySelector('.status-notice')?.textContent).toContain('草稿过大');
+    expect(host.querySelector('.status-notice')?.getAttribute('data-notice')).toBe('warn');
+  });
+
+  it('draftPersisted=true 正常状态不显示 notice', () => {
+    render({ filePath: '/tmp/a.md', draftPersisted: true });
+    expect(host.querySelector('.status-notice')).toBeNull();
   });
 });

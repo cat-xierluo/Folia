@@ -18,6 +18,8 @@ export interface Tab {
   draftPersisted: boolean;
   /** 是否占位标签（bootstrap/关到最后一个时补的空标签）。占位时显示最近文件首页，而非编辑器。 */
   isPlaceholder: boolean;
+  /** 文件路径失效（磁盘文件被删 / 移动，重读失败）时为 true，UI 提示「文件已丢失」并引导另存为。 */
+  pathInvalid?: boolean;
 }
 
 export interface RecentFileEntry {
