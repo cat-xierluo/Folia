@@ -21,7 +21,7 @@
 | v0.1 MVP | 基础分屏阅读编辑 | 🟢 已完成 | CodeMirror + markdown-it |
 | v0.2 渲染引擎 | Vditor 替换 markdown-it | 🟢 已完成 | Vditor.preview() + 本地 CDN |
 | v0.3 编辑体验 | Typora-like 所见即所得 + HTML 阅读优先 + Word / HTML 导出预览 | 🟡 进行中 | 普通 Markdown 默认 WYSIWYG；原生 HTML 表格自动稳定预览；源码 fallback、按需 Word 多页预览与 HTML 预览面板已完成 |
-| v0.4 文档管理 | 最近文件、多文件 | ⚪ 未开始 | |
+| v0.4 文档管理 | 最近文件、多文件 | 🟡 进行中 | 多标签页 + 最近文件首页核心已合并；标签栏并入工具栏 + i18n 三语 + 右键菜单增强（ISS-40） |
 | v0.5 桌面发布体验 | 自动更新、发布产物、版本提示 | 🟢 已完成 | Tauri updater + GitHub Releases；Gitee 作为产物镜像 |
 | v0.6 Word 导出与预览 | md2word 集成、docx 导出 + 预览 | 🟢 已完成 | 纯 TS 方案，docx npm + mammoth |
 | v0.7 法律增强 | 表格编辑、模板 | 🟡 进行中 | 已完成 HTML table 共享模型、源码区块定位服务、法律表格 fixture 基线 |
@@ -87,12 +87,18 @@
 - [x] 新增发布脚本：签名 updater artifact 与生成统一 `latest.json` manifest
 - [x] 新增 GitHub Actions 全平台发布：macOS ARM / Intel、Windows、Release manifest 与 Gitee 产物同步
 
-### v0.4 文档管理
+### v0.4 多标签页 + 最近文件首页
 
-- [ ] 最近打开文件列表（持久化到本地存储）
-- [ ] 文件变更检测（外部编辑后提示刷新）
-- [ ] 关闭前未保存提醒
-- [ ] 左侧文件侧边栏（可选）
+- [x] 多标签页会话（sessionStore + useSession + AppLayout 单文档 → 多文档改造）
+- [x] 最近文件首页（无可恢复会话时显示最近文件列表）
+- [x] 标签右键菜单 + Cmd+W 快捷键
+- [x] 大文件（>256KB）降级 tab 重启从 path 重读
+- [x] 标签栏并入顶部工具栏同一行（ISS-40）
+- [x] 标签页 / 首页 / 右键菜单 i18n 三语（ISS-40）
+- [x] 右键菜单边界裁切 + 键盘导航 + 占位标签处理（ISS-40）
+- [ ] 大文件降级 UI 提示（StatusBar / TabBar 显示「草稿过大未自动保存」）
+- [ ] 失效文件精细处理（openPath 失败 → pathInvalid + 引导另存为）
+- [ ] 启动恢复 loading UI
 
 ### v0.6 Word 导出与预览（已完成）
 

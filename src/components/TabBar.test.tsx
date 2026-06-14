@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createElement } from 'react';
 import { TabBar, type TabBarProps } from './TabBar';
@@ -24,6 +24,28 @@ const noop = () => {};
 const baseProps = { onSelect: noop, onClose: noop, onNew: noop };
 
 describe('TabBar', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('en-US locale 下新建按钮 aria-label 为 New file', () => {
+    localStorage.setItem('folia-settings', JSON.stringify({ locale: 'en-US' }));
+    const html = render({ ...baseProps, tabs: [tab('a', 'a.md')], activeTabId: 'a' });
+    expect(html).toContain('New file');
+  });
+
+  it('ja-JP locale 下新建按钮 aria-label 为 新規ファイル', () => {
+    localStorage.setItem('folia-settings', JSON.stringify({ locale: 'ja-JP' }));
+    const html = render({ ...baseProps, tabs: [tab('a', 'a.md')], activeTabId: 'a' });
+    expect(html).toContain('新規ファイル');
+  });
+
+  it('en-US locale 下关闭按钮 aria-label 含 Close', () => {
+    localStorage.setItem('folia-settings', JSON.stringify({ locale: 'en-US' }));
+    const html = render({ ...baseProps, tabs: [tab('a', 'a.md')], activeTabId: 'a' });
+    expect(html).toContain('Close');
+  });
+
   it('渲染所有标签名', () => {
     const html = render({ ...baseProps, tabs: [tab('a', 'a.md'), tab('b', 'b.md')], activeTabId: 'a' });
     expect(html).toContain('a.md');

@@ -122,6 +122,16 @@ const zhCN = {
   closePreviewTitle: '关闭',
   closePreviewLabel: '关闭预览',
   openFileTooLargeMessage: '该文件过大（超过 10MB），暂不支持打开。',
+  tabCloseLabel: '关闭',
+  tabNewFileLabel: '新建文件',
+  recentSubtitle: 'Markdown 阅读与写作 · 开始',
+  recentOpenFileLabel: '打开文件',
+  recentNewLabel: '新建',
+  recentEmpty: '还没有最近打开的文件',
+  tabMenuClose: '关闭',
+  tabMenuCloseOthers: '关闭其他',
+  tabMenuCloseRight: '关闭右侧',
+  tabMenuCloseAll: '全部关闭',
 };
 
 type I18nKey = keyof typeof zhCN;
@@ -242,6 +252,16 @@ const enUS: Record<I18nKey, string> = {
   closePreviewTitle: 'Close',
   closePreviewLabel: 'Close preview',
   openFileTooLargeMessage: 'This file is too large (over 10 MB) and cannot be opened.',
+  tabCloseLabel: 'Close',
+  tabNewFileLabel: 'New file',
+  recentSubtitle: 'Markdown reading & writing · Start',
+  recentOpenFileLabel: 'Open file',
+  recentNewLabel: 'New',
+  recentEmpty: 'No recently opened files',
+  tabMenuClose: 'Close',
+  tabMenuCloseOthers: 'Close others',
+  tabMenuCloseRight: 'Close to the right',
+  tabMenuCloseAll: 'Close all',
 };
 
 const jaJP: Record<I18nKey, string> = {
@@ -360,6 +380,16 @@ const jaJP: Record<I18nKey, string> = {
   closePreviewTitle: '閉じる',
   closePreviewLabel: 'プレビューを閉じる',
   openFileTooLargeMessage: 'このファイルは大きすぎます（10MB 超）ため、開けません。',
+  tabCloseLabel: '閉じる',
+  tabNewFileLabel: '新規ファイル',
+  recentSubtitle: 'Markdown 読み書き · はじめる',
+  recentOpenFileLabel: 'ファイルを開く',
+  recentNewLabel: '新規',
+  recentEmpty: '最近開いたファイルはまだありません',
+  tabMenuClose: '閉じる',
+  tabMenuCloseOthers: '他を閉じる',
+  tabMenuCloseRight: '右側を閉じる',
+  tabMenuCloseAll: 'すべて閉じる',
 };
 
 const dictionaries: Record<AppLocale, Record<I18nKey, string>> = {
