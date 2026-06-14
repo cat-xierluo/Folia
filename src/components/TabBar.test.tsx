@@ -12,6 +12,7 @@ function tab(id: string, name: string, dirty = false): Tab {
     editorMode: 'wysiwyg',
     rightPanelMode: 'none',
     draftPersisted: true,
+    isPlaceholder: false,
   };
 }
 

@@ -28,6 +28,7 @@ describe('bootstrapSession', () => {
     expect(result.tabs).toHaveLength(1);
     expect(result.activeTabId).toBe(result.tabs[0].id);
     expect(result.tabs[0].file.name).toBe('未命名');
+    expect(result.tabs[0].isPlaceholder).toBe(true);
   });
 });
 
@@ -38,6 +39,12 @@ describe('sessionReducer.openInNewTab', () => {
     expect(next.tabs).toHaveLength(2);
     expect(next.activeTabId).toBe(next.tabs[1].id);
     expect(next.tabs[1].file.content).toBe('A');
+  });
+
+  it('openInNewTab 创建的标签非占位（isPlaceholder=false）', () => {
+    const start = bootstrapSession({ tabs: [], activeTabId: '', recentFiles: [] });
+    const next = sessionReducer(start, { type: 'openInNewTab', file: file('a.md', 'A') });
+    expect(next.tabs[next.tabs.length - 1].isPlaceholder).toBe(false);
   });
 
   it('超 MAX_TABS 时 LRU 关闭最旧非 dirty 非激活标签', () => {
@@ -85,6 +92,7 @@ describe('sessionReducer.closeTab', () => {
     const next = sessionReducer(start, { type: 'closeTab', id: t1.id, confirmed: true });
     expect(next.tabs).toHaveLength(1);
     expect(next.tabs[0].file.name).toBe('未命名');
+    expect(next.tabs[0].isPlaceholder).toBe(true);
   });
 
   it('dirty 标签未确认时返回同一引用（取消）', () => {

@@ -16,6 +16,8 @@ export interface Tab {
   rightPanelMode: RightPanelMode;
   /** 草稿是否已落盘。大文件（> DRAFT_PERSIST_MAX_BYTES）降级时为 false，仅内存。 */
   draftPersisted: boolean;
+  /** 是否占位标签（bootstrap/关到最后一个时补的空标签）。占位时显示最近文件首页，而非编辑器。 */
+  isPlaceholder: boolean;
 }
 
 export interface RecentFileEntry {

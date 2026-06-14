@@ -8,8 +8,8 @@ export function newTabId(): string {
   return globalThis.crypto?.randomUUID?.() ?? `tab-${Date.now()}-${Math.random()}`;
 }
 
-export function makeTabFromFile(file: OpenedFile): Tab {
-  return { id: newTabId(), file, editorMode: 'wysiwyg', rightPanelMode: 'none', draftPersisted: true };
+export function makeTabFromFile(file: OpenedFile, isPlaceholder = false): Tab {
+  return { id: newTabId(), file, editorMode: 'wysiwyg', rightPanelMode: 'none', draftPersisted: true, isPlaceholder };
 }
 
 /** 启动引导：有持久化 tabs 则恢复（修正失效的 activeTabId），否则给一个空占位标签保证编辑器可用。 */
@@ -18,7 +18,7 @@ export function bootstrapSession(loaded: SessionState): SessionState {
     const activeId = loaded.tabs.some((t) => t.id === loaded.activeTabId) ? loaded.activeTabId : loaded.tabs[0].id;
     return { ...loaded, activeTabId: activeId };
   }
-  const placeholder = makeTabFromFile(createEmptyFile());
+  const placeholder = makeTabFromFile(createEmptyFile(), true);
   return { tabs: [placeholder], activeTabId: placeholder.id, recentFiles: loaded.recentFiles };
 }
 
@@ -50,7 +50,7 @@ export function sessionReducer(state: SessionState, action: SessionAction): Sess
       if (tab.file.dirty && !action.confirmed) return state;
       const tabs = state.tabs.filter((t) => t.id !== action.id);
       if (tabs.length === 0) {
-        const placeholder = makeTabFromFile(createEmptyFile());
+        const placeholder = makeTabFromFile(createEmptyFile(), true);
         return { ...state, tabs: [placeholder], activeTabId: placeholder.id };
       }
       const activeTabId = state.activeTabId === action.id ? tabs[tabs.length - 1].id : state.activeTabId;
