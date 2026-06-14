@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import {
   BookOpenText,
   Braces,
@@ -22,6 +23,8 @@ type UpdateToolbarStatus = {
 type ToolbarProps = {
   dirty: boolean;
   fileName: string;
+  /** 传入 <TabBar /> 占据中间区域，替代独立文件名显示。占位首页时不传。 */
+  tabBar?: ReactNode;
   editorMode: EditorMode;
   wordPreviewVisible: boolean;
   wechatPreviewVisible: boolean;
@@ -39,7 +42,7 @@ type ToolbarProps = {
 };
 
 export function Toolbar({
-  dirty, fileName,
+  dirty, fileName, tabBar,
   editorMode, wordPreviewVisible, wechatPreviewVisible, editingDisabled, onToggleEditorMode, onToggleWordPreview, onToggleWechatPreview,
   onOpen, onSave, onSaveAs, onOpenSettings, onPreloadSettings, updateStatus, onRestartUpdate,
 }: ToolbarProps) {
@@ -75,13 +78,18 @@ export function Toolbar({
           </button>
         </div>
       </div>
-      <div className="toolbar-title" data-tauri-drag-region aria-label={t('currentFileLabel')}>
-        <span className={`file-name ${hasOpenedFile || dirty ? 'visible' : ''}`}>
-          {dirty && <span className="dirty-dot" />}
-          <span className="file-name-text">{fileName}</span>
-        </span>
+      <div
+        className={`toolbar-title${tabBar ? ' toolbar-title--tabs' : ''}`}
+        data-tauri-drag-region
+        aria-label={t('currentFileLabel')}
+      >
+        {tabBar ?? (
+          <span className={`file-name ${hasOpenedFile || dirty ? 'visible' : ''}`}>
+            {dirty && <span className="dirty-dot" />}
+            <span className="file-name-text">{fileName}</span>
+          </span>
+        )}
       </div>
-      <div className="toolbar-spacer" data-tauri-drag-region aria-hidden="true" />
       <div className="toolbar-right">
         <div className="toolbar-group toolbar-view-actions" aria-label={t('toolbarViewGroup')}>
           {updateStatus && (

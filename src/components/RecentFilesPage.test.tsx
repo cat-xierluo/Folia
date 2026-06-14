@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createElement } from 'react';
 import { RecentFilesPage, type RecentFilesPageProps } from './RecentFilesPage';
@@ -12,6 +12,29 @@ const noop = () => {};
 const baseProps = { onOpenFile: noop, onOpenRecent: noop, onNew: noop };
 
 describe('RecentFilesPage', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('en-US locale 下显示 Open file 与 New 按钮', () => {
+    localStorage.setItem('folia-settings', JSON.stringify({ locale: 'en-US' }));
+    const html = render({ ...baseProps, recentFiles: [] });
+    expect(html).toContain('Open file');
+    expect(html).toContain('New');
+  });
+
+  it('en-US locale 下空状态为 No recently opened files', () => {
+    localStorage.setItem('folia-settings', JSON.stringify({ locale: 'en-US' }));
+    const html = render({ ...baseProps, recentFiles: [] });
+    expect(html).toContain('No recently opened files');
+  });
+
+  it('ja-JP locale 下打开文件按钮为 ファイルを開く', () => {
+    localStorage.setItem('folia-settings', JSON.stringify({ locale: 'ja-JP' }));
+    const html = render({ ...baseProps, recentFiles: [] });
+    expect(html).toContain('ファイルを開く');
+  });
+
   it('渲染标题与打开/新建按钮', () => {
     const html = render({ ...baseProps, recentFiles: [] });
     expect(html).toContain('打开文件');

@@ -46,30 +46,27 @@ test('toolbar hides the app name and keeps draggable space around controls', asy
   await expect(page.locator('.wordmark')).toHaveCount(0);
   await expect(page.locator('.app-toolbar')).not.toContainText('Folia');
   const toolbarState = await page.evaluate(() => {
-    const toolbar = document.querySelector('.app-toolbar')?.getBoundingClientRect();
-    const title = document.querySelector('.toolbar-title')?.getBoundingClientRect();
-
     return {
-      spacer: document.querySelector('.toolbar-spacer')?.hasAttribute('data-tauri-drag-region') ?? false,
       titleDrag: document.querySelector('.toolbar-title')?.hasAttribute('data-tauri-drag-region') ?? false,
+      tabbarInsideTitle: !!document.querySelector('.toolbar-title [role="tablist"]'),
+      tabNoDrag: document.querySelector('.tabbar-tab')?.hasAttribute('data-no-window-drag') ?? false,
+      newBtnNoDrag: document.querySelector('.tabbar-new')?.hasAttribute('data-no-window-drag') ?? false,
       overlayCount: document.querySelectorAll('.toolbar-drag-region').length,
       fallback: document.querySelector('.app-toolbar')?.getAttribute('data-window-drag-fallback') ?? '',
       groups: Array.from(document.querySelectorAll('.toolbar-group')).map((group) => (
         group.getAttribute('aria-label')
       )),
-      centerOffset: toolbar && title
-        ? Math.abs((title.left + title.width / 2) - (toolbar.left + toolbar.width / 2))
-        : Number.POSITIVE_INFINITY,
     };
   });
   expect(toolbarState).toEqual(expect.objectContaining({
-    spacer: true,
     titleDrag: true,
+    tabbarInsideTitle: true,
+    tabNoDrag: true,
+    newBtnNoDrag: true,
     overlayCount: 0,
     fallback: 'manual',
     groups: ['文件操作', '视图与导出', '导航设置'],
   }));
-  expect(toolbarState.centerOffset).toBeLessThanOrEqual(1);
   await expect(page.getByRole('button', { name: '大纲', exact: true })).toHaveCount(0);
 });
 

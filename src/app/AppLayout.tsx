@@ -721,6 +721,16 @@ export function AppLayout() {
       <Toolbar
         dirty={file.dirty}
         fileName={file.name}
+        tabBar={
+          <TabBar
+            tabs={session.tabs}
+            activeTabId={session.activeTabId}
+            onSelect={session.switchTab}
+            onContextMenu={(id, x, y) => setContextMenu({ tabId: id, x, y })}
+            onClose={(id) => session.closeTab(id, { confirmDirty: confirmCloseDirty })}
+            onNew={() => session.openInNewTab(createEmptyFile())}
+          />
+        }
         editorMode={editorMode}
         wordPreviewVisible={rightPanelMode === 'word'}
         wechatPreviewVisible={rightPanelMode === 'wechat'}
@@ -738,14 +748,6 @@ export function AppLayout() {
         onPreloadSettings={preloadSettingsPageInBackground}
         updateStatus={updateToolbarStatus}
         onRestartUpdate={handleRestartUpdate}
-      />
-      <TabBar
-        tabs={session.tabs}
-        activeTabId={session.activeTabId}
-        onSelect={session.switchTab}
-        onContextMenu={(id, x, y) => setContextMenu({ tabId: id, x, y })}
-        onClose={(id) => session.closeTab(id, { confirmDirty: confirmCloseDirty })}
-        onNew={() => session.openInNewTab(createEmptyFile())}
       />
       <div
         ref={mainContentRef}
@@ -799,6 +801,7 @@ export function AppLayout() {
           onCloseOthers={() => session.closeOthers(contextMenu.tabId)}
           onCloseToRight={() => session.closeToRight(contextMenu.tabId)}
           onCloseAll={() => session.closeAll()}
+          isPlaceholder={session.tabs.find((t) => t.id === contextMenu.tabId)?.isPlaceholder ?? false}
         />
       )}
       {settingsVisible && (

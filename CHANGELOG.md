@@ -7,6 +7,12 @@ All notable changes to this project will be documented in this file.
 ### Changed
 
 - 精简 Release 构建产物（DEC-093）：`src-tauri/tauri.conf.json` 的 `bundle.targets` 由 `"all"` 收窄为 `["dmg", "nsis"]`，Windows 不再生成冗余的 MSI 安装包，只保留 NSIS `.exe`；macOS 仍生成 `.dmg`。自动更新专用的 `.app.tar.gz` / `.nsis.zip` + `.sig` 产物不受影响（Tauri updater 依赖，无法精简）。
+- 标签栏并入顶部工具栏同一行（ISS-40）：替代原先独立一行 + 中间「当前文件名」区，文件名改由标签承载，减少一行垂直占用；`.toolbar-title` 由绝对定位居中改为 flex 占据中间并移除 `.toolbar-spacer`；标签与「新建」按钮加 `data-no-window-drag` 隔离窗口拖拽。
+- 标签页 / 最近文件首页 / 标签右键菜单接入 i18n（ISS-40）：`TabBar` / `RecentFilesPage` / `ContextMenu` 按项目统一模式（`useSettings` + `translate`）补 `zh-CN` / `en-US` / `ja-JP` 三语，替换原硬编码中文。
+
+### Added
+
+- 标签右键菜单增强（ISS-40）：屏幕边界自动翻转（`computeMenuPosition` 纯函数，溢出视口时左移 / 上移）、`↑/↓` / `Home/End` 键盘导航、占位标签（`isPlaceholder`）只显示「关闭」并隐藏「关闭其他 / 关闭右侧 / 全部关闭」。
 
 ### Performance
 
