@@ -518,6 +518,21 @@ export function AppLayout() {
     return () => window.clearTimeout(timeout);
   }, [file, settings.autoSave, updateActiveFile]);
 
+  // 大文件降级 tab（draftPersisted=false 且 content 被清空）：激活时从磁盘重读内容，
+  // 修复降级重启后空白编辑器（阶段一 I1 遗留，阶段二c）。失败（文件被删/移）仅 warn。
+  useEffect(() => {
+    const tab = session.activeTab;
+    if (!tab || tab.draftPersisted) return;
+    if (!tab.file.path || tab.file.content) return;
+    if (tab.file.fileType === 'docx') return;
+    let cancelled = false;
+    void import('../services/fileService')
+      .then(({ openPath }) => openPath(tab.file.path, settings.defaultEncoding))
+      .then((opened) => { if (!cancelled) updateActiveFile(() => opened); })
+      .catch((e) => console.warn('Failed to reload large-file tab:', e));
+    return () => { cancelled = true; };
+  }, [session.activeTab, settings.defaultEncoding, updateActiveFile]);
+
   useEffect(() => {
     if (!isTauriRuntime) return;
     const title = file.dirty ? `* ${file.name}` : file.name;
