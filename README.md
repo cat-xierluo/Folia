@@ -79,6 +79,7 @@ open /Applications/Folia.app
 Folia 是我在法律文档处理和 AI 协作实践中沉淀出来的轻量桌面工具：重点解决 Markdown 文档阅读、复杂 HTML 表格稳定预览，以及导出 Word 前的版式确认。
 
 - GitHub: [cat-xierluo](https://github.com/cat-xierluo)
+- 个人主页：[cat-xierluo.github.io/personal-site](https://cat-xierluo.github.io/personal-site/)
 - 微信：`ywxlaw`
 
 <p>
