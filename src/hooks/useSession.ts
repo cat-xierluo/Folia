@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer } from 'react';
+import { useCallback, useEffect, useReducer, useRef } from 'react';
 import type { OpenedFile } from '../types/document';
 import { createEmptyFile } from '../types/document';
 import type { Tab, EditorMode, RightPanelMode } from '../types/session';
@@ -19,11 +19,40 @@ export function useSession() {
     bootstrapSession(loadSession())
   );
 
+  // 始终持有最新 state，供卸载/关窗时的同步 flush 读取（避免闭包时效问题）。
+  const stateRef = useRef(state);
+  useEffect(() => { stateRef.current = state; }, [state]);
+
   // state 变化后 debounce 持久化草稿（含未保存内容）；卸载时清理定时器。
   useEffect(() => {
     const timer = setTimeout(() => saveSession(state), 800);
     return () => clearTimeout(timer);
   }, [state]);
+
+  // 卸载/关窗时同步 flush：debounce 期间若用户 Cmd+Q / 刷新 / 切后台，挂起的 saveSession
+  // 会被 clearTimeout 丢掉。此处监听 pagehide/beforeunload 与 Tauri onCloseRequested，
+  // 同步写一次 localStorage（写是同步的，能赶在进程退出前完成），满足 DEC-092 核心承诺。
+  useEffect(() => {
+    const flush = () => saveSession(stateRef.current);
+    window.addEventListener('pagehide', flush);
+    window.addEventListener('beforeunload', flush);
+    let unlisten: (() => void) | undefined;
+    if ('__TAURI_INTERNALS__' in window) {
+      void import('@tauri-apps/api/window')
+        .then(({ getCurrentWindow }) =>
+          getCurrentWindow()
+            .onCloseRequested(() => { flush(); })
+            .then((fn) => { unlisten = fn; })
+            .catch(() => {}),
+        )
+        .catch(() => {});
+    }
+    return () => {
+      window.removeEventListener('pagehide', flush);
+      window.removeEventListener('beforeunload', flush);
+      unlisten?.();
+    };
+  }, []);
 
   const activeTab = state.tabs.find((t) => t.id === state.activeTabId) ?? state.tabs[0];
   const activeFile = activeTab?.file ?? createEmptyFile();

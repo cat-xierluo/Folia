@@ -229,6 +229,102 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   opacity: 0.7;
 }
 
+/* ===== Tab Bar ===== */
+.tabbar {
+  display: flex;
+  align-items: stretch;
+  height: 34px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--bg);
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.tabbar-scroll {
+  display: flex;
+  align-items: stretch;
+  flex: 1 1 auto;
+  overflow-x: auto;
+  overflow-y: hidden;
+  gap: 2px;
+  padding: 4px 4px 0;
+  scrollbar-width: none;
+}
+.tabbar-scroll::-webkit-scrollbar { display: none; }
+
+.tabbar-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 200px;
+  min-width: 72px;
+  padding: 0 6px 0 12px;
+  border-radius: 6px 6px 0 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-family: var(--font-body);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  transition: background 0.15s, color 0.15s;
+}
+.tabbar-tab:hover { background: var(--control-hover-bg); color: var(--fg); }
+
+.tabbar-tab--active {
+  color: var(--fg);
+  background: var(--surface);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.tabbar-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tabbar-dirty {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+
+.tabbar-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.tabbar-close:hover { background: var(--control-hover-bg); color: var(--danger); }
+
+.tabbar-new {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 17px;
+  cursor: pointer;
+}
+.tabbar-new:hover { background: var(--control-hover-bg); color: var(--fg); }
+
 .file-name {
   display: inline-flex;
   align-items: center;

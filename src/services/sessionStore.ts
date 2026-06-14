@@ -46,7 +46,9 @@ function toPersisted(session: SessionState): PersistedSession {
       return {
         ...tab,
         draftPersisted: tab.draftPersisted && !oversized,
-        file: oversized ? { ...tab.file, content: '', lastSavedContent: '' } : tab.file,
+        // 降级只清 content（不存大内容避免 localStorage 爆掉），保留 lastSavedContent
+        // 作为磁盘基准——重启后 dirty 计算与磁盘对比仍正确；内容从 path 重读留阶段二c。
+        file: oversized ? { ...tab.file, content: '' } : tab.file,
       };
     }),
   };

@@ -4,7 +4,7 @@ import {
   bootstrapSession,
   makeTabFromFile,
 } from './sessionReducer';
-import type { SessionState } from '../types/session';
+import type { SessionState, Tab } from '../types/session';
 import { MAX_TABS } from '../types/session';
 import { createEmptyFile } from '../types/document';
 
@@ -47,6 +47,19 @@ describe('sessionReducer.openInNewTab', () => {
     }
     expect(s.tabs).toHaveLength(MAX_TABS);
     expect(s.activeTabId).toBe(s.tabs[s.tabs.length - 1].id);
+  });
+
+  it('LRU 精确关闭最旧非 dirty 标签，保留所有 dirty 与新标签', () => {
+    const dirty = makeTabFromFile(file('dirty.md', 'x', true));
+    const tabs: Tab[] = [dirty];
+    for (let i = 1; i < MAX_TABS; i++) tabs.push(makeTabFromFile(file(`c${i}.md`)));
+    const start: SessionState = { tabs, activeTabId: tabs[MAX_TABS - 1].id, recentFiles: [] };
+    const next = sessionReducer(start, { type: 'openInNewTab', file: file('new.md', 'n') });
+    expect(next.tabs).toHaveLength(MAX_TABS);
+    expect(next.tabs.some((t) => t.file.name === 'dirty.md')).toBe(true);
+    expect(next.tabs.some((t) => t.file.name === 'c1.md')).toBe(false);
+    expect(next.tabs[next.tabs.length - 1].file.name).toBe('new.md');
+    expect(next.activeTabId).toBe(next.tabs[next.tabs.length - 1].id);
   });
 });
 
