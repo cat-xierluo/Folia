@@ -81,6 +81,10 @@ export function useSession() {
     dispatch({ type: 'recordRecentFile', file });
   }, []);
 
+  const closeOthers = useCallback((id: string) => { dispatch({ type: 'closeOthers', id }); }, []);
+  const closeToRight = useCallback((id: string) => { dispatch({ type: 'closeToRight', id }); }, []);
+  const closeAll = useCallback(() => { dispatch({ type: 'closeAll' }); }, []);
+
   const closeTab = useCallback(
     (id: string, options?: CloseOptions) => {
       const tab = state.tabs.find((t) => t.id === id);
@@ -104,6 +108,9 @@ export function useSession() {
     openInNewTab,
     switchTab,
     closeTab,
+    closeOthers,
+    closeToRight,
+    closeAll,
     updateActiveFile,
     updateActiveTabMeta,
     recordRecentFile,
