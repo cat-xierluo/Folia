@@ -162,6 +162,7 @@ export function AppLayout() {
     updateActiveFile,
     updateActiveTabMeta,
   } = session;
+  const confirmCloseDirty = useCallback(() => window.confirm('该标签有未保存改动，确定关闭吗？'), []);
   const [toc, setToc] = useState<TocItem[]>([]);
   const [tocSessionPinned, setTocSessionPinned] = useState(false);
   const [activeTocIndex, setActiveTocIndex] = useState(0);
@@ -353,7 +354,7 @@ export function AppLayout() {
       if (e.key === 'm' && e.altKey && !e.shiftKey) { e.preventDefault(); handleToggleWechatPreview(); return; }
       if (e.key === 'w' && !e.shiftKey && !e.altKey) {
         e.preventDefault();
-        closeTab(activeTabId, { confirmDirty: () => window.confirm('该标签有未保存改动，确定关闭。') });
+        closeTab(activeTabId, { confirmDirty: confirmCloseDirty });
         return;
       }
       if (e.key === ',' && !e.shiftKey && !e.altKey) {
@@ -728,7 +729,7 @@ export function AppLayout() {
         activeTabId={session.activeTabId}
         onSelect={session.switchTab}
         onContextMenu={(id, x, y) => setContextMenu({ tabId: id, x, y })}
-        onClose={(id) => session.closeTab(id, { confirmDirty: () => window.confirm('该标签有未保存改动，确定关闭。') })}
+        onClose={(id) => session.closeTab(id, { confirmDirty: confirmCloseDirty })}
         onNew={() => session.openInNewTab(createEmptyFile())}
       />
       <div
@@ -779,7 +780,7 @@ export function AppLayout() {
           x={contextMenu.x}
           y={contextMenu.y}
           onClose={() => setContextMenu(null)}
-          onCloseTab={() => session.closeTab(contextMenu.tabId, { confirmDirty: () => window.confirm('该标签有未保存改动，确定关闭。') })}
+          onCloseTab={() => session.closeTab(contextMenu.tabId, { confirmDirty: confirmCloseDirty })}
           onCloseOthers={() => session.closeOthers(contextMenu.tabId)}
           onCloseToRight={() => session.closeToRight(contextMenu.tabId)}
           onCloseAll={() => session.closeAll()}

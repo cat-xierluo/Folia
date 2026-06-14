@@ -158,6 +158,19 @@ describe('sessionReducer 批量关闭（closeOthers/closeToRight/closeAll）', (
     const next = sessionReducer(start, { type: 'closeAll' });
     expect(next.tabs.map((t) => t.file.name)).toEqual(['b.md']);
   });
+
+  it('closeOthers 目标不存在时不变（I-1 守卫）', () => {
+    const start = stateWith([makeTabFromFile(file('a.md')), makeTabFromFile(file('b.md'))], '');
+    expect(sessionReducer(start, { type: 'closeOthers', id: '不存在' })).toBe(start);
+  });
+
+  it('closeAll 全 dirty 时保留原 active（I-2）', () => {
+    const t1 = makeTabFromFile(file('a.md', 'A', true));
+    const t2 = makeTabFromFile(file('b.md', 'B', true));
+    const start = stateWith([t1, t2], t2.id);
+    const next = sessionReducer(start, { type: 'closeAll' });
+    expect(next.activeTabId).toBe(t2.id);
+  });
 });
 
 describe('sessionReducer.updateActiveFile', () => {
