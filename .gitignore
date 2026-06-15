@@ -45,3 +45,7 @@ docs/TASKS.md
 
 # Playwright MCP verification artifacts
 .playwright-mcp/
+
+# 临时验证截图（项目根目录，不入库）
+/verify-*.png
+/v04-tabbar-inline-*.png
