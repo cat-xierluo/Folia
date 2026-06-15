@@ -15,6 +15,7 @@ All notable changes to this project will be documented in this file.
 
 - 标签右键菜单增强（ISS-40）：屏幕边界自动翻转（`computeMenuPosition` 纯函数，溢出视口时左移 / 上移）、`↑/↓` / `Home/End` 键盘导航、占位标签（`isPlaceholder`）只显示「关闭」并隐藏「关闭其他 / 关闭右侧 / 全部关闭」。
 - 大文件降级标签（>256KB 草稿未落盘）的失效与重读体验（ISS-42）：磁盘文件被删 / 移动导致重读失败时 `Tab` 标记 `pathInvalid`，状态栏显示「文件已丢失」并提供「另存为」；重读期间状态栏显示「重新加载中」；草稿过大未落盘显示「草稿过大未自动保存」。`reloading` 由 `activeTab` 派生，避免 effect 内 set state。
+- 标签栏降级标记（ISS-42 可选增强）：草稿过大未自动保存（>256KB 降级仅内存）的标签，在标签名前显示琥珀色圆点（`.tabbar-draft-too-large`，oklch 琥珀 + 25% 光晕）并带「草稿过大未自动保存」悬停提示，与底部 StatusBar 三态提示呼应，多标签切换时也能一眼识别降级标签。
 
 ### Performance
 

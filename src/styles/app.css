@@ -294,6 +294,16 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   flex-shrink: 0;
 }
 
+/* 草稿过大未自动保存（>256KB 降级仅内存）。warn 琥珀色 + 光晕，比 dirty 蓝点更醒目，呼应 StatusBar 的 status-notice--warn。 */
+.tabbar-draft-too-large {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: oklch(52% 0.12 75);
+  box-shadow: 0 0 0 2px color-mix(in oklch, oklch(52% 0.12 75) 25%, transparent);
+  flex-shrink: 0;
+}
+
 .tabbar-close {
   display: inline-flex;
   align-items: center;

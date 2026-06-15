@@ -33,6 +33,13 @@ export function TabBar({ tabs, activeTabId, onSelect, onClose, onNew, onContextM
               onContextMenu={onContextMenu ? (e) => { e.preventDefault(); onContextMenu(tab.id, e.clientX, e.clientY); } : undefined}
             >
               {tab.file.dirty && <span data-dirty className="tabbar-dirty" />}
+              {tab.draftPersisted === false && (
+                <span
+                  data-draft-too-large
+                  className="tabbar-draft-too-large"
+                  title={t('draftTooLargeLabel')}
+                />
+              )}
               <span className="tabbar-name">{tab.file.name}</span>
               <button
                 type="button"

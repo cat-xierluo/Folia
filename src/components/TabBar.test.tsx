@@ -5,13 +5,13 @@ import { TabBar, type TabBarProps } from './TabBar';
 import type { Tab } from '../types/session';
 import { createEmptyFile } from '../types/document';
 
-function tab(id: string, name: string, dirty = false): Tab {
+function tab(id: string, name: string, dirty = false, draftPersisted = true): Tab {
   return {
     id,
     file: { ...createEmptyFile(), name, path: `/tmp/${name}`, dirty },
     editorMode: 'wysiwyg',
     rightPanelMode: 'none',
-    draftPersisted: true,
+    draftPersisted,
     isPlaceholder: false,
   };
 }
@@ -75,5 +75,20 @@ describe('TabBar', () => {
   it('每个标签含关闭按钮（aria-label 关闭）', () => {
     const html = render({ ...baseProps, tabs: [tab('a', 'a.md')], activeTabId: 'a' });
     expect(html).toContain('关闭');
+  });
+
+  it('草稿过大标签（draftPersisted=false）带 data-draft-too-large 标记', () => {
+    const html = render({ ...baseProps, tabs: [tab('a', 'a.md', false, false)], activeTabId: 'a' });
+    expect(html).toContain('data-draft-too-large');
+  });
+
+  it('正常标签（draftPersisted=true）无 data-draft-too-large 标记', () => {
+    const html = render({ ...baseProps, tabs: [tab('a', 'a.md', false, true)], activeTabId: 'a' });
+    expect(html).not.toContain('data-draft-too-large');
+  });
+
+  it('草稿过大标签 title 含草稿过大未自动保存文案', () => {
+    const html = render({ ...baseProps, tabs: [tab('a', 'a.md', false, false)], activeTabId: 'a' });
+    expect(html).toContain('草稿过大未自动保存');
   });
 });

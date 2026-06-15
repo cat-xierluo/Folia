@@ -1,6 +1,6 @@
 # Folia 路线图
 
-> Last updated: 2026-05-30
+> Last updated: 2026-06-15
 > 本文档是 Folia 项目的整体路线图和动态任务清单。
 
 ## 项目愿景
@@ -21,7 +21,7 @@
 | v0.1 MVP | 基础分屏阅读编辑 | 🟢 已完成 | CodeMirror + markdown-it |
 | v0.2 渲染引擎 | Vditor 替换 markdown-it | 🟢 已完成 | Vditor.preview() + 本地 CDN |
 | v0.3 编辑体验 | Typora-like 所见即所得 + HTML 阅读优先 + Word / HTML 导出预览 | 🟡 进行中 | 普通 Markdown 默认 WYSIWYG；原生 HTML 表格自动稳定预览；源码 fallback、按需 Word 多页预览与 HTML 预览面板已完成 |
-| v0.4 文档管理 | 最近文件、多文件 | 🟡 进行中 | 多标签页 + 最近文件首页核心已合并；标签栏并入工具栏 + i18n 三语 + 右键菜单增强（ISS-40） |
+| v0.4 文档管理 | 最近文件、多文件 | 🟢 已完成 | 多标签页会话 + 最近文件首页 + 标签右键菜单/Cmd+W + 大文件降级 + 标签栏并入工具栏 + i18n 三语 + 大文件降级/失效文件/启动恢复三态提示（ISS-40/ISS-42） |
 | v0.5 桌面发布体验 | 自动更新、发布产物、版本提示 | 🟢 已完成 | Tauri updater + GitHub Releases；Gitee 作为产物镜像 |
 | v0.6 Word 导出与预览 | md2word 集成、docx 导出 + 预览 | 🟢 已完成 | 纯 TS 方案，docx npm + mammoth |
 | v0.7 法律增强 | 表格编辑、模板 | 🟡 进行中 | 已完成 HTML table 共享模型、源码区块定位服务、法律表格 fixture 基线 |
@@ -96,9 +96,8 @@
 - [x] 标签栏并入顶部工具栏同一行（ISS-40）
 - [x] 标签页 / 首页 / 右键菜单 i18n 三语（ISS-40）
 - [x] 右键菜单边界裁切 + 键盘导航 + 占位标签处理（ISS-40）
-- [ ] 大文件降级 UI 提示（StatusBar / TabBar 显示「草稿过大未自动保存」）
-- [ ] 失效文件精细处理（openPath 失败 → pathInvalid + 引导另存为）
-- [ ] 启动恢复 loading UI
+- [x] 大文件降级 / 失效文件 / 启动恢复三态提示（ISS-42）：StatusBar 统一展示「草稿过大未自动保存 / 文件已丢失（附「另存为」）/ 重新加载中」三态，`reloading` 由 `activeTab` 派生避免 effect 内 set state
+- [x]（可选增强）TabBar 标签上同步显示「草稿过大未自动保存」琥珀标记（ISS-42）
 
 ### v0.6 Word 导出与预览（已完成）
 
