@@ -36,6 +36,8 @@ npm run test:e2e -- e2e/layout-behavior.spec.ts
 
 PR 描述里**贴关键命令的实际输出**（特别是 `npm test` 的汇总行和 `npm run build` 的 chunk 大小结论）。`"Not run in this step"` / `"只跑了 git diff --check"` 不算验证。
 
+涉及桌面端真实行为（键盘 Cmd 修饰键、IME、Tauri IPC、Finder 拖放、`asset.localhost` 资源协议等）时，`e2e/` 下的浏览器版 Playwright **不足以覆盖**；请开发者本地用 `npm run etv:dev` + `npm run etv:run`（ISS-161 引入）跑 `scripts/etv-folia.mjs` 真实 WebView 断言。该脚本仅在 macOS WKWebView 上可用，**不进 GitHub Actions**，PR 描述里手动标注「桌面端真机复测已跑 / 未跑」即可。
+
 ## 4. PR 流程
 
 - **一个 PR 只解决一个问题**。多文件多特性不要打包。
