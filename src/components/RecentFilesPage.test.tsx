@@ -9,7 +9,7 @@ function render(props: RecentFilesPageProps): string {
 }
 
 const noop = () => {};
-const baseProps = { onOpenFile: noop, onOpenRecent: noop, onNew: noop };
+const baseProps = { onOpenFile: noop, onOpenRecent: noop, onNew: noop, onRemoveRecent: noop, onClearRecent: noop };
 
 describe('RecentFilesPage', () => {
   beforeEach(() => {
@@ -62,5 +62,27 @@ describe('RecentFilesPage', () => {
     const html = render({ ...baseProps, recentFiles });
     expect(html).toContain('<button');
     expect(html).toContain('/tmp/a.md');
+  });
+
+  it('有最近文件时渲染「清空最近」按钮', () => {
+    const recentFiles: RecentFileEntry[] = [{ path: '/tmp/a.md', name: 'a.md', openedAt: 1 }];
+    const html = render({ ...baseProps, recentFiles });
+    expect(html).toContain('recent-page-clear');
+    expect(html).toContain('清空最近');
+  });
+
+  it('无最近文件时不渲染「清空最近」按钮', () => {
+    const html = render({ ...baseProps, recentFiles: [] });
+    expect(html).not.toContain('recent-page-clear');
+  });
+
+  it('每条最近文件渲染独立的移除按钮', () => {
+    const recentFiles: RecentFileEntry[] = [
+      { path: '/tmp/a.md', name: 'a.md', openedAt: 1 },
+      { path: '/tmp/b.md', name: 'b.md', openedAt: 2 },
+    ];
+    const html = render({ ...baseProps, recentFiles });
+    expect((html.match(/recent-page-item-remove/g) ?? []).length).toBe(2);
+    expect(html).toContain('从最近列表移除');
   });
 });

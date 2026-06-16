@@ -206,6 +206,42 @@ describe('sessionReducer.recordRecentFile', () => {
   });
 });
 
+describe('sessionReducer.removeRecentFile / clearRecentFiles', () => {
+  const recent = (path: string): { path: string; name: string; openedAt: number } => ({ path, name: path.split('/').pop() ?? path, openedAt: 1 });
+  const startWith = (recentFiles: { path: string; name: string; openedAt: number }[]): SessionState => ({
+    tabs: [makeTabFromFile(file('a.md'))],
+    activeTabId: '',
+    recentFiles,
+  });
+
+  it('removeRecentFile 按 path 移除单条', () => {
+    const start = startWith([recent('/tmp/a.md'), recent('/tmp/b.md')]);
+    const next = sessionReducer(start, { type: 'removeRecentFile', path: '/tmp/a.md' });
+    expect(next.recentFiles).toHaveLength(1);
+    expect(next.recentFiles[0].path).toBe('/tmp/b.md');
+  });
+
+  it('removeRecentFile path 不存在时列表不变', () => {
+    const start = startWith([recent('/tmp/a.md')]);
+    const next = sessionReducer(start, { type: 'removeRecentFile', path: '/tmp/不存在.md' });
+    expect(next.recentFiles).toHaveLength(1);
+  });
+
+  it('clearRecentFiles 清空全部', () => {
+    const start = startWith([recent('/tmp/a.md'), recent('/tmp/b.md')]);
+    const next = sessionReducer(start, { type: 'clearRecentFiles' });
+    expect(next.recentFiles).toHaveLength(0);
+  });
+
+  it('删除 / 清空不影响 tabs', () => {
+    const t1 = makeTabFromFile(file('a.md'));
+    const start: SessionState = { tabs: [t1], activeTabId: t1.id, recentFiles: [recent('/tmp/a.md')] };
+    const cleared = sessionReducer(start, { type: 'clearRecentFiles' });
+    expect(cleared.tabs).toBe(start.tabs);
+    expect(cleared.activeTabId).toBe(t1.id);
+  });
+});
+
 describe('sessionReducer.markPathInvalid', () => {
   it('标记指定 tab 为 pathInvalid', () => {
     const t1 = makeTabFromFile(file('a.md'));

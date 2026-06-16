@@ -412,6 +412,39 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 .recent-page-item:hover { background: var(--control-hover-bg); }
 .recent-page-item-name { font-size: 13px; color: var(--fg); font-weight: 500; }
 .recent-page-item-path { font-size: 11px; color: var(--muted); word-break: break-all; }
+.recent-page-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 16px 0 0;
+  padding: 0 4px;
+}
+.recent-page-list-title { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+.recent-page-clear {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.recent-page-clear:hover { color: var(--fg); background: var(--control-hover-bg); }
+.recent-page-item-row { display: flex; align-items: stretch; width: 100%; }
+.recent-page-item-row .recent-page-item { flex: 1; min-width: 0; }
+.recent-page-item-remove {
+  flex: 0 0 auto;
+  width: 28px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 0 8px 8px 0;
+  transition: color 0.15s, background 0.15s;
+}
+.recent-page-item-remove:hover { color: var(--danger, #d33); background: var(--control-hover-bg); }
 .recent-page-empty { margin: 8px 0 0; color: var(--muted); font-size: 12px; }
 .recent-page-primary:focus-visible,
 .recent-page-secondary:focus-visible,
