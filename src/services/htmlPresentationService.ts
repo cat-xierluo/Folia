@@ -90,6 +90,43 @@ function normalizePathParts(parts: string[]): string[] {
   return normalized;
 }
 
+/**
+ * Sensitive-path blacklist — stops a maliciously-crafted Markdown / HTML
+ * document from traversing out of the user's document tree to read system
+ * secrets through the Tauri asset protocol (whose scope is the whole `$HOME`).
+ *
+ * Design choice (DEC-098): keep legitimate `../` references working — lawyers
+ * commonly store images in a shared parent `证据/` directory — but refuse any
+ * resolved path that lands inside well-known sensitive system directories or
+ * credential folders. Compared are forward-slash-normalized, lower-cased paths.
+ */
+const SENSITIVE_PATH_PREFIXES = [
+  // Unix system directories
+  '/etc', '/private/etc',
+  '/system', '/system/volumes',
+  '/usr',
+  '/bin', '/sbin',
+  '/var', '/private/var',
+  '/dev',
+  '/proc', '/sys',
+  '/root',
+  '/library/keychains',
+  '/private/var/keychain',
+  // Windows system directories (forward-slash form)
+  'c:/windows', 'c:/$recycle.bin', 'c:/program files', 'c:/program files (x86)', 'c:/programdata',
+];
+
+const SENSITIVE_PATH_SEGMENTS = ['.ssh', '.gnupg', '.aws'];
+
+function isSensitivePath(normalizedPath: string): boolean {
+  const lower = normalizedPath.toLowerCase();
+  for (const prefix of SENSITIVE_PATH_PREFIXES) {
+    if (lower === prefix || lower.startsWith(`${prefix}/`)) return true;
+  }
+  if (lower.split('/').some((segment) => SENSITIVE_PATH_SEGMENTS.includes(segment))) return true;
+  return false;
+}
+
 export function resolveLocalResourcePath(filePath: string | undefined, resourceUrl: string): string | undefined {
   if (!filePath || !isRelativeLocalUrl(resourceUrl)) return undefined;
 
@@ -104,6 +141,13 @@ export function resolveLocalResourcePath(filePath: string | undefined, resourceU
   const hasLeadingSlash = joined.startsWith('/');
   const parts = normalizePathParts(joined.split('/'));
   const normalized = `${hasLeadingSlash ? '/' : ''}${parts.join('/')}`;
+
+  // Path-traversal guard: refuse resolved paths that land inside sensitive
+  // system / credential directories. Ordinary `../` references to normal
+  // directories still resolve (see DEC-098).
+  if (isSensitivePath(normalized)) {
+    return undefined;
+  }
 
   return usesWindowsSeparators ? normalized.replaceAll('/', '\\') : normalized;
 }

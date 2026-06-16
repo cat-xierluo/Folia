@@ -23,7 +23,9 @@ describe('Tauri capabilities', () => {
     const csp = config.app?.security?.csp ?? '';
 
     expect(csp).toContain("script-src 'self' 'unsafe-eval' 'unsafe-inline'");
-    expect(csp).toContain("img-src 'self' data: file:");
+    // DEC-096: img-src must include asset: / http://asset.localhost so that
+    // convertFileSrc() URLs for local images can load in the WebView.
+    expect(csp).toContain("img-src 'self' asset: http://asset.localhost");
     expect(csp).toContain("frame-src 'self' data: blob:");
     expect(csp).toContain("connect-src 'self'");
   });

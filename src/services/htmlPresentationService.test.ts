@@ -87,6 +87,32 @@ describe('htmlPresentationService', () => {
     expect(resolveLocalResourcePath('/Users/demo/decks/case.html', '//example.test/a.js')).toBeUndefined();
   });
 
+  it('refuses paths that traverse into sensitive system or credential directories', () => {
+    const base = '/Users/demo/decks/case.html';
+    // Three `..` reach the filesystem root from /Users/demo/decks/, landing in /etc, /var, /private.
+    expect(resolveLocalResourcePath(base, '../../../etc/passwd')).toBeUndefined();
+    expect(resolveLocalResourcePath(base, '../../../private/etc/hosts')).toBeUndefined();
+    expect(resolveLocalResourcePath(base, '../../../var/log/system.log')).toBeUndefined();
+    // Credential folders are refused by segment anywhere in the resolved path.
+    expect(resolveLocalResourcePath(base, '../../../.ssh/id_rsa')).toBeUndefined();
+    expect(resolveLocalResourcePath(base, '../.gnupg/secring.gpg')).toBeUndefined();
+    // Windows base resolving into a sensitive drive folder (3 x `..` keeps the C: drive).
+    expect(
+      resolveLocalResourcePath('C:\\Users\\demo\\docs\\note.md', '..\\..\\..\\Windows\\System32\\config.sys'),
+    ).toBeUndefined();
+  });
+
+  it('still resolves legitimate parent-directory references to ordinary folders', () => {
+    // ../shared/theme.css → /Users/demo/shared/theme.css — not sensitive, allowed.
+    expect(resolveLocalResourcePath('/Users/demo/decks/case.html', '../shared/theme.css')).toBe(
+      '/Users/demo/shared/theme.css',
+    );
+    // Chinese-named parent directory (common for shared 证据/ folders).
+    expect(resolveLocalResourcePath('/Users/demo/decks/case.html', '../证据/photo.webp')).toBe(
+      '/Users/demo/证据/photo.webp',
+    );
+  });
+
   it('inlines same-directory scripts, stylesheets, and images before building the iframe document', async () => {
     const reads = new Map<string, Uint8Array>([
       ['/Users/demo/decks/assets/deck.js', new TextEncoder().encode('window.slide = 2;')],
