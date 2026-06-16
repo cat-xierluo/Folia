@@ -25,6 +25,7 @@ All notable changes to this project will be documented in this file.
 
 - 超大文件（>10MB）在 Rust 后端用 `metadata` 读取前拦截并返回明确错误，前端弹出原生「该文件过大（超过 10MB），暂不支持打开」提示（中 / 英 / 日三语），避免超大文件撑爆内存（ISS-159）。
 - 修复 Markdown 文件中的本地相对路径图片完全不显示的问题（DEC-096）。根因为 Tauri asset 协议三处配置全部缺失，导致 `convertFileSrc()` 生成的 asset URL 被三重拦截：① `src-tauri/Cargo.toml` 的 `tauri` crate 未启用 `protocol-asset` feature（Rust 端不编译 asset protocol handler）；② `tauri.conf.json` 无 `assetProtocol.enable/scope`（默认 scope 空，拒绝所有路径）；③ CSP `img-src 'self' data: file:` 不含 `asset:` / `http://asset.localhost`（host 不匹配 `'self'`，被 CSP 拦截）。补齐配置（`protocol-asset` feature + `assetProtocol: { enable: true, scope: { allow: ["$HOME/**/*"], requireLiteralLeadingDot: false } }` + CSP `img-src`/`media-src` 加 `asset: http://asset.localhost`）后，同目录、跨目录、含中文 / 空格 / emoji 目录名、`%20` URL 编码的相对路径图片均正常加载。`localImageResolver` / `resolveLocalResourcePath` 代码本身正确，此前纯粹是 Tauri 配置缺失。
+- 修复打开 Word 预览面板时纸张两侧明显留白、内容区被挤压的问题（ISS-166 / DEC-097）。根因：`WordPaperPreviewPane` 的 `PREVIEW_HORIZONTAL_PADDING = 56` 预留过多，纸张缩放后宽度 = 面板宽 - 56，仅占面板约 88%；叠加 `.word-preview-scroll` 内边距偏大。修复：`PREVIEW_HORIZONTAL_PADDING` 56→16（匹配 scroll 左右 padding 8px×2）+ `.word-preview-scroll` padding `18px 18px 40px`→`10px 8px 22px` + `.word-preview-pages` gap `22px`→`12px`。node + playwright 截图实测纸张宽度 404px→444px，基本占满面板（460-16=444）。
 
 ## [0.3.22] - 2026-06-13
 

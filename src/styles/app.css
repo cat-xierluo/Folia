@@ -1600,7 +1600,8 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 18px 18px 40px;
+  /* ISS-166：压缩无效留白，让纸张占更多空间（原 18px 18px 40px） */
+  padding: 10px 8px 22px;
 }
 
 .word-preview-stage {
@@ -1611,7 +1612,8 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 22px;
+  /* ISS-166：页间距收紧（原 22px） */
+  gap: 12px;
 }
 
 .word-page-shell {

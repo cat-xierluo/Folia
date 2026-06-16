@@ -21,7 +21,8 @@ type WordPaperPreviewPaneProps = {
 };
 
 const CSS_PX_PER_CM = 96 / 2.54;
-const PREVIEW_HORIZONTAL_PADDING = 56;
+// ISS-166：原 56 预留过多导致纸张缩放后两侧大留白；减到 16（匹配 .word-preview-scroll 左右 padding 8px×2），让纸张尽量占满面板宽度。
+const PREVIEW_HORIZONTAL_PADDING = 16;
 
 function useDebouncedValue(value: string, delay: number): string {
   const [debounced, setDebounced] = useState(value);
