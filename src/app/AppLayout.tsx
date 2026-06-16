@@ -795,6 +795,8 @@ export function AppLayout() {
             onOpenFile={handleOpen}
             onOpenRecent={(path) => { void handleOpenPath(path); }}
             onNew={() => session.openInNewTab(createEmptyFile())}
+            onRemoveRecent={(path) => session.removeRecentFile(path)}
+            onClearRecent={() => session.clearRecentFiles()}
           />
         ) : isDocx ? docxPane : (
           <>

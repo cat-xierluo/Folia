@@ -81,6 +81,14 @@ export function useSession() {
     dispatch({ type: 'recordRecentFile', file });
   }, []);
 
+  const removeRecentFile = useCallback((path: string) => {
+    dispatch({ type: 'removeRecentFile', path });
+  }, []);
+
+  const clearRecentFiles = useCallback(() => {
+    dispatch({ type: 'clearRecentFiles' });
+  }, []);
+
   const closeOthers = useCallback((id: string) => { dispatch({ type: 'closeOthers', id }); }, []);
   const closeToRight = useCallback((id: string) => { dispatch({ type: 'closeToRight', id }); }, []);
   const closeAll = useCallback(() => { dispatch({ type: 'closeAll' }); }, []);
@@ -119,5 +127,7 @@ export function useSession() {
     updateActiveFile,
     updateActiveTabMeta,
     recordRecentFile,
+    removeRecentFile,
+    clearRecentFiles,
   };
 }
