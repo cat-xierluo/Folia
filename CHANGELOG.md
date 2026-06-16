@@ -19,6 +19,7 @@ All notable changes to this project will be documented in this file.
 - 标签右键菜单增强（ISS-40）：屏幕边界自动翻转（`computeMenuPosition` 纯函数，溢出视口时左移 / 上移）、`↑/↓` / `Home/End` 键盘导航、占位标签（`isPlaceholder`）只显示「关闭」并隐藏「关闭其他 / 关闭右侧 / 全部关闭」。
 - 大文件降级标签（>256KB 草稿未落盘）的失效与重读体验（ISS-42）：磁盘文件被删 / 移动导致重读失败时 `Tab` 标记 `pathInvalid`，状态栏显示「文件已丢失」并提供「另存为」；重读期间状态栏显示「重新加载中」；草稿过大未落盘显示「草稿过大未自动保存」。`reloading` 由 `activeTab` 派生，避免 effect 内 set state。
 - 标签栏降级标记（ISS-42 可选增强）：草稿过大未自动保存（>256KB 降级仅内存）的标签，在标签名前显示琥珀色圆点（`.tabbar-draft-too-large`，oklch 琥珀 + 25% 光晕）并带「草稿过大未自动保存」悬停提示，与底部 StatusBar 三态提示呼应，多标签切换时也能一眼识别降级标签。
+- 桌面端真机 CDP 端到端验证脚本 `scripts/etv-folia.mjs`（ISS-161，借鉴 horseMD `etv.mjs`）：通过 Playwright `connectOverCDP` 直连 `WEBKIT_INSPECTOR_SERVER=127.0.0.1:9222` 暴露的 `tauri dev` WKWebView，复用现有 page target（不调 `/json/new`），跑 3 个真实桌面端场景：A 键盘快捷键回归（`Cmd+Alt+P` Word 预览 / `Cmd+Alt+M` HTML 预览 / `Cmd+,` 设置页）、B 拖放链路 IPC 节点可达性（`__TAURI_INTERNALS__` 桥、`pending_opened_paths`、`opened-paths` 事件总线）、C Tauri IPC 真实调用（`read_opened_document` / `write_opened_document` round-trip + 扩展名守卫）。截图保存到 `.playwright-mcp/`（已 gitignore）。新增 `npm run etv:dev`（带 CDP 端口启动 Tauri 开发模式）、`npm run etv:run`（跑脚本）、`npm run etv`（同 etv:run，单场景运行可用 `node scripts/etv-folia.mjs a|b|c`）。**仅 macOS WKWebView，不进 GitHub Actions**：由开发者本地复测真实桌面端行为，覆盖 `e2e/` Playwright 浏览器版无法验证的键盘 Cmd 修饰键 / IME / Tauri IPC / Finder 拖放 / `asset.localhost` 等 macOS 偶发差异。
 
 ### Performance
 

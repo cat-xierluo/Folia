@@ -14,7 +14,10 @@
     "tauri": "tauri",
     "tauri:build:local": "tauri build --config '{\"bundle\":{\"createUpdaterArtifacts\":false}}'",
     "tauri:build:update": "tauri build --config '{\"bundle\":{\"createUpdaterArtifacts\":true}}'",
-    "updater:manifest": "node scripts/create-updater-manifest.mjs"
+    "updater:manifest": "node scripts/create-updater-manifest.mjs",
+    "etv:dev": "WEBKIT_INSPECTOR_SERVER=127.0.0.1:9222 tauri dev",
+    "etv:run": "node scripts/etv-folia.mjs",
+    "etv": "node scripts/etv-folia.mjs"
   },
   "dependencies": {
     "@codemirror/lang-markdown": "6.5.0",
