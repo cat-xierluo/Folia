@@ -1,13 +1,35 @@
 use std::{
+  collections::HashMap,
   path::{Path, PathBuf},
   sync::Mutex,
+  time::Instant,
 };
 
 #[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
 use tauri::Emitter;
 use tauri::Manager;
 
+use notify::{
+  event::EventKind as NotifyEventKind, Event, RecommendedWatcher, RecursiveMode, Watcher,
+};
+
 struct OpenedPaths(Mutex<Vec<String>>);
+
+/// 全局监听状态：路径 → (watcher, 最近一次事件时间戳)
+///
+/// 设计要点（ISS-162）：
+/// - watcher 必须常驻，否则一释放就停止监听。放 `tauri::State` 而不是局部。
+/// - 单文件轮询补 atomic-replace 时用 `last_event` 去重，避免和 notify 自身事件重复触发。
+struct AppState {
+  watchers: Mutex<HashMap<PathBuf, WatchEntry>>,
+}
+
+struct WatchEntry {
+  /// 持有 watcher 即维持监听句柄；Drop 时 watcher 停止监听。
+  _watcher: RecommendedWatcher,
+  /// 最近一次 notify 事件时间；轮询补 emit 时跳过时间窗内的相同路径。
+  last_event: Mutex<Instant>,
+}
 
 #[tauri::command]
 fn pending_opened_paths(app: tauri::AppHandle) -> Vec<String> {
@@ -65,10 +87,199 @@ fn write_opened_document(path: String, content: String) -> Result<(), String> {
   std::fs::write(&path, content).map_err(|error| format!("failed to write document: {error}"))
 }
 
+/// 监听系统根或敏感目录黑名单前缀（ISS-162，借鉴 horseMD chokidar 防御）。
+///
+/// 大小写不敏感比较：macOS HFS+/APFS 默认大小写不敏感（区分大小写是可选），Windows NTFS
+/// 默认不敏感；这里统一按不敏感处理，避免 `C:\Windows` / `c:\windows` 绕过。
+const DENY_PATH_PREFIXES: &[&str] = &[
+  "/dev",
+  "/etc",
+  "/system",
+  "/system/volumes",
+  // Windows 路径，统一小写比较。
+  "c:\\windows",
+  "c:\\$recycle.bin",
+];
+
+/// 跨平台绝对路径判定。
+///
+/// `Path::is_absolute()` 在 macOS / Linux 上对 `C:\Windows\System32` 这种 Windows
+/// 路径返回 false（因为 Path 在编译期绑定到目标平台），而 Tauri 的 Windows 构建
+/// 同样可能在 macOS 开发者机器上做跨平台单测。这里额外接受 `^[A-Za-z]:[\\/]`
+/// 形式的盘符路径，模拟 Windows 视角的"绝对"，避免黑名单前缀绕过。
+fn is_absolute_path(path: &Path) -> bool {
+  if path.is_absolute() {
+    return true;
+  }
+  let raw = path.to_string_lossy();
+  if raw.len() < 3 {
+    return false;
+  }
+  let bytes = raw.as_bytes();
+  bytes[0].is_ascii_alphabetic()
+    && bytes[1] == b':'
+    && (bytes[2] == b'\\' || bytes[2] == b'/')
+}
+
+/// 路径命中系统级黑名单前缀（大小写不敏感，跨平台分隔符）。
+fn is_denied_root(path: &Path) -> bool {
+  // 先把整体 lower 处理，再去掉尾部分隔符影响。
+  let raw = path.to_string_lossy();
+  let normalized = raw.trim_end_matches(['/', '\\']).to_ascii_lowercase();
+  // Linux/macOS 根目录 `/` 单独处理：trim 后为空串。
+  if normalized.is_empty() {
+    return true;
+  }
+  for prefix in DENY_PATH_PREFIXES {
+    if normalized == *prefix {
+      return true;
+    }
+    // Windows 路径用 `\`；macOS/Linux 路径用 `/`；同时接受两种分隔符，
+    // 让 `C:\Windows\foo` 也能匹配前缀 `c:\windows`（去掉末尾 `\` 后
+    // `c:\windows` + `\foo` 视为 `c:\windows\foo` 的子路径）。
+    if normalized.starts_with(prefix)
+      && normalized.len() > prefix.len()
+      && matches!(normalized.as_bytes()[prefix.len()], b'\\' | b'/')
+    {
+      return true;
+    }
+  }
+  false
+}
+
+/// 监听前路径校验：
+/// 1. 必须是绝对路径；
+/// 2. 不命中黑名单前缀（即使路径在跨平台测试机上不存在也要先拒，阻止
+///    攻击者用 `C:\Windows\Whatever` 之类不存在的盘符路径绕过前缀校验）；
+/// 3. 文件 / 目录必须存在（避免 watcher 在不存在的路径上立刻报错）。
+///
+/// 返回规范化（去尾部分隔符）后的 `PathBuf`，方便后续作 HashMap key。
+fn validate_watch_path(raw: &str) -> Result<PathBuf, String> {
+  let path = PathBuf::from(raw);
+  if !is_absolute_path(&path) {
+    return Err(format!("path must be absolute: {raw}"));
+  }
+  if is_denied_root(&path) {
+    return Err(format!("path is on the denied roots list: {raw}"));
+  }
+  if !path.exists() {
+    return Err(format!("path does not exist: {raw}"));
+  }
+  // 去掉尾部分隔符以保证重复监听同路径只占一个槽位。
+  let trimmed = path.to_string_lossy().trim_end_matches(['/', '\\']).to_string();
+  Ok(PathBuf::from(trimmed))
+}
+
+/// 注册一个文件 / 目录监听，事件通过 `watch:changed` emit 到前端（ISS-162）。
+///
+/// 错误通过 `watch:error` emit 而非 panic，确保 watcher 后台任务异常不拖垮应用。
+#[tauri::command]
+fn watch_path(path: String, app: tauri::AppHandle) -> Result<(), String> {
+  let canonical = validate_watch_path(&path)?;
+
+  let app_for_handler = app.clone();
+  let canonical_for_handler = canonical.clone();
+  let last_event = Instant::now();
+
+  let mut watcher = notify::recommended_watcher(move |res: notify::Result<Event>| {
+    match res {
+      Ok(event) => {
+        // 仅向该 watcher 注册的根路径及其子项事件感兴趣。
+        let is_relevant = event.paths.iter().any(|p| {
+          p == &canonical_for_handler
+            || p.starts_with(&canonical_for_handler)
+        });
+        if !is_relevant {
+          return;
+        }
+
+        // 更新时间戳，给 atomic-replace 轮询去重。
+        if let Some(state) = app_for_handler.try_state::<AppState>() {
+          if let Some(entry) = state.watchers.lock().unwrap().get(&canonical_for_handler) {
+            if let Ok(mut stamp) = entry.last_event.lock() {
+              *stamp = Instant::now();
+            }
+          }
+        }
+
+        let kind = map_event_kind(&event.kind);
+        for event_path in &event.paths {
+          let _ = app_for_handler.emit(
+            "watch:changed",
+            serde_json::json!({
+              "path": event_path.to_string_lossy(),
+              "kind": kind,
+            }),
+          );
+        }
+      }
+      Err(error) => {
+        // 关键：不 panic，统一 emit 错误事件，让前端决定如何降级（ISS-162）。
+        let _ = app_for_handler.emit(
+          "watch:error",
+          serde_json::json!({
+            "path": canonical_for_handler.to_string_lossy(),
+            "message": error.to_string(),
+          }),
+        );
+      }
+    }
+  })
+  .map_err(|error| format!("failed to create watcher: {error}"))?;
+
+  let mode = if canonical.is_dir() {
+    RecursiveMode::Recursive
+  } else {
+    RecursiveMode::NonRecursive
+  };
+  watcher
+    .watch(&canonical, mode)
+    .map_err(|error| format!("failed to start watch: {error}"))?;
+
+  let entry = WatchEntry {
+    _watcher: watcher,
+    last_event: Mutex::new(last_event),
+  };
+
+  let state = app.state::<AppState>();
+  let mut watchers = state.watchers.lock().unwrap();
+  // 同一路径重复 watch：直接覆盖，不留泄漏句柄。
+  watchers.insert(canonical.clone(), entry);
+
+  Ok(())
+}
+
+/// 取消监听指定路径；路径未注册时返回 Ok(()) 而非 Err（幂等）。
+#[tauri::command]
+fn unwatch_path(path: String, app: tauri::AppHandle) -> Result<(), String> {
+  let canonical = match validate_watch_path(&path) {
+    Ok(canonical) => canonical,
+    // 取消监听时对路径做容错：黑名单 / 相对路径 / 不存在都直接视为未注册。
+    Err(_) => return Ok(()),
+  };
+
+  let state = app.state::<AppState>();
+  let mut watchers = state.watchers.lock().unwrap();
+  watchers.remove(&canonical);
+  Ok(())
+}
+
+fn map_event_kind(kind: &NotifyEventKind) -> &'static str {
+  match kind {
+    NotifyEventKind::Create(_) => "create",
+    NotifyEventKind::Remove(_) => "remove",
+    NotifyEventKind::Modify(_) => "modify",
+    _ => "modify",
+  }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
     .manage(OpenedPaths(Mutex::new(collect_initial_open_paths())))
+    .manage(AppState {
+      watchers: Mutex::new(HashMap::new()),
+    })
     .plugin(tauri_plugin_dialog::init())
     .plugin(tauri_plugin_fs::init())
     .plugin(tauri_plugin_opener::init())
@@ -77,7 +288,9 @@ pub fn run() {
     .invoke_handler(tauri::generate_handler![
       pending_opened_paths,
       read_opened_document,
-      write_opened_document
+      write_opened_document,
+      watch_path,
+      unwatch_path
     ])
     .setup(|app| {
       if cfg!(debug_assertions) {
@@ -171,11 +384,14 @@ fn is_writable_document_path(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use std::time::Duration;
 
   fn temp_path(name: &str) -> PathBuf {
     std::env::temp_dir().join(format!("folia-{}-{}", std::process::id(), name))
   }
 
+  /// 不依赖 tauri AppHandle 的轻量路径校验入口：把 `validate_watch_path`
+  /// 抽出来作为 `&str -> Result<PathBuf, String>` 单测。
   #[test]
   fn read_opened_document_reads_supported_document_bytes() {
     let path = temp_path("opened.md");
@@ -245,5 +461,167 @@ mod tests {
 
     assert!(error.contains("unsupported document type"));
     let _ = std::fs::remove_file(path);
+  }
+
+  // ──────── ISS-162 文件监听安全模式单测 ────────
+
+  /// 创建一个独立的 AppState 用以模拟多次 watch/unwatch 不留泄漏。
+  fn fresh_state() -> AppState {
+    AppState {
+      watchers: Mutex::new(HashMap::new()),
+    }
+  }
+
+  /// 把 RecommendedWatcher 直接塞进 AppState（绕开 tauri::AppHandle），
+  /// 用以单测资源回收行为。Notify 事件回调直接丢弃——这里只关心句柄管理。
+  fn push_watcher_for_test(state: &AppState, key: PathBuf) {
+    let watcher: RecommendedWatcher = notify::recommended_watcher(|_| {}).unwrap();
+    let entry = WatchEntry {
+      _watcher: watcher,
+      last_event: Mutex::new(Instant::now()),
+    };
+    state.watchers.lock().unwrap().insert(key, entry);
+  }
+
+  #[test]
+  fn validate_rejects_relative_path() {
+    let error = validate_watch_path("relative/path").unwrap_err();
+    assert!(error.contains("must be absolute"), "got: {error}");
+  }
+
+  #[test]
+  fn validate_rejects_dot_relative_path() {
+    let error = validate_watch_path("./local").unwrap_err();
+    assert!(error.contains("must be absolute"), "got: {error}");
+  }
+
+  #[test]
+  fn validate_rejects_unix_root() {
+    let error = validate_watch_path("/").unwrap_err();
+    assert!(error.contains("denied roots"), "got: {error}");
+  }
+
+  #[test]
+  fn validate_rejects_dev_prefix() {
+    let error = validate_watch_path("/dev/null").unwrap_err();
+    assert!(error.contains("denied roots"), "got: {error}");
+
+    let error = validate_watch_path("/dev").unwrap_err();
+    assert!(error.contains("denied roots"), "got: {error}");
+  }
+
+  #[test]
+  fn validate_rejects_system_volumes_prefix() {
+    let error = validate_watch_path("/System/Volumes").unwrap_err();
+    assert!(error.contains("denied roots"), "got: {error}");
+
+    // 区分大小写不敏感：lowercase / 大小写混用都要拒。
+    let error = validate_watch_path("/system/Volumes/Preboot").unwrap_err();
+    assert!(error.contains("denied roots"), "got: {error}");
+  }
+
+  #[test]
+  fn validate_rejects_etc_prefix_unix() {
+    let error = validate_watch_path("/etc/passwd").unwrap_err();
+    assert!(error.contains("denied roots"), "got: {error}");
+
+    // 大小写不敏感（macOS HFS+/APFS、Windows NTFS）：/ETC 等同 /etc。
+    let error = validate_watch_path("/ETC/passwd").unwrap_err();
+    assert!(error.contains("denied roots"), "got: {error}");
+  }
+
+  #[test]
+  fn validate_rejects_windows_root_case_insensitive() {
+    let error = validate_watch_path("C:\\Windows\\System32").unwrap_err();
+    assert!(error.contains("denied roots"), "got: {error}");
+
+    let error = validate_watch_path("c:\\windows\\System32").unwrap_err();
+    assert!(error.contains("denied roots"), "got: {error}");
+
+    let error = validate_watch_path("C:\\$Recycle.Bin\\file").unwrap_err();
+    assert!(error.contains("denied roots"), "got: {error}");
+  }
+
+  #[test]
+  fn validate_rejects_nonexistent_path() {
+    let error = validate_watch_path("/nonexistent/abc123-xyz").unwrap_err();
+    assert!(error.contains("does not exist"), "got: {error}");
+  }
+
+  #[test]
+  fn validate_accepts_existing_tmp_file() {
+    let path = temp_path("watch-target.md");
+    std::fs::write(&path, b"hi").unwrap();
+
+    let result = validate_watch_path(&path.to_string_lossy());
+    assert!(result.is_ok(), "expected ok, got: {:?}", result.err());
+
+    let _ = std::fs::remove_file(path);
+  }
+
+  #[test]
+  fn watch_state_releases_handles_after_unwatch_cycle() {
+    // 关键不变量：100 次 watch + 100 次 unwatch 后 HashMap 必须回到基线，
+    // 否则每次 watch 都泄漏一个 RecommendedWatcher 句柄（ISS-162）。
+    let state = fresh_state();
+    let baseline = state.watchers.lock().unwrap().len();
+    assert_eq!(baseline, 0);
+
+    for i in 0..100 {
+      let key = temp_path(&format!("cycle-{i}"));
+      push_watcher_for_test(&state, key.clone());
+      assert_eq!(state.watchers.lock().unwrap().len(), baseline + 1);
+
+      // 模拟 unwatch_path：直接 remove。
+      state.watchers.lock().unwrap().remove(&key);
+      assert_eq!(state.watchers.lock().unwrap().len(), baseline);
+    }
+  }
+
+  #[test]
+  fn watch_state_dedupes_duplicate_path() {
+    // 同一路径重复注册：后注册的 watcher 覆盖前一个，不应泄漏。
+    let state = fresh_state();
+    let key = temp_path("dedup.md");
+    std::fs::write(&key, b"x").unwrap();
+
+    push_watcher_for_test(&state, key.clone());
+    push_watcher_for_test(&state, key.clone());
+
+    assert_eq!(state.watchers.lock().unwrap().len(), 1);
+    let _ = std::fs::remove_file(key);
+  }
+
+  #[test]
+  fn unwatch_path_is_idempotent() {
+    // unwatch_path 接受任意已 normalize 的字符串；
+    // 对未注册 / 黑名单 / 相对路径都返回 Ok(())，便于前端在关闭 tab 时无脑调用。
+    let state = fresh_state();
+    let key = temp_path("idempotent.md");
+    std::fs::write(&key, b"x").unwrap();
+    push_watcher_for_test(&state, key.clone());
+
+    state.watchers.lock().unwrap().remove(&key);
+    // 二次 remove 仍返回空。
+    state.watchers.lock().unwrap().remove(&key);
+    assert_eq!(state.watchers.lock().unwrap().len(), 0);
+    let _ = std::fs::remove_file(key);
+  }
+
+  #[test]
+  fn last_event_timestamp_is_mutable() {
+    // 保证 WatchEntry::last_event 可被 notify 回调写入，用于去重轮询。
+    let state = fresh_state();
+    let key = temp_path("stamp.md");
+    push_watcher_for_test(&state, key.clone());
+
+    let binding = state.watchers.lock().unwrap();
+    let entry = binding.get(&key).expect("watcher should be present");
+    let before = *entry.last_event.lock().unwrap();
+    std::thread::sleep(Duration::from_millis(5));
+    *entry.last_event.lock().unwrap() = Instant::now();
+    let after = *entry.last_event.lock().unwrap();
+    drop(binding);
+    assert!(after > before, "expected timestamp to advance");
   }
 }

@@ -122,6 +122,7 @@ word/table-handler.ts 输出 docx Table；Markdown 管道表格使用专用 pars
 | 文件 | 职责 |
 |------|------|
 | `fileService.ts` | 封装 Tauri dialog、桌面端后端文档读写命令与浏览器 fallback，提供 openFile / saveFile / saveFileAs |
+| `fileWatchService.ts` | 订阅 Rust `watch_path` 监听层 emit 的 `watch:changed` / `watch:error` 事件，懒加载 Tauri event listener、解析载荷并分发给前端监听器；非 Tauri 运行时（浏览器 / 测试）自动 no-op（ISS-162） |
 | `fileDrop.ts` | 过滤可拖入打开的 Markdown / HTML / Word 文件路径 |
 | `documentViewMode.ts` | 内部判断文档是否默认应使用稳定 HTML 阅读预览，避免复杂 HTML table 被 WYSIWYG 压窄或破坏；用户手动退出由 AppLayout 的当前文档状态处理（ISS-155 落地后该判断仅在保留的 `htmlPresentationVisible` 路径下消费，默认渲染已统一为 WYSIWYG） |
 | `htmlTableModel.ts` | 将单个原生 HTML table 解析为共享结构模型，保留行列坐标、合并单元格、section、单元格 HTML/文本与属性 |
@@ -218,3 +219,16 @@ word/table-handler.ts 输出 docx Table；Markdown 管道表格使用专用 pars
 - macOS 标题栏：`titleBarStyle: Overlay` + `hiddenTitle: true`，系统红黄绿按钮覆盖在 WebView 顶部，前端 Toolbar 预留左侧空间；中间空白和居中文件标题使用 `data-tauri-drag-region`，整条 Toolbar 提供 JS `startDragging()` fallback；双击空白区域调用 `toggleMaximize()`；不使用 Electron 风格 `-webkit-app-region`
 - CSP：`default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; img-src 'self' data: file:; font-src 'self' file:; connect-src 'self'; media-src 'self' file:; frame-src 'self' data: blob:`。HTML 演示模式的同目录 JS / CSS / 图片优先内联到 iframe 文档；`file:` 仅作为图片、字体和媒体资源兜底，外部网络连接仍由 `connect-src 'self'` 默认阻断。
 - 插件权限：dialog:allow-open, dialog:allow-save, fs:allow-read-text-file, fs:allow-read-file, fs:allow-write-text-file, fs:allow-write-file, updater:default, process:allow-restart, core:window:allow-set-title, core:window:allow-start-dragging, core:window:allow-toggle-maximize
+
+## 文件监听层（ISS-162）
+
+- **职责**：检测用户打开的文件 / 目录在外部被修改 / 删除，向前端 emit 事件，提示用户「文件已外部修改」并复用 ISS-043 `pathInvalid` 概念决定是否走「重新加载 / 另存为」流程。
+- **后端（`src-tauri/src/lib.rs`）**：
+  - 新增 `watch_path(path)` / `unwatch_path(path)` Tauri command。监听句柄存 `AppState`（`tauri::State<Mutex<HashMap<PathBuf, WatchEntry>>>`），句柄常驻直到 `unwatch_path` 或 app 关闭。
+  - **安全防御**（借鉴 horseMD `src/main/index.js` 系统级 chokidar 配置）：`validate_watch_path` 拒绝相对路径、命中系统根黑名单（`/` `/dev` `/etc` `/system` `/system/volumes` `C:\Windows` `C:\$Recycle.Bin`，大小写不敏感、跨平台分隔符统一）、不存在路径。`is_absolute_path` 在 macOS / Linux 上额外接受 Windows 盘符 `C:\…` 形式，便于跨平台单测。
+  - **事件载荷**：`watch:changed` emit `{ path, kind: "modify" | "create" | "remove" }`；监听错误统一通过 `watch:error` 上抛，不 panic。
+  - **不泄漏**：`unwatch_path` 幂等（已取消 / 黑名单 / 不存在路径都返回 Ok）；重复监听同路径覆盖不增加句柄；`WatchEntry::last_event` 为后续 atomic-replace 轮询补 `notify` 漏事件预留去重点。
+- **前端（`src/services/fileWatchService.ts`）**：
+  - 暴露 `watchFile(path)` / `unwatchFile(path)` / `onWatchChanged(listener)` / `onWatchError(listener)`；事件 listener 懒加载 + 幂等；监听器抛错不打断后续分发。
+  - 非 Tauri 运行时（浏览器 / 测试）下 `watchFile` / `unwatchFile` 直接 no-op，方便单测与浏览器模式降级。
+- **依赖**：`notify = "6"`（实际解析到 6.1.1）。当前 v6 的 `Config` 不暴露 `follow_symlinks` 字段（v7 才加入），软链环卡死由各平台后端默认安全处理（macOS FSEvents / Linux inotify 自身不跟随）；黑名单 + 平台默认行为 + 跨平台单测共同构成防御链。
