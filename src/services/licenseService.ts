@@ -28,7 +28,7 @@ export const DEFAULT_LICENSE_STATE: LicenseState = {
 };
 
 const LOCAL_BETA_CODES: Record<string, Pick<LicenseState, 'customExportPresetLimit' | 'customHtmlExportPresetLimit' | 'expiresAt'>> = {
-  'FOLIA-BETA-2026': {
+  YWXLAW: {
     customExportPresetLimit: 8,
     customHtmlExportPresetLimit: 8,
     expiresAt: null,
