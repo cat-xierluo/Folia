@@ -351,13 +351,13 @@ describe('settingsService', () => {
     expect(canAddCustomExportPreset(thirdWord.id)).toBe(false);
     expect(canAddCustomHtmlExportPreset(thirdHtml.id)).toBe(false);
 
-    const result = activateLicenseCode('FOLIA-BETA-2026');
+    const result = activateLicenseCode('ywxlaw');
 
     expect(result.ok).toBe(true);
     expect(getSettings().license).toMatchObject({
       status: 'active',
       plan: 'beta',
-      codeLabel: 'FOLIA-BETA-2026',
+      codeLabel: 'YWXLAW',
       customExportPresetLimit: 8,
       customHtmlExportPresetLimit: 8,
     });
@@ -384,7 +384,7 @@ describe('settingsService', () => {
   });
 
   it('clears beta license state and returns to standard slot limits', () => {
-    activateLicenseCode('FOLIA-BETA-2026');
+    activateLicenseCode('ywxlaw');
 
     clearLicense();
 
@@ -398,7 +398,7 @@ describe('settingsService', () => {
       license: {
         status: 'active',
         plan: 'beta',
-        codeLabel: 'FOLIA-BETA-2026',
+        codeLabel: 'YWXLAW',
         customExportPresetLimit: 999,
         customHtmlExportPresetLimit: 999,
       },
