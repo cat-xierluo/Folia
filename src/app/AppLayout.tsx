@@ -156,6 +156,7 @@ export function AppLayout() {
   const session = useSession();
   const {
     activeFile: file,
+    activeTab,
     openInNewTab,
     closeTab,
     activeTabId,
@@ -163,7 +164,16 @@ export function AppLayout() {
     updateActiveTabMeta,
   } = session;
   const confirmCloseDirty = useCallback(() => window.confirm('该标签有未保存改动，确定关闭吗？'), []);
-  const [toc, setToc] = useState<TocItem[]>([]);
+  // Lazy initializer：会话恢复或新建带内容标签时，立即从 activeTab.file.content 生成 TOC，
+  // 避免首屏渲染时左侧大纲空白（旧实现是 useState([])，依赖后续 handleContentChange 防抖或
+  // openPath 才能填上）。render-time 同步重置逻辑见下方 if 分支（ISS-163）。
+  const [toc, setToc] = useState<TocItem[]>(() => {
+    const initial = activeTab;
+    return initial?.file.fileType === 'docx' ? [] : extractToc(initial?.file.content ?? '');
+  });
+  // 跟踪最近一次已为其生成 TOC 的 activeTabId；切换 tab 时与当前 activeTabId 不一致
+  // 就在 render 阶段同步重置 toc 与挂起的防抖刷新（ISS-163）。详见下方 if 分支。
+  const [lastTocTabId, setLastTocTabId] = useState(activeTabId);
   const [tocSessionPinned, setTocSessionPinned] = useState(false);
   const [activeTocIndex, setActiveTocIndex] = useState(0);
   const [settingsVisible, setSettingsVisible] = useState(false);
@@ -178,6 +188,16 @@ export function AppLayout() {
   const [systemOpenChecked, setSystemOpenChecked] = useState(!isTauriRuntime);
   const [updateState, setUpdateState] = useState<UpdateInstallState>({ phase: 'idle' });
 
+  // 切换 tab 时刷新左侧大纲（ISS-163）。React 19 推荐"render 中调整 state"模式：
+  // 不放在 useEffect 里是因为 react-hooks/set-state-in-effect 不允许 effect 体内同步 setState，
+  // 而且依赖 activeTab.file.content 会与 handleContentChange 的 150ms 防抖刷新生效顺序冲突。
+  // 此处的 setLastTocTabId + setToc 在 render 内同步触发，React 会丢弃本帧并以新状态重渲染，
+  // 不会造成级联渲染。
+  if (lastTocTabId !== activeTabId) {
+    setLastTocTabId(activeTabId);
+    setToc(activeTab?.file.fileType === 'docx' ? [] : extractToc(activeTab?.file.content ?? ''));
+  }
+
   useEffect(() => {
     document.documentElement.dataset.theme = settings.theme;
     document.documentElement.style.colorScheme = settings.theme;
@@ -187,6 +207,14 @@ export function AppLayout() {
   useEffect(() => {
     return () => cancelPendingTocRefresh();
   }, [cancelPendingTocRefresh]);
+
+  // 切换 tab 时取消旧 tab 挂起的 TOC 防抖刷新（ISS-159 同款竞态 / ISS-163）：
+  // render-time setToc 已经把大纲重置为新 tab 的标题，但旧 tab 的 handleContentChange
+  // 若还有挂起的 150ms 定时器，到时仍会用旧 tab 的 content 覆盖新 tab 的大纲。
+  // 此处仅操作 ref（取消定时器），不触发 setState，不与 render-time reset 冲突。
+  useEffect(() => {
+    cancelPendingTocRefresh();
+  }, [activeTabId, cancelPendingTocRefresh]);
 
   useEffect(() => {
     /* Kick off the settings chunk immediately on mount so the modal is fully
@@ -521,7 +549,7 @@ export function AppLayout() {
   // 大文件降级 tab（draftPersisted=false 且 content 被清空）：激活时从磁盘重读内容，
   // 修复降级重启后空白编辑器。失败（文件被删/移）标记 pathInvalid 并提示另存为（ISS-42）。
   // reloading 由 activeTab 派生（draftPersisted=false + content 空 = 重读中），避免 effect 内 set state。
-  const { activeTab, markPathInvalid } = session;
+  const { markPathInvalid } = session;
   useEffect(() => {
     if (!activeTab || activeTab.draftPersisted) return;
     if (!activeTab.file.path || activeTab.file.content) return;
