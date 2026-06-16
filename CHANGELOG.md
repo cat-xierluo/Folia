@@ -15,6 +15,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- 文件外部改动监听安全模式（ISS-162）：Rust 后端基于 `notify = "6"`（实际解析到 6.1.1）实现 `watch_path` / `unwatch_path` Tauri command，监听句柄存 `AppState` 全局 HashMap；前端 `src/services/fileWatchService.ts` 订阅 `watch:changed` / `watch:error` 事件，监听失败不 panic，统一通过 `app.emit("watch:error", ...)` 上抛。**安全防御**（借鉴 horseMD `src/main/index.js` 系统级防护）：`validate_watch_path` 拒绝相对路径、命中系统根黑名单（`/` `/dev` `/etc` `/system` `/system/volumes` `C:\Windows` `C:\$Recycle.Bin`，大小写不敏感、跨平台分隔符统一）、不存在路径；macOS HFS+/APFS 与 Windows NTFS 默认大小写不敏感场景统一做 `to_ascii_lowercase` 处理。**资源回收**：`unwatch_path` 幂等（已取消 / 黑名单 / 不存在路径均返回 Ok，便于关 tab 时无脑 unwatch）；重复监听同路径直接覆盖不泄漏句柄；`last_event` 时间戳为 atomic-replace 轮询补 `notify` 漏事件预留去重点。事件载荷 `{ path, kind: "modify" | "create" | "remove" }` 复用 ISS-043 `pathInvalid` 概念，前端可基于路径匹配活跃 tab 提示「文件已外部修改」。`src-tauri/src/lib.rs` 新增 13 个 Rust 单测覆盖黑名单、相对路径、大小写不敏感、100 次 watch/unwatch 不泄漏、`last_event` 时间戳推进。
 - 最近文件首页支持删除单个记录与清空全部（ISS-167）：每条最近文件右侧加「×」移除按钮（hover 变红），列表标题区加「清空最近」按钮（点击弹原生确认对话框防误操作）。`sessionReducer` 新增 `removeRecentFile` / `clearRecentFiles` action，`useSession` 暴露对应方法，删除 / 清空随会话持久化。
 - 标签右键菜单增强（ISS-40）：屏幕边界自动翻转（`computeMenuPosition` 纯函数，溢出视口时左移 / 上移）、`↑/↓` / `Home/End` 键盘导航、占位标签（`isPlaceholder`）只显示「关闭」并隐藏「关闭其他 / 关闭右侧 / 全部关闭」。
 - 大文件降级标签（>256KB 草稿未落盘）的失效与重读体验（ISS-42）：磁盘文件被删 / 移动导致重读失败时 `Tab` 标记 `pathInvalid`，状态栏显示「文件已丢失」并提供「另存为」；重读期间状态栏显示「重新加载中」；草稿过大未落盘显示「草稿过大未自动保存」。`reloading` 由 `activeTab` 派生，避免 effect 内 set state。
