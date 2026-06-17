@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   sessionReducer,
   bootstrapSession,
+  bootstrapSessionForWindow,
   makeTabFromFile,
 } from './sessionReducer';
 import type { SessionState, Tab } from '../types/session';
@@ -29,6 +30,30 @@ describe('bootstrapSession', () => {
     expect(result.activeTabId).toBe(result.tabs[0].id);
     expect(result.tabs[0].file.name).toBe('未命名');
     expect(result.tabs[0].isPlaceholder).toBe(true);
+  });
+});
+
+describe('bootstrapSessionForWindow', () => {
+  it('tab-window 启动时只恢复 URL 指定的 tab，避免独立窗口加载整套 session', () => {
+    const t1 = makeTabFromFile(file('main.md', 'main'));
+    const t2 = makeTabFromFile(file('detached.md', 'detached'));
+    const loaded: SessionState = { tabs: [t1, t2], activeTabId: t1.id, recentFiles: [] };
+
+    const result = bootstrapSessionForWindow(loaded, 'tab-window-abc', [t2.id]);
+
+    expect(result.tabs).toEqual([t2]);
+    expect(result.activeTabId).toBe(t2.id);
+  });
+
+  it('main 窗口仍按完整 session 恢复', () => {
+    const t1 = makeTabFromFile(file('main.md', 'main'));
+    const t2 = makeTabFromFile(file('detached.md', 'detached'));
+    const loaded: SessionState = { tabs: [t1, t2], activeTabId: t2.id, recentFiles: [] };
+
+    const result = bootstrapSessionForWindow(loaded, 'main', [t1.id]);
+
+    expect(result.tabs).toEqual([t1, t2]);
+    expect(result.activeTabId).toBe(t2.id);
   });
 });
 

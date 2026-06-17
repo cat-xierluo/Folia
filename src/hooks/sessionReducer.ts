@@ -22,6 +22,25 @@ export function bootstrapSession(loaded: SessionState): SessionState {
   return { tabs: [placeholder], activeTabId: placeholder.id, recentFiles: loaded.recentFiles };
 }
 
+export function bootstrapSessionForWindow(
+  loaded: SessionState,
+  windowLabel = 'main',
+  initialTabIds: string[] = [],
+): SessionState {
+  if (windowLabel === 'main' || initialTabIds.length === 0) {
+    return bootstrapSession(loaded);
+  }
+
+  const wanted = new Set(initialTabIds);
+  const tabs = loaded.tabs.filter((tab) => wanted.has(tab.id));
+  if (tabs.length === 0) {
+    return bootstrapSession({ tabs: [], activeTabId: '', recentFiles: loaded.recentFiles });
+  }
+
+  const activeTabId = tabs.some((tab) => tab.id === loaded.activeTabId) ? loaded.activeTabId : tabs[0].id;
+  return { tabs, activeTabId, recentFiles: loaded.recentFiles };
+}
+
 export type SessionAction =
   | { type: 'openInNewTab'; file: OpenedFile }
   | { type: 'switchTab'; id: string }

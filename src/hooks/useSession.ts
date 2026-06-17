@@ -2,11 +2,12 @@ import { useCallback, useEffect, useReducer, useRef } from 'react';
 import type { OpenedFile } from '../types/document';
 import { createEmptyFile } from '../types/document';
 import type { Tab, EditorMode, RightPanelMode } from '../types/session';
-import { sessionReducer, bootstrapSession } from './sessionReducer';
+import { sessionReducer, bootstrapSessionForWindow } from './sessionReducer';
 import { loadSession, saveSession } from '../services/sessionStore';
 import {
   closeTabWindow,
   detectCurrentWindowLabel,
+  detectCurrentWindowTabIds,
   mergeBackTab,
   syncWindowTabIds,
   tearOffTabToWindow,
@@ -24,9 +25,11 @@ export interface CloseOptions {
  * 本 hook 负责：初始化（启动恢复）、debounce 持久化草稿、派生 activeFile/editorMode 等。
  */
 export function useSession() {
-  const [state, dispatch] = useReducer(sessionReducer, undefined, () =>
-    bootstrapSession(loadSession())
-  );
+  const [state, dispatch] = useReducer(sessionReducer, undefined, () => {
+    const windowLabel = detectCurrentWindowLabel();
+    const initialTabIds = detectCurrentWindowTabIds();
+    return bootstrapSessionForWindow(loadSession(), windowLabel, initialTabIds);
+  });
 
   // 始终持有最新 state，供卸载/关窗时的同步 flush 读取（避免闭包时效问题）。
   const stateRef = useRef(state);
@@ -220,6 +223,9 @@ export function useSession() {
         dirty: tab.file.dirty,
       };
       try {
+        // 确保新窗口启动时能从共享 localStorage 找到刚撕出的 tab；
+        // debounce save 可能尚未落盘。
+        saveSession(stateRef.current);
         await tearOffTabToWindow(payload);
         dispatch({ type: 'removeTabById', id });
         return true;
