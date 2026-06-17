@@ -7,7 +7,7 @@ use std::{
 
 #[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
 use tauri::Emitter;
-use tauri::Manager;
+use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 
 use notify::{
   event::EventKind as NotifyEventKind, Event, RecommendedWatcher, RecursiveMode, Watcher,
@@ -22,6 +22,16 @@ struct OpenedPaths(Mutex<Vec<String>>);
 /// - 单文件轮询补 atomic-replace 时用 `last_event` 去重，避免和 notify 自身事件重复触发。
 struct AppState {
   watchers: Mutex<HashMap<PathBuf, WatchEntry>>,
+  /// ISS-164：tear-off tab 窗口追踪。label → 该窗口持有的 tabId 列表。
+  /// 窗口被关闭时通过 `window:closed` 事件告知主窗口回收 tab（DEC-102）。
+  tab_windows: Mutex<HashMap<String, TabWindowEntry>>,
+}
+
+/// ISS-164：单条 tab 窗口追踪记录。
+struct TabWindowEntry {
+  /// 创建时初始放入窗口的 tab id 列表；后续可由前端通过 `update_tab_window_tabs`
+  /// 增量追加（同一窗口可容纳多 tab）。用于关闭窗口时把仍未移交的 tab 退回主窗口。
+  tab_ids: Vec<String>,
 }
 
 struct WatchEntry {
@@ -273,13 +283,148 @@ fn map_event_kind(kind: &NotifyEventKind) -> &'static str {
   }
 }
 
+// ──────── ISS-164 tear-off tab 多窗口支持（DEC-102） ────────
+
+/// ISS-164：合法的 tear-off 窗口 label。
+///
+/// Tauri 2 要求窗口 label 非空且符合 `[a-zA-Z0-9-_/]+` 字符集，且不能与已存在
+/// 窗口 label 冲突。本函数做基础字符校验，把长度 / 字符越界等错误提前抛给前端，
+/// 让 toast 直接展示「窗口标签不合法」而非依赖 Tauri 内部 panic。
+pub fn is_valid_tab_window_label(label: &str) -> bool {
+  !label.is_empty()
+    && label.len() <= 64
+    && label
+      .chars()
+      .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+/// ISS-164：创建（或复用）独立 tab 窗口。
+///
+/// - `label`：目标窗口 label，必须合法字符；冲突时返回 Err 让前端 toast 提示。
+/// - `initial_tab_ids`：创建时塞入窗口的 tab id 列表（前端后续会通过
+///   `tab:tear-off` / `tab:merge-back` 事件继续追加 / 移除）。
+///
+/// 该命令**不**持有 session 状态：tab 列表由前端 useSession + event bus 维护，
+/// Rust 只记录 label ↔ tabIds 映射，用于关闭时回收未移交的 tab（DEC-102 方案 1）。
+#[tauri::command]
+fn create_tab_window(
+  label: String,
+  initial_tab_ids: Vec<String>,
+  app: tauri::AppHandle,
+) -> Result<(), String> {
+  if !is_valid_tab_window_label(&label) {
+    return Err(format!(
+      "invalid tab window label '{label}': must match [a-zA-Z0-9_-]{{1,64}}"
+    ));
+  }
+
+  // label 冲突：复用既有窗口（focus + 跳过创建），避免拖出第二个同名窗口。
+  if let Some(existing) = app.get_webview_window(&label) {
+    let _ = existing.unminimize();
+    let _ = existing.show();
+    let _ = existing.set_focus();
+    return Ok(());
+  }
+
+  let url = format!(
+    "index.html?mode=tab-window&label={}",
+    urlencode(&label)
+  );
+
+  WebviewWindowBuilder::new(&app, &label, WebviewUrl::App(url.into()))
+    .title(format!("Folia · {label}"))
+    .inner_size(960.0, 680.0)
+    .resizable(true)
+    .min_inner_size(640.0, 420.0)
+    .build()
+    .map_err(|error| format!("failed to create tab window '{label}': {error}"))?;
+
+  let entry = TabWindowEntry {
+    tab_ids: initial_tab_ids,
+  };
+  let state = app.state::<AppState>();
+  state
+    .tab_windows
+    .lock()
+    .unwrap()
+    .insert(label.clone(), entry);
+
+  Ok(())
+}
+
+/// ISS-164：前端在窗口内追加 / 移除 tab 时同步 Rust 状态，使关闭窗口时能
+/// 准确知道还有哪些 tabId 没被移交回主窗口。
+#[tauri::command]
+fn update_tab_window_tabs(
+  label: String,
+  tab_ids: Vec<String>,
+  app: tauri::AppHandle,
+) -> Result<(), String> {
+  if !is_valid_tab_window_label(&label) {
+    return Err(format!("invalid tab window label '{label}'"));
+  }
+  let state = app.state::<AppState>();
+  let mut guard = state.tab_windows.lock().unwrap();
+  if let Some(entry) = guard.get_mut(&label) {
+    entry.tab_ids = tab_ids;
+    Ok(())
+  } else {
+    // 关闭顺序竞争：窗口已关但前端还在追写，直接忽略。
+    Ok(())
+  }
+}
+
+/// ISS-164：把 Rust 状态里的 tab_ids 取出来，窗口关闭后由 `window:closed`
+/// 事件携带发给主窗口回收。
+fn take_tab_ids_for_window(app: &tauri::AppHandle, label: &str) -> Vec<String> {
+  let state = app.state::<AppState>();
+  let mut guard = state.tab_windows.lock().unwrap();
+  guard
+    .remove(label)
+    .map(|entry| entry.tab_ids)
+    .unwrap_or_default()
+}
+
+/// ISS-164：主动关闭某 label 的 tab 窗口（merge-back 时源窗口用）。
+/// 前端无法直接 `invoke` 关闭别的窗口，需走这条 command。
+#[tauri::command]
+fn close_tab_window(label: String, app: tauri::AppHandle) -> Result<(), String> {
+  if !is_valid_tab_window_label(&label) {
+    return Err(format!("invalid tab window label '{label}'"));
+  }
+  if let Some(window) = app.get_webview_window(&label) {
+    // 关闭前先把状态里的 tab 列表取走，避免 CloseRequested 里取空。
+    let _remaining = take_tab_ids_for_window(&app, &label);
+    window
+      .close()
+      .map_err(|error| format!("failed to close tab window '{label}': {error}"))?;
+  }
+  Ok(())
+}
+
+/// 简易 percent-encoding（只覆盖我们用到的字符集），避免为这一点拉进 url crate。
+fn urlencode(raw: &str) -> String {
+  let mut out = String::with_capacity(raw.len());
+  for byte in raw.bytes() {
+    if byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_' || byte == b'.' {
+      out.push(byte as char);
+    } else {
+      out.push_str(&format!("%{:02X}", byte));
+    }
+  }
+  out
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+  let app_state = AppState {
+    watchers: Mutex::new(HashMap::new()),
+    tab_windows: Mutex::new(HashMap::new()),
+  };
+
   tauri::Builder::default()
     .manage(OpenedPaths(Mutex::new(collect_initial_open_paths())))
-    .manage(AppState {
-      watchers: Mutex::new(HashMap::new()),
-    })
+    .manage(app_state)
     .plugin(tauri_plugin_dialog::init())
     .plugin(tauri_plugin_fs::init())
     .plugin(tauri_plugin_opener::init())
@@ -290,7 +435,10 @@ pub fn run() {
       read_opened_document,
       write_opened_document,
       watch_path,
-      unwatch_path
+      unwatch_path,
+      create_tab_window,
+      update_tab_window_tabs,
+      close_tab_window
     ])
     .setup(|app| {
       if cfg!(debug_assertions) {
@@ -301,6 +449,12 @@ pub fn run() {
         )?;
       }
       Ok(())
+    })
+    .on_window_event(|window, event| {
+      // ISS-164：新窗口（包括 tear-off 出的独立窗口）创建时也挂上关闭监听。
+      if let tauri::WindowEvent::CloseRequested { .. } = event {
+        handle_window_close(window);
+      }
     })
     .build(tauri::generate_context!())
     .expect("error while building tauri application")
@@ -328,6 +482,27 @@ pub fn run() {
         let _ = _app.emit("opened-paths", paths);
       }
     });
+}
+
+/// ISS-164：tear-off 窗口关闭时回收 tab 列表并 emit `window:closed` 给主窗口。
+///
+/// `on_window_event` 回调给的是 `&Window`（tao 抽象层），通过 `window.label()`
+/// 拿到 label，再用 `app.get_webview_window` 取 `WebviewWindow` 走状态查找。
+fn handle_window_close(window: &tauri::Window) {
+  let label = window.label().to_string();
+  // 主窗口关闭 = 应用退出，无需回收 tab（AppState 跟着进程销毁）。
+  if label == "main" {
+    return;
+  }
+  let app = window.app_handle();
+  let remaining = take_tab_ids_for_window(app, &label);
+  let _ = app.emit(
+    "window:closed",
+    serde_json::json!({
+      "label": label,
+      "remainingTabIds": remaining,
+    }),
+  );
 }
 
 fn collect_initial_open_paths() -> Vec<String> {
@@ -469,6 +644,7 @@ mod tests {
   fn fresh_state() -> AppState {
     AppState {
       watchers: Mutex::new(HashMap::new()),
+      tab_windows: Mutex::new(HashMap::new()),
     }
   }
 
@@ -623,5 +799,127 @@ mod tests {
     let after = *entry.last_event.lock().unwrap();
     drop(binding);
     assert!(after > before, "expected timestamp to advance");
+  }
+
+  // ──────── ISS-164 tear-off tab 多窗口单测（DEC-102） ────────
+
+  fn fresh_tab_state() -> AppState {
+    AppState {
+      watchers: Mutex::new(HashMap::new()),
+      tab_windows: Mutex::new(HashMap::new()),
+    }
+  }
+
+  #[test]
+  fn label_validation_accepts_safe_ascii() {
+    assert!(is_valid_tab_window_label("main"));
+    assert!(is_valid_tab_window_label("tab-window-1"));
+    assert!(is_valid_tab_window_label("TabWindow_42"));
+    assert!(is_valid_tab_window_label("a"));
+  }
+
+  #[test]
+  fn label_validation_rejects_empty_and_invalid() {
+    assert!(!is_valid_tab_window_label(""));
+    assert!(!is_valid_tab_window_label("has space"));
+    assert!(!is_valid_tab_window_label("has/slash"));
+    assert!(!is_valid_tab_window_label("中文"));
+    assert!(!is_valid_tab_window_label("with.dot"));
+    // 64 字符上限：boundary 测试。
+    let long_64 = "a".repeat(64);
+    let long_65 = "a".repeat(65);
+    assert!(is_valid_tab_window_label(&long_64));
+    assert!(!is_valid_tab_window_label(&long_65));
+  }
+
+  #[test]
+  fn tab_window_state_inserts_and_takes() {
+    // create_tab_window 插入 + take_tab_ids_for_window 弹出。
+    let state = fresh_tab_state();
+    state.tab_windows.lock().unwrap().insert(
+      "tab-window-1".to_string(),
+      TabWindowEntry {
+        tab_ids: vec!["tab-a".to_string(), "tab-b".to_string()],
+      },
+    );
+
+    // 模拟 handle_window_close 调用 take。
+    let taken = state
+      .tab_windows
+      .lock()
+      .unwrap()
+      .remove("tab-window-1")
+      .map(|e| e.tab_ids)
+      .unwrap_or_default();
+    assert_eq!(taken, vec!["tab-a".to_string(), "tab-b".to_string()]);
+
+    // 二次 take 应返回空。
+    let taken_again = state
+      .tab_windows
+      .lock()
+      .unwrap()
+      .remove("tab-window-1")
+      .map(|e| e.tab_ids)
+      .unwrap_or_default();
+    assert!(taken_again.is_empty());
+  }
+
+  #[test]
+  fn tab_window_state_dedupes_label_insert() {
+    // 同一 label 重复 insert：后插入覆盖前一条，不留垃圾 entry。
+    let state = fresh_tab_state();
+    state.tab_windows.lock().unwrap().insert(
+      "tab-window-1".to_string(),
+      TabWindowEntry {
+        tab_ids: vec!["old".to_string()],
+      },
+    );
+    state.tab_windows.lock().unwrap().insert(
+      "tab-window-1".to_string(),
+      TabWindowEntry {
+        tab_ids: vec!["new".to_string()],
+      },
+    );
+
+    let entry = state
+      .tab_windows
+      .lock()
+      .unwrap()
+      .get("tab-window-1")
+      .expect("entry should remain")
+      .tab_ids
+      .clone();
+    assert_eq!(entry, vec!["new".to_string()]);
+  }
+
+  #[test]
+  fn tab_window_state_supports_multiple_labels() {
+    // 多个独立窗口并存：互不干扰。
+    let state = fresh_tab_state();
+    state.tab_windows.lock().unwrap().insert(
+      "tab-window-1".to_string(),
+      TabWindowEntry { tab_ids: vec!["a".into()] },
+    );
+    state.tab_windows.lock().unwrap().insert(
+      "tab-window-2".to_string(),
+      TabWindowEntry { tab_ids: vec!["b".into(), "c".into()] },
+    );
+
+    let guard = state.tab_windows.lock().unwrap();
+    assert_eq!(guard.len(), 2);
+    assert_eq!(guard.get("tab-window-1").unwrap().tab_ids, vec!["a".to_string()]);
+    assert_eq!(
+      guard.get("tab-window-2").unwrap().tab_ids,
+      vec!["b".to_string(), "c".to_string()]
+    );
+  }
+
+  #[test]
+  fn urlencode_encodes_special_chars() {
+    // tear-off 窗口 URL 用 urlencode 编码 label，避免空格 / 中文等破坏 URL。
+    assert_eq!(urlencode("safe-label_1.0"), "safe-label_1.0");
+    assert_eq!(urlencode("has space"), "has%20space");
+    assert_eq!(urlencode("中文"), "%E4%B8%AD%E6%96%87");
+    assert_eq!(urlencode("a&b=c"), "a%26b%3Dc");
   }
 }

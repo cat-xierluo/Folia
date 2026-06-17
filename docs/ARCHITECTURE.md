@@ -123,6 +123,7 @@ word/table-handler.ts 输出 docx Table；Markdown 管道表格使用专用 pars
 |------|------|
 | `fileService.ts` | 封装 Tauri dialog、桌面端后端文档读写命令与浏览器 fallback，提供 openFile / saveFile / saveFileAs |
 | `fileWatchService.ts` | 订阅 Rust `watch_path` 监听层 emit 的 `watch:changed` / `watch:error` 事件，懒加载 Tauri event listener、解析载荷并分发给前端监听器；非 Tauri 运行时（浏览器 / 测试）自动 no-op（ISS-162） |
+| `tabWindowService.ts` | 多窗口 tear-off / merge-back 的 IPC 封装：`create_tab_window` / `update_tab_window_tabs` / `close_tab_window` invoke + `tab:tear-off` / `tab:merge-back` / `tab:drop-requested` / `session:full-sync` / `window:closed` 事件订阅；懒监听 + 幂等 + payload 校验 + 非 Tauri 短路（ISS-164 / DEC-102） |
 | `fileDrop.ts` | 过滤可拖入打开的 Markdown / HTML / Word 文件路径 |
 | `documentViewMode.ts` | 内部判断文档是否默认应使用稳定 HTML 阅读预览，避免复杂 HTML table 被 WYSIWYG 压窄或破坏；用户手动退出由 AppLayout 的当前文档状态处理（ISS-155 落地后该判断仅在保留的 `htmlPresentationVisible` 路径下消费，默认渲染已统一为 WYSIWYG） |
 | `htmlTableModel.ts` | 将单个原生 HTML table 解析为共享结构模型，保留行列坐标、合并单元格、section、单元格 HTML/文本与属性 |
@@ -218,7 +219,7 @@ word/table-handler.ts 输出 docx Table；Markdown 管道表格使用专用 pars
 - 文件关联：打包配置注册 `.md` / `.markdown` / `.html` / `.htm` / `.docx`。启动时 Rust 侧从命令行参数收集可打开文件，macOS 运行中通过 Tauri `Opened` 事件接收 Finder 再次打开的文件，并通过 `pending_opened_paths` / `opened-paths` 传给前端；前端优先处理系统传入文件，再恢复上次打开文件。系统传入路径、Tauri 原生拖放路径和重新打开上次文件的内容读取由 Rust `read_opened_document` 完成，避免前端 fs 插件缺少对该路径的授权；已有 Markdown / HTML 路径保存由 `write_opened_document` 写回。
 - macOS 标题栏：`titleBarStyle: Overlay` + `hiddenTitle: true`，系统红黄绿按钮覆盖在 WebView 顶部，前端 Toolbar 预留左侧空间；中间空白和居中文件标题使用 `data-tauri-drag-region`，整条 Toolbar 提供 JS `startDragging()` fallback；双击空白区域调用 `toggleMaximize()`；不使用 Electron 风格 `-webkit-app-region`
 - CSP：`default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; img-src 'self' data: file:; font-src 'self' file:; connect-src 'self'; media-src 'self' file:; frame-src 'self' data: blob:`。HTML 演示模式的同目录 JS / CSS / 图片优先内联到 iframe 文档；`file:` 仅作为图片、字体和媒体资源兜底，外部网络连接仍由 `connect-src 'self'` 默认阻断。
-- 插件权限：dialog:allow-open, dialog:allow-save, fs:allow-read-text-file, fs:allow-read-file, fs:allow-write-text-file, fs:allow-write-file, updater:default, process:allow-restart, core:window:allow-set-title, core:window:allow-start-dragging, core:window:allow-toggle-maximize
+- 插件权限：dialog:allow-open, dialog:allow-save, fs:allow-read-text-file, fs:allow-read-file, fs:allow-write-text-file, fs:allow-write-file, updater:default, process:allow-restart, core:window:allow-set-title, core:window:allow-start-dragging, core:window:allow-toggle-maximize, core:window:allow-close, core:webview:allow-create-webview-window, core:webview:allow-webview-close, core:event:default（ISS-164 多窗口：`windows` 含 `tab-window-*` glob）
 
 ## 文件监听层（ISS-162）
 
@@ -232,3 +233,43 @@ word/table-handler.ts 输出 docx Table；Markdown 管道表格使用专用 pars
   - 暴露 `watchFile(path)` / `unwatchFile(path)` / `onWatchChanged(listener)` / `onWatchError(listener)`；事件 listener 懒加载 + 幂等；监听器抛错不打断后续分发。
   - 非 Tauri 运行时（浏览器 / 测试）下 `watchFile` / `unwatchFile` 直接 no-op，方便单测与浏览器模式降级。
 - **依赖**：`notify = "6"`（实际解析到 6.1.1）。当前 v6 的 `Config` 不暴露 `follow_symlinks` 字段（v7 才加入），软链环卡死由各平台后端默认安全处理（macOS FSEvents / Linux inotify 自身不跟随）；黑名单 + 平台默认行为 + 跨平台单测共同构成防御链。
+
+## 多窗口架构（ISS-164 / DEC-102）
+
+- **目标**：把 tab 从主窗口拖出到独立窗口（tear-off），从独立窗口拖回主窗口（merge-back），独立窗口可容纳多 tab。
+- **多窗口**：
+  - 独立窗口由 Rust `create_tab_window(label, initial_tab_ids)` 通过 `WebviewWindowBuilder` 创建，URL `index.html?mode=tab-window&label=...`。前端检测 `mode` query 渲染独立窗口版（隐藏主窗口专属 UI；MVP 沿用同一 `AppLayout`，由 useSession 自适应）。
+  - 主窗口关闭 = 应用退出（Tauri 默认行为）。独立窗口关闭 = 主窗口回收残余 tab（见下）。
+- **session 方案 1（YAGNI，DEC-102）**：
+  - 保持前端 `useSession`（useReducer + localStorage）权威，**不**把 session 移到 Rust 端（避免 scope 蔓延；后续 ISS，方案 3）。
+  - 窗口间通过 Tauri event bus 同步：
+    - `tab:tear-off { tabId, sourceLabel }`：源窗口拖出 tab 时 emit。
+    - `tab:merge-back { tabId, sourceLabel, targetLabel, tab }`：源窗口主动 emit，**payload 直接携带完整 tab** 避免 last-write-wins 时序竞争；目标窗口 `dispatch receiveTab`。
+    - `tab:drop-requested { tabId, sourceLabel, targetLabel }`：HTML5 drop 触发点，目标 emit 给源，让源主动发起 merge-back。
+    - `session:full-sync { requester, session }`：独立窗口启动拉全量；主窗口响应回包。
+    - `window:closed { label, remainingTabIds }`：独立窗口关闭时 Rust emit，主窗口 `dispatch windowClosed` 收回。
+  - Rust 只追踪 `HashMap<label, Vec<tabId>>`（`AppState::tab_windows`）用于关闭时回收，不持有 tab 内容。
+- **Rust commands**：
+  - `create_tab_window(label, initial_tab_ids)`：label 校验走 `is_valid_tab_window_label`（`[a-zA-Z0-9_-]{1,64}`）；已存在 label 时复用并 focus；URL 用内联 `urlencode` 编码。
+  - `update_tab_window_tabs(label, tab_ids)`：前端 session 变化时同步 Rust 状态。
+  - `close_tab_window(label)`：merge-back 后让源窗口走 close 路径，触发 `window:closed` 兜底。
+  - `.on_window_event(CloseRequested)` 集中监听所有窗口，识别 `label != "main"` 的独立窗口并 emit `window:closed`。
+- **前端 IPC 封装（`src/services/tabWindowService.ts`）**：
+  - 暴露 `tearOffTabToWindow` / `mergeBackTab` / `requestMergeBack` / `broadcastFullSync` / `syncWindowTabIds` / `closeTabWindow` / `detectCurrentWindowLabel` / `makeTabWindowLabel`。
+  - 事件监听 `onTabTearOff` / `onTabMergeBack` / `onTabDropRequested` / `onSessionFullSync` / `onWindowClosed`：懒注册 + 幂等 + payload 校验 + 非 Tauri 短路。
+  - 单测：`src/services/tabWindowService.test.ts` 覆盖 27 个用例（监听 / emit / 反注册 / 常量 / invoke 失败 warn）。
+- **拖拽 UX（ISS-164 MVP）**：
+  - HTML5 drag：`TabBar` 每个 tab `draggable=true`（占位标签除外），dragstart 写 `application/x-folia-tab` MIME + JSON payload `{ tabId, sourceLabel, dirty }`。
+  - 兜底按钮：每个 tab 右侧「弹出此标签」按钮（`data-tab-tear-off`），鼠标中键 / 触控屏 / 拖拽失败时可用；接入 i18n 三语。
+  - merge-back：目标窗口 tab bar `dragover` + `drop` 触发 `requestMergeBack`，源窗口 `useSession` 监听 `onTabDropRequested` 后主动 `mergeBackTab`，目标再 `receiveTab`。
+- **dirty tab 处理**：
+  - 拖出 / 合并 dirty tab 复用 `closeTab` 的 `confirmDirty` 回调（`window.confirm`）。
+  - 独立窗口被关时若残留 dirty tab，主窗口 `windowClosed` action 默默收回（本期不弹对话框，避免与「未保存」流程耦合；后续 ISS 提供专门 dirty-confirm 对话框）。
+- **不在本期范围**：
+  - 跨独立窗口拖 tab（独立 A → 独立 B）。
+  - 拖到 tab bar 精确 drop index（中间位置插入）。
+  - session 移到 Rust 端权威（方案 3）。
+  - 独立窗口位置 / 大小记忆。
+  - macOS WKWebView HTML5 drag 行为差异实测（由开发者本地 `npm run etv:run` 复测）。
+- **依赖 / 权限**：`capabilities/default.json` 增加 `core:webview:allow-create-webview-window` / `core:webview:allow-webview-close` / `core:window:allow-close` / `core:event:default`，`windows` 含 `tab-window-*` glob。
+
