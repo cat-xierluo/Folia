@@ -326,10 +326,7 @@ fn create_tab_window(
     return Ok(());
   }
 
-  let url = format!(
-    "index.html?mode=tab-window&label={}",
-    urlencode(&label)
-  );
+  let url = tab_window_url(&label, &initial_tab_ids);
 
   WebviewWindowBuilder::new(&app, &label, WebviewUrl::App(url.into()))
     .title(format!("Folia · {label}"))
@@ -413,6 +410,19 @@ fn urlencode(raw: &str) -> String {
     }
   }
   out
+}
+
+fn tab_window_url(label: &str, tab_ids: &[String]) -> String {
+  let encoded_tab_ids = tab_ids
+    .iter()
+    .map(|id| urlencode(id))
+    .collect::<Vec<_>>()
+    .join(",");
+  format!(
+    "index.html?mode=tab-window&label={}&tabIds={}",
+    urlencode(label),
+    encoded_tab_ids
+  )
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -921,5 +931,18 @@ mod tests {
     assert_eq!(urlencode("has space"), "has%20space");
     assert_eq!(urlencode("中文"), "%E4%B8%AD%E6%96%87");
     assert_eq!(urlencode("a&b=c"), "a%26b%3Dc");
+  }
+
+  #[test]
+  fn tab_window_url_includes_initial_tab_ids() {
+    let url = tab_window_url(
+      "tab-window-1",
+      &["tab-a".to_string(), "tab-b".to_string()],
+    );
+
+    assert_eq!(
+      url,
+      "index.html?mode=tab-window&label=tab-window-1&tabIds=tab-a,tab-b"
+    );
   }
 }
