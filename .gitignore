@@ -31,6 +31,9 @@ src-tauri/target/
 .worktrees/
 .claude/*
 !.claude/settings.local.json
+.claude/-settings.json
+# 注：`.claude/-settings.json`（本机 Claude Code 自动生成的 settings 文件）已由
+# 上一行 `.claude/*` 覆盖忽略；此处显式列出以防未来调整通配时遗漏。
 
 # Test artifacts
 test-results/
