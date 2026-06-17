@@ -9,6 +9,7 @@ import { useSettings } from '../hooks/useSettings';
 import { translate } from '../services/i18n';
 import { resolveLocalImages } from '../services/localImageResolver';
 import { openExternalUrl } from '../services/urlOpener';
+import { sanitizeForVditor } from '../services/sanitizeService';
 
 type WysiwygEditorPaneProps = {
   source: string;
@@ -44,6 +45,52 @@ function collapseExpandedMarkers(editor: import('vditor').default | null): void 
   });
 }
 
+/**
+ * 对 Vditor IR 模式编辑器 DOM 做 sanitize（ISS-168 编辑器部分）。
+ *
+ * 背景：ISS-168/169 已用 Vditor.preview 的 `transform` 钩子在渲染前
+ * sanitize 修复了 PreviewPane 的内联 SVG 不显示 + XSS 问题。但 Vditor
+ * 编辑器（mode: 'ir'）走完全不同的代码路径：setValue 内部调用
+ * `vditor.ir.element.innerHTML = lute.Md2VditorIRDOM(markdown)`
+ * （vditor/src/index.ts:330），不经过任何 transform 钩子。IR 模式没有
+ * 暴露与 PreviewPane 等价的钩子——`IOptions.transform`（d.ts:601）虽有
+ * 类型声明但 vditor 源码无任何使用点，仅 `IPreviewOptions.markdown.
+ * transform`（previewRender.ts:95-96）真实生效。
+ *
+ * 备选方案：直接 sanitize 整个 IR DOM 的 innerHTML。已用 DOMPurify 实测
+ * 确认：在 `USE_PROFILES: { html: true, svg: true, svgFilters: true }`
+ * 模式下，DOMPurify 完整保留 Vditor IR 的 `data-type`/`data-block`/
+ * `data-folia-locked-index`/`vditor-ir__*` 等关键属性与类名（这些是
+ * Lute.VditorIRDOM2Md 反序列化为 MD 必需的内部标记），同时：
+ *   - 保留内联 `<svg>` 及子元素（`<rect>`/`<text>`/`<defs>`/...）、
+ *     `viewBox`/`xmlns`/`fill`/`stroke` 等属性（让用户内联 SVG 配图
+ *     在编辑器里也正常显示——ISS-168 的核心修复目标）；
+ *   - 剥离 `<script>`、on* 事件处理器（`onerror`/`onload`/...）、
+ *     `javascript:` 协议等危险内容；
+ *   - 不会二次转义已经 Lute 转义过的 `<` → `&lt;`（保持用户代码块不
+ *     被破坏：`a &lt; b` 仍输出 `a &lt; b`，不会变成 `a &amp;lt; b`）。
+ *
+ * 因此 sanitize 后的 IR DOM 仍能被 Lute.VditorIRDOM2Md 正确反序列化为
+ * MD：`getValue()` 返回的 MD 仍含 svg 子元素（保存不丢 svg），不含
+ * script 标签。
+ *
+ * 调用方负责在合适的时机（Vditor 渲染完成 / setValue 完成 / 用户输
+ * 入稳定后）调用 `sanitizeIrDom`；不要在 input 事件回调内立即调用，
+ * 否则会与 Vditor 自身的 setValue 死循环（用 applyingExternalValue /
+ * sanitizingRef 双重 guard）。
+ */
+function sanitizeIrDom(editor: import('vditor').default | null): void {
+  if (!editor) return;
+  const ir = getIrElement(editor);
+  if (!ir) return;
+  const original = ir.innerHTML;
+  if (original === '') return;
+  const sanitized = sanitizeForVditor(original);
+  if (sanitized !== original) {
+    ir.innerHTML = sanitized;
+  }
+}
+
 export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePath }: WysiwygEditorPaneProps) {
   const settings = useSettings();
   const t = useCallback(
@@ -56,6 +103,9 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
   const latestSource = useRef(source);
   const collapseTimerRef = useRef<number | null>(null);
   const lastComplexBlocksRef = useRef<HtmlTableBlock[]>([]);
+  // ISS-168 编辑器部分：sanitize 写入 innerHTML 会触发 Vditor 自身的
+  // 渲染回调，需要此 guard 防止 setValue -> sanitize -> input 死循环。
+  const sanitizingRef = useRef(false);
   const [phase, setPhase] = useState<EditorPhase>('loading');
   // retryKey 递增时强制重新初始化 Vditor
   const [retryKey, setRetryKey] = useState(0);
@@ -138,6 +188,11 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
         },
         preview: {
           markdown: {
+            // ISS-168 编辑器部分：Vditor 内置 sanitize 同样会过滤 svg。
+            // 我们改在 IR DOM 写入后用 sanitizeIrDom 处理（见 after() /
+            // input() / 外部 setValue useEffect）。这里保留 sanitize: true
+            // 作为兜底（不影响编辑器 IR 渲染——IR 走的是 setValue innerHTML
+            // 路径，preview 字段只影响 PreviewPane 调用），与 IR 流程无关。
             sanitize: true,
           },
           theme: {
@@ -159,6 +214,12 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
              build may run before our ref is set. Locking here is idempotent. */
           queueMicrotask(() => {
             if (cancelled) return;
+            // ISS-168 编辑器部分：先 sanitize IR DOM（让 svg 保留 / script
+            // 与 onerror 剥离），再锁复杂表格（避免 sanitize 写入 innerHTML
+            // 破坏已锁的 table 的 contenteditable=false）。
+            sanitizingRef.current = true;
+            sanitizeIrDom(editor);
+            sanitizingRef.current = false;
             lockComplexTables();
             const host = hostRef.current;
             if (host) void resolveLocalImages(host, filePath);
@@ -178,13 +239,16 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
               editor.setValue(pending, true);
               window.requestAnimationFrame(() => {
                 applyingExternalValue.current = false;
+                sanitizingRef.current = true;
+                sanitizeIrDom(editor);
+                sanitizingRef.current = false;
                 lockComplexTables();
               });
             }
           }
         },
         input(value) {
-          if (applyingExternalValue.current) return;
+          if (applyingExternalValue.current || sanitizingRef.current) return;
 
           // ISS-151: 每次 input 后安排折叠定时器。
           // 粘贴（insertText）不触发 keydown，所以需要在 input 中也安排折叠，
@@ -196,6 +260,15 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
             collapseTimerRef.current = null;
             collapseExpandedMarkers(editorRef.current);
           }, IR_MARKER_COLLAPSE_DELAY_MS);
+
+          // ISS-168 编辑器部分：每次 input 回调先 sanitize IR DOM，
+          // 保证用户输入/粘贴/拖入的 svg 保留、script/onerror 剥离。
+          // sanitizeIrDom 写 innerHTML 不会触发 Vditor 的 input 回调
+          // （innerHTML 直接赋值 vs execCommand insertHTML 路径不同），
+          // 但为防御性仍然包在 sanitizingRef 里。
+          sanitizingRef.current = true;
+          sanitizeIrDom(editor);
+          sanitizingRef.current = false;
 
           const complex = lastComplexBlocksRef.current;
           if (complex.length === 0) {
@@ -226,6 +299,9 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
             editor.setValue(restored, true);
             window.requestAnimationFrame(() => {
               applyingExternalValue.current = false;
+              sanitizingRef.current = true;
+              sanitizeIrDom(editor);
+              sanitizingRef.current = false;
               lockComplexTables();
             });
             onChange(restored);
@@ -295,6 +371,10 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
     editor.setValue(source, true);
     window.requestAnimationFrame(() => {
       applyingExternalValue.current = false;
+      // ISS-168 编辑器部分：外部 setValue 完成后 sanitize IR DOM。
+      sanitizingRef.current = true;
+      sanitizeIrDom(editor);
+      sanitizingRef.current = false;
       lockComplexTables();
     });
   }, [source, lockComplexTables]);
