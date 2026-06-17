@@ -34,7 +34,16 @@ export type SessionAction =
   | { type: 'recordRecentFile'; file: OpenedFile }
   | { type: 'removeRecentFile'; path: string }
   | { type: 'clearRecentFiles' }
-  | { type: 'markPathInvalid'; id: string };
+  | { type: 'markPathInvalid'; id: string }
+  // ISS-164 tear-off tab 多窗口支持（DEC-102）：
+  // - `tearOffTab` 把本地 tab 标记为已撕出（不删，便于失败回滚；调用方决定 remove）。
+  // - `removeTabById` 强制移除（tear-off / merge-back 后调用）。
+  // - `receiveTab` 把其他窗口移交过来的 tab 加回本地；merge-back 的目标窗口使用。
+  // - `windowClosed` 收回该窗口残余 tabIds（直接 add 回本地）。
+  | { type: 'tearOffTab'; id: string }
+  | { type: 'removeTabById'; id: string }
+  | { type: 'receiveTab'; tab: Tab }
+  | { type: 'windowClosed'; remainingTabIds: string[]; tabsById: Record<string, Tab> };
 
 export function sessionReducer(state: SessionState, action: SessionAction): SessionState {
   switch (action.type) {
@@ -116,6 +125,42 @@ export function sessionReducer(state: SessionState, action: SessionAction): Sess
     case 'markPathInvalid':
       if (!state.tabs.some((t) => t.id === action.id)) return state;
       return { ...state, tabs: state.tabs.map((t) => (t.id === action.id ? { ...t, pathInvalid: true } : t)) };
+    // ──────── ISS-164 tear-off tab / merge-back tab ────────
+    case 'tearOffTab': {
+      // 仅作为「即将撕出」的标记占位；实际删除走 `removeTabById`。
+      // 这里不删除 tab，避免 create_tab_window 失败时无法回滚。
+      if (!state.tabs.some((t) => t.id === action.id)) return state;
+      return state;
+    }
+    case 'removeTabById': {
+      const tabs = state.tabs.filter((t) => t.id !== action.id);
+      if (tabs.length === state.tabs.length) return state;
+      if (tabs.length === 0) {
+        const placeholder = makeTabFromFile(createEmptyFile(), true);
+        return { ...state, tabs: [placeholder], activeTabId: placeholder.id };
+      }
+      const activeTabId = state.activeTabId === action.id ? tabs[tabs.length - 1].id : state.activeTabId;
+      return { ...state, tabs, activeTabId };
+    }
+    case 'receiveTab': {
+      // 收到其他窗口移交的 tab。已存在（id 碰撞）时直接 ignore，避免重复。
+      if (state.tabs.some((t) => t.id === action.tab.id)) return state;
+      return { ...state, tabs: [...state.tabs, action.tab], activeTabId: action.tab.id };
+    }
+    case 'windowClosed': {
+      // 收回独立窗口残余 tab。tabsById 由 useTabWindowSync 通过本地缓存填入；
+      // 没有缓存的 tabId 静默忽略（可能已被其他窗口同步过）。
+      if (action.remainingTabIds.length === 0) return state;
+      const newTabs: Tab[] = [];
+      for (const id of action.remainingTabIds) {
+        const cached = action.tabsById[id];
+        if (!cached) continue;
+        if (state.tabs.some((t) => t.id === id)) continue;
+        newTabs.push(cached);
+      }
+      if (newTabs.length === 0) return state;
+      return { ...state, tabs: [...state.tabs, ...newTabs], activeTabId: newTabs[0].id };
+    }
     default:
       return state;
   }

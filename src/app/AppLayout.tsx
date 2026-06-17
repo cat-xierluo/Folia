@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { createEmptyFile, type TocItem } from '../types/document';
 import {
@@ -25,10 +25,12 @@ import { Toolbar } from '../components/Toolbar';
 import { StatusBar } from '../components/StatusBar';
 import { FloatingToc } from '../components/FloatingToc';
 import { TabBar } from '../components/TabBar';
+import type { TabDragPayload } from '../components/tabDragPayload';
 import { RecentFilesPage } from '../components/RecentFilesPage';
 import { ContextMenu } from '../components/ContextMenu';
 import type { SourceHeadingScrollRequest } from '../components/EditorPane';
 import { useSession } from '../hooks/useSession';
+import { detectCurrentWindowLabel } from '../services/tabWindowService';
 
 const EditorPane = lazy(() =>
   import('../components/EditorPane').then((module) => ({ default: module.EditorPane })),
@@ -162,8 +164,33 @@ export function AppLayout() {
     activeTabId,
     updateActiveFile,
     updateActiveTabMeta,
+    tearOffTab,
   } = session;
   const confirmCloseDirty = useCallback(() => window.confirm('该标签有未保存改动，确定关闭吗？'), []);
+  const windowLabel = useMemo(() => detectCurrentWindowLabel(), []);
+  const isTearOffSupported = useMemo(
+    () => '__TAURI_INTERNALS__' in window,
+    [],
+  );
+
+  // ISS-164：从其他窗口拖到本窗口 tab bar 的 merge-back 请求。
+  // 本窗口作为目标，emit tab:drop-requested 信号回源；源窗口 useSession 监听后
+  // 会主动调用 mergeBackTab（携带完整 tab 数据），目标再 receiveTab。
+  const handleMergeBackDrop = useCallback((payload: TabDragPayload) => {
+    if (payload.sourceLabel === windowLabel) return;
+    void import('../services/tabWindowService').then(({ requestMergeBack }) => {
+      void requestMergeBack({
+        tabId: payload.tabId,
+        sourceLabel: payload.sourceLabel,
+        targetLabel: windowLabel,
+        dirty: payload.dirty,
+      });
+    });
+  }, [windowLabel]);
+
+  const handleTearOff = useCallback(async (id: string) => {
+    await tearOffTab(id, { confirmDirty: confirmCloseDirty });
+  }, [tearOffTab, confirmCloseDirty]);
   // Lazy initializer：会话恢复或新建带内容标签时，立即从 activeTab.file.content 生成 TOC，
   // 避免首屏渲染时左侧大纲空白（旧实现是 useState([])，依赖后续 handleContentChange 防抖或
   // openPath 才能填上）。render-time 同步重置逻辑见下方 if 分支（ISS-163）。
@@ -760,10 +787,13 @@ export function AppLayout() {
           <TabBar
             tabs={session.tabs}
             activeTabId={session.activeTabId}
+            windowLabel={windowLabel}
             onSelect={session.switchTab}
             onContextMenu={(id, x, y) => setContextMenu({ tabId: id, x, y })}
             onClose={(id) => session.closeTab(id, { confirmDirty: confirmCloseDirty })}
             onNew={() => session.openInNewTab(createEmptyFile())}
+            onTearOff={isTearOffSupported ? handleTearOff : undefined}
+            onMergeBackDrop={isTearOffSupported ? handleMergeBackDrop : undefined}
           />
         }
         editorMode={editorMode}
