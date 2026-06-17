@@ -28,7 +28,7 @@ export function sanitizeHtml(html: string): string {
 }
 
 /**
- * 对 Vditor 已渲染的 HTML 做后处理 sanitize（ISS-168）。
+ * 对 Vditor 已渲染的 HTML 做 sanitize（ISS-168 / ISS-169）。
  *
  * 背景：Vditor/Lute 内置 sanitize（白名单）会整块过滤掉 `<svg>` 及其子元素
  * （rect/text/path/marker/defs/line/...），导致用户在内联 Markdown 中写的
@@ -36,18 +36,22 @@ export function sanitizeHtml(html: string): string {
  * 让 svg 透传，但也会放行 `<script>`、事件处理器等——而 folia 的 CSP 允许
  * unsafe-inline，必须由应用层拦截。
  *
- * 方案 A（后处理）：让 Vditor 在 sanitize:false 下正常渲染（代码块、autolink
- * 等由 Lute 处理，文本中的 `<` 已被 Lute 转义为 `&lt;`），渲染完成、写入 DOM
- * 之后，再用 DOMPurify 对已渲染的 HTML 做一次 sanitize。DOMPurify 的 html +
- * svg + svgFilters profile 保留 svg 与子元素及滤镜，剥离 `<script>`、on* 事
- * 件处理器、`javascript:` 协议等，安全性不降。
+ * ISS-169 加固：sanitize 改在 Vditor.preview 的 `transform` 钩子里完成。
+ * Vditor 内部 previewRender 在 `previewElement.innerHTML = html` 之前同步调
+ * 用 `transform(html)`，我们对 Lute 已转义的 HTML 做 DOMPurify sanitize，
+ * 再让 Vditor 写入 DOM。这样 `<img onerror>` / `<svg onload>` 等元素从未以
+ * 「危险态」插入 DOM，从源头消除 onerror 窗口（ISS-168 的 after() 后处理虽
+ * 然通常赶在异步加载前，但理论上非绝对安全）。DOMPurify 的 html + svg +
+ * svgFilters profile 保留 svg 与子元素及滤镜，剥离 `<script>`、on* 事件处
+ * 理器、`javascript:` 协议等，安全性不降。
  *
  * 为什么不是「预处理 md 源」：实测 DOMPurify 对裸尖括号会做 HTML 实体转义
  * （`a < b` → `a &lt; b`、`<https://example.com>` autolink 被截断），会破坏
- * 用户的代码块和 Markdown 文本。后处理作用于 Lute 已转义的 HTML，不会双重
- * 转义 `&lt;`，因此无回归（由 sanitizeService.test.ts 覆盖）。
+ * 用户的代码块和 Markdown 文本。在 transform 钩子里处理的是 Lute 已转义的
+ * HTML（`<` → `&lt;`），不会被二次转义，无回归（由 sanitizeService.test.ts
+ * 覆盖）。
  *
- * 入参是已渲染的 HTML 字符串（如 element.innerHTML）。
+ * 入参是 Lute 已转义的 HTML 字符串（Vditor transform 钩子传入）。
  */
 export function sanitizeForVditor(renderedHtml: string): string {
   return DOMPurify.sanitize(renderedHtml, {
