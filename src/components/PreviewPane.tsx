@@ -55,11 +55,19 @@ export function PreviewPane({ source, tocIds, wideTables = false, renderMode = '
       import('vditor'),
     ]).then(([, { default: Vditor }]) => {
       if (cancelled) return;
-      // ISS-168: 关闭 Vditor 内置 sanitize（其白名单会整块过滤 <svg>），
-      // 改为在 after() 回调中对已渲染的 DOM 做 DOMPurify 后处理——既保留
-      // svg，又剥离 <script>/事件处理器。安全性不降（CSP 允许 unsafe-inline，
-      // 必须由应用层拦截 script）。后处理作用于 Lute 已转义的 HTML，代码块
-      // 文本不会被双重转义，无回归（见 sanitizeService.test.ts）。
+      // ISS-169 加固：sanitize 改在 Vditor 的 `transform` 钩子里完成——
+      // Vditor 内部 previewRender 在 `previewElement.innerHTML = html`
+      // 之前同步调用 transform(html)，我们对 Lute 已转义的 HTML 做
+      // DOMPurify sanitize，再让 Vditor 写入 DOM。这样 <img onerror> /
+      // <svg onload> 等元素从未以「危险态」插入 DOM，从源头消除 onerror
+      // 窗口（ISS-168 的 after() 后处理虽然通常赶在异步加载前，但理论上
+      // 非绝对安全）。
+      //
+      // ISS-168 仍保留：Vditor 内置 sanitize 的白名单会整块过滤 <svg>，
+      // 故 sanitize: false。transform 钩子用 DOMPurify 的
+      // html + svg + svgFilters profile（见 sanitizeService.ts），保留
+      // svg 子元素及滤镜，剥离 <script>/on*/javascript: 等。后处理再无
+      // 必要（after 内不再 sanitize；保留给本地图片与 toc id 注入）。
       Vditor.preview(el, deferredSource, {
         mode: 'light',
         anchor: 0,
@@ -78,11 +86,13 @@ export function PreviewPane({ source, tocIds, wideTables = false, renderMode = '
         markdown: {
           sanitize: false,
         },
+        transform(html) {
+          return sanitizeForVditor(html);
+        },
         after() {
           if (cancelled) return;
-          // 先 sanitize 已渲染的 HTML（剥离 script/on*，保留 svg），
-          // 再注入本地图片与 toc id——后两者不受 sanitize 影响。
-          el.innerHTML = sanitizeForVditor(el.innerHTML);
+          // ISS-169：sanitize 已由 transform 钩子在 innerHTML 设置前完成，
+          // 这里只负责本地图片与 toc id 注入（两者不受 sanitize 影响）。
           void resolveLocalImages(el, filePath);
           if (deferredTocIds.length === 0) return;
           applyTocIds(el, deferredTocIds);
