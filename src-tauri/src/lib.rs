@@ -461,7 +461,11 @@ pub fn run() {
           api.prevent_close();
           let _ = window.hide();
         } else {
+          // 独立窗口（tear-off）：emit window:closed 回收 tab，并主动销毁窗口。
+          // macOS 动态创建窗口的 CloseRequested 默认关闭偶发不生效（× 点了不关），
+          // destroy() 强制销毁且不再触发 CloseRequested（无递归）。
           handle_window_close(window);
+          let _ = window.destroy();
         }
       }
     })
