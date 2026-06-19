@@ -452,13 +452,31 @@ pub fn run() {
     })
     .on_window_event(|window, event| {
       // ISS-164：新窗口（包括 tear-off 出的独立窗口）创建时也挂上关闭监听。
-      if let tauri::WindowEvent::CloseRequested { .. } = event {
-        handle_window_close(window);
+      if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+        let label = window.label();
+        if label == "main" {
+          // macOS 标准：主窗口点 × = 隐藏（prevent_close + hide），不销毁窗口、不退出 app。
+          // 这样点 Dock 图标（RunEvent::Reopen）能重新 show 恢复；否则窗口销毁后
+          // Dock 图标无法再打开窗口，用户会感到"关不掉 / 恢复不了"。
+          api.prevent_close();
+          let _ = window.hide();
+        } else {
+          handle_window_close(window);
+        }
       }
     })
     .build(tauri::generate_context!())
     .expect("error while building tauri application")
     .run(|_app, _event| {
+      // macOS：点 Dock 图标（窗口已 hide 或 minimize 后）触发 Reopen，恢复主窗口。
+      #[cfg(target_os = "macos")]
+      if let tauri::RunEvent::Reopen { .. } = _event {
+        if let Some(window) = _app.get_webview_window("main") {
+          let _ = window.unminimize();
+          let _ = window.show();
+          let _ = window.set_focus();
+        }
+      }
       #[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
       if let tauri::RunEvent::Opened { urls } = _event {
         let paths = opened_paths_from_urls(urls);
