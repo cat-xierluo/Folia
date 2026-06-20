@@ -1,7 +1,26 @@
+// ISS-171：本测试既要用 `node:fs` 读 fixture，又要在 docx 解析链路里用到
+// `document.createElement`（style-mapping.ts 解析 HTML 表格）。两者冲突——
+// vitest 的 jsdom 环境会把 `node:` 内置模块 externalize 报 "No such built-in
+// module"。解法：用 node 环境（`node:fs` 原生可用），并用项目已装的 jsdom
+// 依赖手动注入全局 `document` / `window`，满足 docx 解析对 DOM 的最小需求。
+// @vitest-environment node
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { JSDOM } from 'jsdom';
 import JSZip from 'jszip';
 import { describe, expect, it } from 'vitest';
+
+// 为 docx 解析链路提供最小 DOM。仅本文件作用域，不影响其他测试。
+const dom = new JSDOM('<!DOCTYPE html><html><body></body></html>');
+(globalThis as typeof globalThis & { document?: Document }).document = dom.window.document;
+(globalThis as typeof globalThis & { window?: typeof dom.window }).window = dom.window;
+(globalThis as typeof globalThis & { DOMParser?: typeof dom.window.DOMParser }).DOMParser =
+  dom.window.DOMParser;
+// `Node.TEXT_NODE` 等常量在 htmlTableModel.ts 里被直接引用，node 环境没有这些 DOM 常量。
+(globalThis as typeof globalThis & { Node?: typeof dom.window.Node }).Node = dom.window.Node;
+(globalThis as typeof globalThis & { Element?: typeof dom.window.Element }).Element =
+  dom.window.Element;
+
 import { DEFAULT_PRESET_ID, getPreset } from './config';
 import { markdownToDocx } from './parser';
 import type { PresetConfig } from './types';

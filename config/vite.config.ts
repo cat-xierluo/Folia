@@ -66,5 +66,15 @@ export default defineConfig({
     environment: 'jsdom',
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
     setupFiles: ['./src/test/setupVitest.ts'],
+    // ISS-171：vitest 默认以 NODE_ENV=production 启动 worker，会加载
+    // react.production.js——而 React 按设计只在 development 构建里导出 `act`
+    //（production 构建会移除，见 React 官方文档 react.dev/reference/react/act）。
+    // 这导致所有 `import { act } from 'react'` 的测试报 "act is not a function"
+    //（之前因无 CI 跑测试而长期未发现，见 ISS-173）。
+    // 显式把测试 worker 的 NODE_ENV 设为 development，加载 react.development.js
+    // 让 act 可用。仅作用于 vitest，不影响 vite build（build 仍按生产模式）。
+    env: {
+      NODE_ENV: 'development',
+    },
   },
 })
