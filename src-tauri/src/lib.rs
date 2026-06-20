@@ -412,14 +412,19 @@ fn take_tab_ids_for_window(app: &tauri::AppHandle, label: &str) -> Vec<String> {
 
 /// ISS-164：主动关闭某 label 的 tab 窗口（merge-back 时源窗口用）。
 /// 前端无法直接 `invoke` 关闭别的窗口，需走这条 command。
+///
+/// 注意：本函数只触发 `window.close()`，**不**预取 tab_ids。CloseRequested
+/// handler（`handle_window_close`）是回收 tab 列表 + emit `window:closed` 的
+/// 唯一权威——若本函数提前 `take_tab_ids_for_window`，CloseRequested handler
+/// 拿到的就是空 Vec，会 emit `window:closed { remainingTabIds: [] }`，主窗口
+/// 误以为没 tab 要回收，导致用户丢 tab。这是 ISS-174 review 时发现的竞态，
+/// 修复方案：把回收职责彻底收敛到 CloseRequested 一处。
 #[tauri::command]
 fn close_tab_window(label: String, app: tauri::AppHandle) -> Result<(), String> {
   if !is_valid_tab_window_label(&label) {
     return Err(format!("invalid tab window label '{label}'"));
   }
   if let Some(window) = app.get_webview_window(&label) {
-    // 关闭前先把状态里的 tab 列表取走，避免 CloseRequested 里取空。
-    let _remaining = take_tab_ids_for_window(&app, &label);
     window
       .close()
       .map_err(|error| format!("failed to close tab window '{label}': {error}"))?;
