@@ -1,6 +1,6 @@
 [package]
 name = "folia"
-version = "0.4.0"
+version = "0.4.1"
 description = "A lightweight Markdown reader with HTML support"
 authors = ["you"]
 license = "Apache-2.0"
