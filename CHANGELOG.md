@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- **恢复 vitest 测试套件**（ISS-171）：v0.3.19 起 React 19 production 构建不再导出 `act`，所有 `import { act } from 'react'` 的 `.test.tsx` 测试报 `act is not a function`（共 11 个文件、39 个用例）；同时 4 个用 `node:fs` / `node:path` 的测试在 jsdom 环境下被 vite externalize 报 `No such built-in module`。本仓库此前无 CI 跑测试，回归一路畅通至 v0.4.1 release。修复：vitest worker 显式设 `env.NODE_ENV=development`，加载 `react.development.js` 让 `act` 可用；同时 4 个 node-only 测试加 `// @vitest-environment node`，docxXml 额外手动注入 jsdom 的 `document` / `window` / `DOMParser` / `Node` 满足 table-handler 解析需求。修复后 vitest 368/368 全绿（修复前 43 failed）。
+- **read/write_opened_document 补敏感路径黑名单**（ISS-172）：与 ISS-162 `watch_path` 共享同一份 `DENY_PATH_PREFIXES`，防止前端或被 XSS 注入的代码用合法后缀 `.md` / `.html` 旁路读取 `/etc/passwd` / `C:\Windows\System32` / `.ssh` 等敏感文件。`is_denied_root` 在扩展名校验之后立即检查，命中即拒绝（不读 metadata，避免提前暴露存在性）。新增 3 个 Rust 单测覆盖读 / 写拒绝黑名单 + 普通路径不受影响。
+
+### Changed
+
+- **新增 CI workflow**（ISS-173）：`.github/workflows/ci.yml` 在 push / PR 触发，跑 `npm ci` → `npm run typecheck` → `npm run lint` → `npm test` → `npm run build`（ubuntu-latest）。`CONTRIBUTING.md` §3.1 新增「CI 必须绿」硬性 gate 说明。Tauri 编译与 Gitee 同步继续由 `release.yml` 负责；桌面端真机复测由开发者本地跑 `npm run etv:run`（不进 CI）。
+
+### Fixed
+
+- **tear-off 独立窗口顶部白线 + 缺关闭按钮**（ISS-174）：`create_tab_window` builder 链补齐与主窗口一致的窗口装饰（macOS `TitleBarStyle::Overlay` + `hidden_title(true)` + `traffic_light_position(16, 16)`，Windows / Linux 显式 `decorations(true)`），消除 NSWindow 标题栏分隔白线；独立窗口 Toolbar 渲染条件性关闭按钮（`windowLabel !== 'main'`），点击调 `closeTabWindow(windowLabel)`，Rust `OnCloseRequested` 自动把残余 tab 退回主窗口。主窗口保留原生红绿灯，工具栏不渲染关闭按钮。i18n 三语新增 `toolbarCloseWindowTitle` / `toolbarCloseWindowLabel`。**遗留**：dirty 拦截对话框（DEC-102 本期偏离项）作为独立后续项。
+
 ## [0.4.1] - 2026-06-20
 
 ### Fixed

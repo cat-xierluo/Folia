@@ -1,0 +1,74 @@
+name: CI
+
+# ISS-173：拦截前端 typecheck / lint / test 回归，确保 PR 合入前测试套件
+# 处于绿态。push 与 PR 都触发；仅跑 npm 链路，不编译 Tauri（避免 macOS
+# WKWebView / Windows WiX 的 release-only 依赖；Tauri 构建由 release.yml 负责）。
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# 显式最小权限：只读仓库内容 + 自动 token 写权限（用于部分 actions）。
+permissions:
+  contents: read
+
+# 同一分支 / PR 上一次只跑一个，cancel 旧的节省 runner 配额。
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: typecheck / lint / test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        # 用 npm install 而不是 npm ci：vite 8 / vitest 4 通过 rolldown-vite 引入的
+        # lightningcss / @rolldown/binding-* 是 optionalDependencies + 平台特定
+        # 原生二进制。lockfile 在开发机（darwin-arm64）生成，只有 darwin 二进制
+        # 被 materialize；CI 在 ubuntu-latest 跑 npm ci 不会下 linux 二进制，
+        # 报 Cannot find module '../lightningcss.linux-x64-gnu.node' /
+        # '../rolldown-binding.linux-x64-gnu.node'。改用 npm install 让 npm
+        # 按当前平台解析 package.json 中的 optionalDependencies 并下载匹配
+        # 二进制。代价：放弃 ISS-171 的 lockfile 严格保证（npm install 可能
+        # 漂移），但 CI 的实际用途是拦截前端回归，typecheck / lint / vitest
+        # / build 4 步独立捕获漂移；devs 本地仍可继续用 npm ci。
+        # --no-audit / --no-fund 跳过 audit 联网与 funding 提示
+        # （CONTRIBUTING §5.4 不允许外部依赖）。
+        # 第二步：lockfile 在 darwin 开发机生成时只 materialize 了 darwin-arm64 entry，
+        # 即使 npm install --include=optional 也不会重新拉 linux binary。显式
+        # `npm install --no-save` 装平台原生 binding 让 ubuntu CI 跑通。版本号
+        # 与 package-lock.json 里 rolldown / lightningcss 内部依赖声明的 1.0.1 /
+        # 1.32.0 一致；后续 vitest / vite 升级时一并改。
+        run: |
+          npm install --include=optional --no-audit --no-fund
+          npm install --no-save --no-audit --no-fund \
+            @rolldown/binding-linux-x64-gnu@1.0.1 \
+            lightningcss-linux-x64-gnu@1.32.0
+          echo "---installed bindings---"
+          ls node_modules/@rolldown/ 2>&1
+          ls node_modules/lightningcss-linux* 2>&1 | head -3
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Vitest
+        # 不加 --reporter=verbose：默认 reporter 输出更短、CI 日志更易扫读。
+        run: npm test
+
+      - name: Build
+        # 不产出 artifact，只验证 vite build 可成功；防止 chunk 拆分 / 资源路径
+          # 类回归（如 ISS-139 桌面白屏）溜进 main。
+        run: npm run build

@@ -44,6 +44,12 @@ function toArrayBuffer(data: Uint8Array): ArrayBuffer {
 // 与 lib.rs 的超限文案一一对应；契约守卫见 fileService.test.ts 的 BACKEND_OVERSIZED_FILE_ERROR。
 const OVERSIZED_FILE_PATTERN = /file too large/i;
 
+// ISS-172：后端 read_opened_document / write_opened_document 命中敏感路径黑名单
+//（/etc /System / C:\Windows 等）时返回的错误特征。与 lib.rs 的
+// `path is on the denied roots list` 文案一一对应；契约守卫见
+// fileService.test.ts 的 BACKEND_DENIED_PATH_ERROR。
+const DENIED_PATH_PATTERN = /denied roots list/i;
+
 function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -58,6 +64,23 @@ async function notifyOversizedFileIfApplicable(error: unknown, name: string): Pr
     import('@tauri-apps/plugin-dialog'),
   ]);
   await message(translate(getSettings().locale, 'openFileTooLargeMessage'), {
+    title: name,
+    kind: 'warning',
+  });
+}
+
+// ISS-172：命中敏感路径黑名单时弹出原生提示，避免用户 Save-As 到 symlink
+// 指向 /etc 的目录、或 Finder「打开方式」选到 C:\Windows 等敏感文件时
+// 静默失败（无提示 = 用户误以为保存/打开成功）。
+async function notifyDeniedPathIfApplicable(error: unknown, name: string): Promise<void> {
+  if (!isTauriRuntime()) return;
+  if (!DENIED_PATH_PATTERN.test(describeError(error))) return;
+  const [{ getSettings }, { translate }, { message }] = await Promise.all([
+    import('./settingsService'),
+    import('./i18n'),
+    import('@tauri-apps/plugin-dialog'),
+  ]);
+  await message(translate(getSettings().locale, 'openFileDeniedPathMessage'), {
     title: name,
     kind: 'warning',
   });
@@ -112,6 +135,8 @@ export async function openPath(path: string, encoding: DefaultEncoding = 'UTF-8'
   } catch (error) {
     // 超大文件由后端在读取前拒绝；这里给出可见提示后再向上抛出（ISS-159）。
     await notifyOversizedFileIfApplicable(error, name);
+    // ISS-172：路径黑名单命中同样弹原生提示，避免用户误以为打开成功。
+    await notifyDeniedPathIfApplicable(error, name);
     throw error;
   }
 }
@@ -119,11 +144,18 @@ export async function openPath(path: string, encoding: DefaultEncoding = 'UTF-8'
 export async function saveFile(file: OpenedFile): Promise<OpenedFile> {
   if (!file.path) return saveFileAs(file);
 
-  if (isTauriRuntime()) {
-    const { invoke } = await import('@tauri-apps/api/core');
-    await invoke('write_opened_document', { path: file.path, content: file.content });
-  } else {
-    await writeTextFile(file.path, file.content);
+  try {
+    if (isTauriRuntime()) {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('write_opened_document', { path: file.path, content: file.content });
+    } else {
+      await writeTextFile(file.path, file.content);
+    }
+  } catch (error) {
+    // ISS-172：写文件命中敏感路径黑名单时弹原生提示。dirty 状态保持不变，
+    // 让用户能立即重新选路径保存。
+    await notifyDeniedPathIfApplicable(error, file.name);
+    throw error;
   }
   return { ...file, dirty: false, lastSavedContent: file.content };
 }

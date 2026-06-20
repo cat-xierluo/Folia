@@ -6,7 +6,7 @@ use std::{
 };
 
 use tauri::Emitter;
-use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{LogicalPosition, Manager, TitleBarStyle, WebviewUrl, WebviewWindowBuilder};
 
 use notify::{
   event::EventKind as NotifyEventKind, Event, RecommendedWatcher, RecursiveMode, Watcher,
@@ -61,6 +61,15 @@ fn read_opened_document_bytes(path: &Path) -> Result<Vec<u8>, String> {
   if !is_openable_document_path(path) {
     return Err("unsupported document type".into());
   }
+  // ISS-172：与 watch_path / resolveLocalResourcePath 共享同一份路径黑名单，
+  // 防止前端 / XSS 注入代码用扩展名合法的 `.md` / `.html` 旁路读取 /etc/passwd
+  // 之类敏感文件。命中黑名单直接拒绝，不读 metadata（避免提前暴露文件是否存在）。
+  if is_denied_root(path) {
+    return Err(format!(
+      "path is on the denied roots list: {}",
+      path.display()
+    ));
+  }
 
   // 先用 metadata 拦截超大文件，避免读入后才发现 OOM。
   let metadata = std::fs::metadata(path)
@@ -91,6 +100,14 @@ fn write_opened_document(path: String, content: String) -> Result<(), String> {
   let path = PathBuf::from(path);
   if !is_writable_document_path(&path) {
     return Err("unsupported document type".into());
+  }
+  // ISS-172：写入同样走路径黑名单，避免任何代码（含 XSS 注入）用合法后缀的写入
+  // 覆盖 /etc / .ssh / C:\Windows 等敏感文件。与 read / watch 共享单一来源。
+  if is_denied_root(&path) {
+    return Err(format!(
+      "path is on the denied roots list: {}",
+      path.display()
+    ));
   }
 
   std::fs::write(&path, content).map_err(|error| format!("failed to write document: {error}"))
@@ -327,11 +344,23 @@ fn create_tab_window(
 
   let url = tab_window_url(&label, &initial_tab_ids);
 
-  WebviewWindowBuilder::new(&app, &label, WebviewUrl::App(url.into()))
+  // ISS-174：与主窗口一致的窗口装饰（macOS overlay title bar + traffic light
+  // overlay 在工具栏左侧），避免撕出窗口顶部出现 NSWindow 标题栏分隔白线。
+  // Windows / Linux 用 decorations(true) 显式声明带原生装饰，与主窗口行为一致。
+  let mut builder = WebviewWindowBuilder::new(&app, &label, WebviewUrl::App(url.into()))
     .title(format!("Folia · {label}"))
     .inner_size(960.0, 680.0)
     .resizable(true)
     .min_inner_size(640.0, 420.0)
+    .decorations(true);
+  #[cfg(target_os = "macos")]
+  {
+    builder = builder
+      .title_bar_style(TitleBarStyle::Overlay)
+      .hidden_title(true)
+      .traffic_light_position(LogicalPosition::new(16.0, 16.0));
+  }
+  builder
     .build()
     .map_err(|error| format!("failed to create tab window '{label}': {error}"))?;
 
@@ -383,14 +412,19 @@ fn take_tab_ids_for_window(app: &tauri::AppHandle, label: &str) -> Vec<String> {
 
 /// ISS-164：主动关闭某 label 的 tab 窗口（merge-back 时源窗口用）。
 /// 前端无法直接 `invoke` 关闭别的窗口，需走这条 command。
+///
+/// 注意：本函数只触发 `window.close()`，**不**预取 tab_ids。CloseRequested
+/// handler（`handle_window_close`）是回收 tab 列表 + emit `window:closed` 的
+/// 唯一权威——若本函数提前 `take_tab_ids_for_window`，CloseRequested handler
+/// 拿到的就是空 Vec，会 emit `window:closed { remainingTabIds: [] }`，主窗口
+/// 误以为没 tab 要回收，导致用户丢 tab。这是 ISS-174 review 时发现的竞态，
+/// 修复方案：把回收职责彻底收敛到 CloseRequested 一处。
 #[tauri::command]
 fn close_tab_window(label: String, app: tauri::AppHandle) -> Result<(), String> {
   if !is_valid_tab_window_label(&label) {
     return Err(format!("invalid tab window label '{label}'"));
   }
   if let Some(window) = app.get_webview_window(&label) {
-    // 关闭前先把状态里的 tab 列表取走，避免 CloseRequested 里取空。
-    let _remaining = take_tab_ids_for_window(&app, &label);
     window
       .close()
       .map_err(|error| format!("failed to close tab window '{label}': {error}"))?;
@@ -644,6 +678,78 @@ mod tests {
     let error = write_opened_document(path.to_string_lossy().to_string(), "after".into()).unwrap_err();
 
     assert!(error.contains("unsupported document type"));
+    let _ = std::fs::remove_file(path);
+  }
+
+  // ──────── ISS-172 read/write 路径黑名单 ────────
+
+  /// 命中黑名单前缀时 read 应直接拒绝（不读 metadata，避免暴露存在性）。
+  /// 即使文件实际存在（如测试用临时文件），扩展名合法也仍然拒绝。
+  #[test]
+  fn read_opened_document_rejects_denied_root_paths() {
+    // 路径必须带合法扩展名（.md / .html），否则会被前置 extension check 先拦下，
+    // 无法验证黑名单逻辑。所有路径均使用"跨平台可读"的 raw 字符串，模拟目标平台
+    // 的绝对路径形态，绕过 Path::is_absolute 的平台绑定。
+    let denied_cases = [
+      // Unix 系黑名单
+      "/etc/folia-test.md",
+      "/etc/folia-test.html",
+      "/dev/notes.md",
+      "/System/Volumes/Preboot/notes.html",
+      // Windows 黑名单（跨平台单测：用 raw 字符串模拟盘符路径）
+      "C:\\Windows\\System32\\drivers\\etc\\hosts.md",
+      "c:\\windows\\system32\\foo.html",
+      "C:\\$Recycle.Bin\\notes.md",
+      // 子目录命中
+      "/etc/foo/bar/baz.md",
+    ];
+
+    for raw in denied_cases {
+      let path = PathBuf::from(raw);
+      let error = read_opened_document_bytes(&path)
+        .err()
+        .unwrap_or_else(|| panic!("expected denial for {raw}"));
+      assert!(
+        error.contains("denied roots list"),
+        "expected denied-roots error for {raw}, got: {error}"
+      );
+    }
+  }
+
+  /// 命中黑名单前缀时 write 应直接拒绝，覆盖前不应动磁盘。
+  #[test]
+  fn write_opened_document_rejects_denied_root_paths() {
+    let denied_cases = [
+      "/etc/folia-write.md",
+      "/dev/notes.html",
+      "C:\\Windows\\evil.md",
+      "c:\\$recycle.bin\\evil.html",
+    ];
+
+    for raw in denied_cases {
+      let error = write_opened_document(raw.into(), "x".into())
+        .err()
+        .unwrap_or_else(|| panic!("expected denial for {raw}"));
+      assert!(
+        error.contains("denied roots list"),
+        "expected denied-roots error for {raw}, got: {error}"
+      );
+    }
+  }
+
+  /// 路径未被黑名单命中时 read/write 不受新检查影响（普通文档路径仍可读写）。
+  /// 用 `temp_path` 提供的临时目录确保不误命中黑名单前缀。
+  #[test]
+  fn read_write_opened_document_unaffected_for_normal_paths() {
+    let path = temp_path("normal.md");
+    std::fs::write(&path, b"# normal").unwrap();
+
+    let bytes = read_opened_document_bytes(&path).unwrap();
+    assert_eq!(bytes, b"# normal");
+
+    write_opened_document(path.to_string_lossy().to_string(), "# updated".into()).unwrap();
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "# updated");
+
     let _ = std::fs::remove_file(path);
   }
 

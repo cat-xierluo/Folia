@@ -8,6 +8,7 @@ import {
   Save,
   SaveAll,
   SlidersHorizontal,
+  X,
 } from 'lucide-react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useSettings } from '../hooks/useSettings';
@@ -29,6 +30,16 @@ type ToolbarProps = {
   wordPreviewVisible: boolean;
   wechatPreviewVisible: boolean;
   editingDisabled: boolean;
+  /**
+   * 当前窗口 label（ISS-174）。'main' 或未传时不渲染关闭按钮；
+   * 其他独立窗口（tear-off）渲染"关闭窗口"按钮。
+   */
+  windowLabel?: string;
+  /**
+   * 关闭当前独立窗口的回调。`windowLabel !== 'main'` 时生效。
+   * 通常调用 `closeTabWindow(windowLabel)`（tabWindowService 已实现）。
+   */
+  onCloseWindow?: () => void;
   onToggleEditorMode: () => void;
   onToggleWordPreview: () => void;
   onToggleWechatPreview: () => void;
@@ -43,6 +54,7 @@ type ToolbarProps = {
 
 export function Toolbar({
   dirty, fileName, tabBar,
+  windowLabel, onCloseWindow,
   editorMode, wordPreviewVisible, wechatPreviewVisible, editingDisabled, onToggleEditorMode, onToggleWordPreview, onToggleWechatPreview,
   onOpen, onSave, onSaveAs, onOpenSettings, onPreloadSettings, updateStatus, onRestartUpdate,
 }: ToolbarProps) {
@@ -164,6 +176,18 @@ export function Toolbar({
           >
             <SlidersHorizontal size={iconSize} strokeWidth={strokeWidth} />
           </button>
+          {/* ISS-174：仅在独立窗口（非 main）渲染关闭按钮；主窗口保留原生红绿灯 */}
+          {windowLabel && windowLabel !== 'main' && onCloseWindow && (
+            <button
+              data-no-window-drag="true"
+              className="toolbar-close-window-btn"
+              onClick={onCloseWindow}
+              title={t('toolbarCloseWindowTitle')}
+              aria-label={t('toolbarCloseWindowLabel')}
+            >
+              <X size={iconSize} strokeWidth={strokeWidth} />
+            </button>
+          )}
         </div>
       </div>
     </div>

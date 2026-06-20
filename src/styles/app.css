@@ -3315,6 +3315,17 @@ a.about-info-value:hover {
   line-height: 1;
 }
 
+/* ISS-174：独立窗口的"关闭窗口"按钮：默认中性灰，hover 红色以暗示危险动作 */
+.toolbar-close-window-btn {
+  line-height: 1;
+  color: var(--text-muted, #666);
+}
+
+.app-toolbar button.toolbar-close-window-btn:hover {
+  background: rgba(220, 60, 60, 0.12);
+  color: #c83a3a;
+}
+
 /* ===== Dark Theme Guardrails ===== */
 
 html[data-theme='dark'] .vditor,
