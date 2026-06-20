@@ -15,7 +15,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- **tear-off 独立窗口顶部白线 + 缺关闭按钮**（ISS-174）：`create_tab_window` builder 链补齐与主窗口一致的窗口装饰（macOS `TitleBarStyle::Overlay` + `hidden_title(true)` + `traffic_light_position(16, 16)`，Windows / Linux 显式 `decorations(true)`），消除 NSWindow 标题栏分隔白线；独立窗口 Toolbar 渲染条件性关闭按钮（`windowLabel !== 'main'`），点击调 `closeTabWindow(windowLabel)`，Rust `OnCloseRequested` 自动把残余 tab 退回主窗口。主窗口保留原生红绿灯，工具栏不渲染关闭按钮。i18n 三语新增 `toolbarCloseWindowTitle` / `toolbarCloseWindowLabel`。**遗留**：dirty 拦截对话框（DEC-102 本期偏离项）作为独立后续项。
+- **tear-off 独立窗口顶部白线 + 缺关闭按钮**（ISS-174）：`create_tab_window` builder 链补齐与主窗口一致的窗口装饰（macOS `TitleBarStyle::Overlay` + `hidden_title(true)` + `traffic_light_position(16, 16)`，Windows / Linux 显式 `decorations(true)`），消除 NSWindow 标题栏分隔白线；独立窗口 Toolbar 渲染条件性关闭按钮（`windowLabel !== 'main'`），点击调 `closeTabWindow(windowLabel)`，Rust `OnCloseRequested` 自动把残余 tab 退回主窗口。主窗口保留原生红绿灯，工具栏不渲染关闭按钮。i18n 三语新增 `toolbarCloseWindowTitle` / `toolbarCloseWindowLabel`。
+- **tear-off 独立窗口关闭时 dirty 拦截**（DEC-108 / ISS-174 review follow-up）：`tabWindowService.confirmCloseWindowWithDirty` 在 `closeCurrentTabWindow` 之前检查 `session.tabs` 任一 tab 是否有未保存改动，命中则弹原生 confirm（Tauri runtime 走 `@tauri-apps/plugin-dialog` `ask()`，浏览器 fallback `window.confirm`，与 `useSession.confirmCloseDirty` 现有路径一致）；用户取消则独立窗口保留不关闭。i18n 三语新增 `closeWindowDirtyConfirmTitle` / `closeWindowDirtyConfirmMessage` / `Ok` / `Cancel`。新增 4 个 vitest 覆盖「无 dirty → 直接通过 / 任一 dirty → 弹窗 / 取消 / 中间位置 dirty」。**遗留**：macOS 红绿灯 / Windows 标题栏 X 路径仍走 Rust `OnCloseRequested`，前端拦不到，需要扩展 `AppState` 加 dirty 标志 + `prevent_close()` 才能拦截——记为 DEC-108 后续项。
 
 ## [0.4.1] - 2026-06-20
 

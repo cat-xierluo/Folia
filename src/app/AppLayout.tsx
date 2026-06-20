@@ -30,7 +30,7 @@ import { RecentFilesPage } from '../components/RecentFilesPage';
 import { ContextMenu } from '../components/ContextMenu';
 import type { SourceHeadingScrollRequest } from '../components/EditorPane';
 import { useSession } from '../hooks/useSession';
-import { detectCurrentWindowLabel, closeTabWindow } from '../services/tabWindowService';
+import { detectCurrentWindowLabel, closeTabWindow, confirmCloseWindowWithDirty } from '../services/tabWindowService';
 
 const EditorPane = lazy(() =>
   import('../components/EditorPane').then((module) => ({ default: module.EditorPane })),
@@ -195,10 +195,16 @@ export function AppLayout() {
   // ISS-174：独立窗口工具栏"关闭窗口"按钮。复用 tabWindowService.closeTabWindow，
   // Rust 端 OnCloseRequested 会把剩余 tab 退回主窗口；该函数对 main 窗口不做任何
   // 操作（独立窗口才需要走 Rust 路径），主窗口关闭走原生红绿灯。
+  //
+  // dirty 拦截（ISS-174 review follow-up）：关闭窗口前检查 session.tabs 里
+  // 任一 tab 是否有未保存改动；若有则弹原生 confirm（DEC-108）。用户取消则
+  // 独立窗口保留不关闭，避免静默丢草稿。
   const closeCurrentTabWindow = useCallback(async () => {
     if (!windowLabel || windowLabel === 'main') return;
+    const confirmed = await confirmCloseWindowWithDirty(session.tabs, settings.locale);
+    if (!confirmed) return;
     await closeTabWindow(windowLabel);
-  }, [windowLabel]);
+  }, [windowLabel, session.tabs, settings.locale]);
   // Lazy initializer：会话恢复或新建带内容标签时，立即从 activeTab.file.content 生成 TOC，
   // 避免首屏渲染时左侧大纲空白（旧实现是 useState([])，依赖后续 handleContentChange 防抖或
   // openPath 才能填上）。render-time 同步重置逻辑见下方 if 分支（ISS-163）。
