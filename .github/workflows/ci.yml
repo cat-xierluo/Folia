@@ -34,7 +34,10 @@ jobs:
       - name: Install dependencies
         # 使用 npm ci 而不是 npm install：基于 lockfile 精确安装，避免因
           # package.json 与 lockfile 漂移引入随机失败（ISS-171 的根因之一）。
-        run: npm ci
+        # --include=optional 必须显式开启：rolldown 的 linux-x64-gnu 原生
+        # 绑定（vitest 4.x 依赖）是 optionalDependencies，CI 在 ubuntu 上跑
+        # vitest 会因找不到 binding 而炸 MODULE_NOT_FOUND。
+        run: npm ci --include=optional
 
       - name: Typecheck
         run: npm run typecheck
