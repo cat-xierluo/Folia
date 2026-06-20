@@ -53,7 +53,12 @@ jobs:
           releaseName: 'Folia ${{ github.ref_name }}'
           releaseDraft: true
           prerelease: false
-          includeUpdaterJson: false
+          # includeUpdaterJson 必须 true：让 tauri-action 在所有 updater 启用的
+          # 平台（macos-aarch64/x64 / windows-x64）生成 + 上传 .app.tar.gz /
+          # .nsis.zip + 对应 .sig，并生成 latest.json。v0.4.0 设 false 导致
+          # macOS runner 没生成 .app.tar.gz.sig，publish job 报
+          # "Missing updater signatures for required platforms" 失败。
+          includeUpdaterJson: true
           args: ${{ matrix.args }}
 
   publish:
