@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   sessionReducer,
   bootstrapSession,
+  bootstrapSessionForWindow,
   makeTabFromFile,
 } from './sessionReducer';
 import type { SessionState, Tab } from '../types/session';
@@ -29,6 +30,57 @@ describe('bootstrapSession', () => {
     expect(result.activeTabId).toBe(result.tabs[0].id);
     expect(result.tabs[0].file.name).toBe('未命名');
     expect(result.tabs[0].isPlaceholder).toBe(true);
+  });
+});
+
+describe('bootstrapSessionForWindow', () => {
+  it('tab-window 启动时只恢复 URL 指定的 tab，避免独立窗口加载整套 session', () => {
+    const t1 = makeTabFromFile(file('main.md', 'main'));
+    const t2 = makeTabFromFile(file('detached.md', 'detached'));
+    const loaded: SessionState = { tabs: [t1, t2], activeTabId: t1.id, recentFiles: [] };
+
+    const result = bootstrapSessionForWindow(loaded, 'tab-window-abc', [t2.id]);
+
+    expect(result.tabs).toEqual([t2]);
+    expect(result.activeTabId).toBe(t2.id);
+  });
+
+  it('main 窗口仍按完整 session 恢复', () => {
+    const t1 = makeTabFromFile(file('main.md', 'main'));
+    const t2 = makeTabFromFile(file('detached.md', 'detached'));
+    const loaded: SessionState = { tabs: [t1, t2], activeTabId: t2.id, recentFiles: [] };
+
+    const result = bootstrapSessionForWindow(loaded, 'main', [t1.id]);
+
+    expect(result.tabs).toEqual([t1, t2]);
+    expect(result.activeTabId).toBe(t2.id);
+  });
+
+  // ISS-170 review follow-up：tab-window 缺 tabIds 时必须用占位 tab，不泄漏主 session。
+  it('tab-window 缺 tabIds 时返回占位 tab，不展示主窗口整套 session', () => {
+    const t1 = makeTabFromFile(file('main.md', 'main'));
+    const t2 = makeTabFromFile(file('detached.md', 'detached'));
+    const loaded: SessionState = { tabs: [t1, t2], activeTabId: t1.id, recentFiles: [] };
+
+    const result = bootstrapSessionForWindow(loaded, 'tab-window-abc', []);
+
+    expect(result.tabs).toHaveLength(1);
+    expect(result.tabs[0].isPlaceholder).toBe(true);
+    expect(result.activeTabId).toBe(result.tabs[0].id);
+    // 不应包含主 session 的任何 tab
+    expect(result.tabs).not.toContain(t1);
+    expect(result.tabs).not.toContain(t2);
+  });
+
+  it('tab-window 的 tabIds 与主 session 全部失配时返回占位 tab', () => {
+    const t1 = makeTabFromFile(file('main.md', 'main'));
+    const loaded: SessionState = { tabs: [t1], activeTabId: t1.id, recentFiles: [] };
+
+    const result = bootstrapSessionForWindow(loaded, 'tab-window-abc', ['不存在的-id']);
+
+    expect(result.tabs).toHaveLength(1);
+    expect(result.tabs[0].isPlaceholder).toBe(true);
+    expect(result.tabs).not.toContain(t1);
   });
 });
 

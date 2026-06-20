@@ -9,7 +9,7 @@ import { useSettings } from '../hooks/useSettings';
 import { translate } from '../services/i18n';
 import { resolveLocalImages } from '../services/localImageResolver';
 import { openExternalUrl } from '../services/urlOpener';
-import { sanitizeForVditor } from '../services/sanitizeService';
+import { sanitizeVditorIrHtml } from '../services/vditorIrSanitizeService';
 
 type WysiwygEditorPaneProps = {
   source: string;
@@ -57,11 +57,12 @@ function collapseExpandedMarkers(editor: import('vditor').default | null): void 
  * 类型声明但 vditor 源码无任何使用点，仅 `IPreviewOptions.markdown.
  * transform`（previewRender.ts:95-96）真实生效。
  *
- * 备选方案：直接 sanitize 整个 IR DOM 的 innerHTML。已用 DOMPurify 实测
- * 确认：在 `USE_PROFILES: { html: true, svg: true, svgFilters: true }`
- * 模式下，DOMPurify 完整保留 Vditor IR 的 `data-type`/`data-block`/
- * `data-folia-locked-index`/`vditor-ir__*` 等关键属性与类名（这些是
- * Lute.VditorIRDOM2Md 反序列化为 MD 必需的内部标记），同时：
+ * 备选方案：sanitize 整个 IR DOM 的 innerHTML，并额外清理 HTML block
+ * 的隐藏 marker 文本。IR 模式会同时保存可见 preview DOM 和
+ * `code[data-type="html-block"]` 中的转义源码；后者才是
+ * Lute.VditorIRDOM2Md 反序列化为 MD 的来源之一。只清理 preview 会让
+ * 保存时重新还原 `<script>` / `onerror`。`sanitizeVditorIrHtml` 会先清理
+ * marker 文本，再用 DOMPurify 清理整体 IR DOM，同时：
  *   - 保留内联 `<svg>` 及子元素（`<rect>`/`<text>`/`<defs>`/...）、
  *     `viewBox`/`xmlns`/`fill`/`stroke` 等属性（让用户内联 SVG 配图
  *     在编辑器里也正常显示——ISS-168 的核心修复目标）；
@@ -79,16 +80,17 @@ function collapseExpandedMarkers(editor: import('vditor').default | null): void 
  * 否则会与 Vditor 自身的 setValue 死循环（用 applyingExternalValue /
  * sanitizingRef 双重 guard）。
  */
-function sanitizeIrDom(editor: import('vditor').default | null): void {
-  if (!editor) return;
+function sanitizeIrDom(editor: import('vditor').default | null): boolean {
+  if (!editor) return false;
   const ir = getIrElement(editor);
-  if (!ir) return;
+  if (!ir) return false;
   const original = ir.innerHTML;
-  if (original === '') return;
-  const sanitized = sanitizeForVditor(original);
-  if (sanitized !== original) {
-    ir.innerHTML = sanitized;
+  if (original === '') return false;
+  const result = sanitizeVditorIrHtml(original);
+  if (result.changed) {
+    ir.innerHTML = result.html;
   }
+  return result.changed;
 }
 
 export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePath }: WysiwygEditorPaneProps) {
@@ -115,6 +117,13 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
   useEffect(() => {
     latestSource.current = source;
   }, [source]);
+
+  const emitEditorValueIfChanged = useCallback((editor: import('vditor').default) => {
+    const sanitizedValue = editor.getValue();
+    if (sanitizedValue !== latestSource.current) {
+      onChange(sanitizedValue);
+    }
+  }, [onChange]);
 
   const lockComplexTables = useCallback(() => {
     const editor = editorRef.current;
@@ -216,13 +225,20 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
             if (cancelled) return;
             // ISS-168 编辑器部分：先 sanitize IR DOM（让 svg 保留 / script
             // 与 onerror 剥离），再锁复杂表格（避免 sanitize 写入 innerHTML
-            // 破坏已锁的 table 的 contenteditable=false）。
+            // 破坏已锁的 table 的 contenteditable=false）。try/finally 防止
+            // DOMException 让 sanitizingRef 卡死（ISS-170 review follow-up）。
             sanitizingRef.current = true;
-            sanitizeIrDom(editor);
-            sanitizingRef.current = false;
-            lockComplexTables();
-            const host = hostRef.current;
-            if (host) void resolveLocalImages(host, filePath);
+            try {
+              const sanitized = sanitizeIrDom(editor);
+              sanitizingRef.current = false;
+              lockComplexTables();
+              const host = hostRef.current;
+              if (host) void resolveLocalImages(host, filePath);
+              if (sanitized) emitEditorValueIfChanged(editor);
+            } catch (error) {
+              sanitizingRef.current = false;
+              console.error('[Folia] after() queueMicrotask sanitize 失败:', error);
+            }
           });
 
           setPhase('ready');
@@ -238,11 +254,23 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
               lastComplexBlocksRef.current = classifyHtmlTableBlocks(pending).complex;
               editor.setValue(pending, true);
               window.requestAnimationFrame(() => {
+                // ISS-170 review follow-up：卸载竞态——cleanup 已
+                // `editorRef.current?.destroy()` 并将 cancelled 置 true，
+                // 但 RAF 回调捕获了 `editor` 闭包变量。若不在入口检查
+                // cancelled，回调会在 destroyed Vditor 上调 getValue()
+                // 抛 TypeError。
+                if (cancelled) return;
                 applyingExternalValue.current = false;
                 sanitizingRef.current = true;
-                sanitizeIrDom(editor);
-                sanitizingRef.current = false;
-                lockComplexTables();
+                try {
+                  const sanitized = sanitizeIrDom(editor);
+                  sanitizingRef.current = false;
+                  lockComplexTables();
+                  if (sanitized) emitEditorValueIfChanged(editor);
+                } catch (error) {
+                  sanitizingRef.current = false;
+                  console.error('[Folia] after() pending setValue sanitize 失败:', error);
+                }
               });
             }
           }
@@ -265,22 +293,38 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
           // 保证用户输入/粘贴/拖入的 svg 保留、script/onerror 剥离。
           // sanitizeIrDom 写 innerHTML 不会触发 Vditor 的 input 回调
           // （innerHTML 直接赋值 vs execCommand insertHTML 路径不同），
-          // 但为防御性仍然包在 sanitizingRef 里。
+          // 但为防御性仍然包在 sanitizingRef 里。try/finally 保证 DOMException
+          // 不会让 sanitizingRef 永远卡在 true（ISS-170 review follow-up）。
           sanitizingRef.current = true;
-          sanitizeIrDom(editor);
-          sanitizingRef.current = false;
+          let sanitized = false;
+          try {
+            sanitized = sanitizeIrDom(editor);
+          } catch (error) {
+            console.error('[Folia] input() sanitize 失败:', error);
+          } finally {
+            sanitizingRef.current = false;
+          }
+          const nextValue = sanitized ? editor.getValue() : value;
 
           const complex = lastComplexBlocksRef.current;
           if (complex.length === 0) {
-            onChange(value);
+            onChange(nextValue);
             return;
           }
 
-          const nextBlocks = classifyHtmlTableBlocks(value);
-          let restored = value;
+          const nextBlocks = classifyHtmlTableBlocks(nextValue);
+          let restored = nextValue;
           let touched = false;
 
           complex.forEach((original) => {
+            // ISS-170 review follow-up：sanitize 命中时跳过 restore。
+            // 锁的目的是「防止 Lute round-trip 改变 locked 表的 HTML」，
+            // 不是「保留 DOMPurify 刚剥离的属性」。若 sanitize 已剥离
+            // onclick/onerror 等，再把 `original.html`（可能含这些属性）
+            // 反向注入等于让 sanitize 失效——XSS bypass。用 sanitize 后的
+            // nextBlocks 状态为准，锁的语义降级为「保持结构」而非「保持
+            // 字节级内容」。
+            if (sanitized) return;
             const next = nextBlocks.complex.find((candidate) => candidate.index === original.index)
               ?? nextBlocks.simple.find((candidate) => candidate.index === original.index);
             if (!next) {
@@ -298,11 +342,19 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
             applyingExternalValue.current = true;
             editor.setValue(restored, true);
             window.requestAnimationFrame(() => {
+              // 卸载竞态：cleanup 已 destroy editor，cancelled=true 时直接返回。
+              if (cancelled) return;
               applyingExternalValue.current = false;
               sanitizingRef.current = true;
-              sanitizeIrDom(editor);
-              sanitizingRef.current = false;
-              lockComplexTables();
+              try {
+                const restoredSanitized = sanitizeIrDom(editor);
+                sanitizingRef.current = false;
+                lockComplexTables();
+                if (restoredSanitized) emitEditorValueIfChanged(editor);
+              } catch (error) {
+                sanitizingRef.current = false;
+                console.error('[Folia] input() restore 后 sanitize 失败:', error);
+              }
             });
             onChange(restored);
             return;
@@ -313,7 +365,7 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
              text). Refresh our cache from the actual current value to
              avoid drifting. */
           lastComplexBlocksRef.current = nextBlocks.complex;
-          onChange(value);
+          onChange(nextValue);
         },
         keydown() {
           // 每次按键重置折叠定时器，避免编辑过程中误折叠正在编辑的 IR 节点
@@ -353,7 +405,7 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
       lastComplexBlocksRef.current = [];
       pendingSourceRef.current = null;
     };
-  }, [filePath, lockComplexTables, onChange, retryKey]);
+  }, [filePath, lockComplexTables, emitEditorValueIfChanged, onChange, retryKey]);
 
   useEffect(() => {
     const editor = editorRef.current;
@@ -370,14 +422,25 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
     lastComplexBlocksRef.current = classifyHtmlTableBlocks(source).complex;
     editor.setValue(source, true);
     window.requestAnimationFrame(() => {
+      // ISS-170 review follow-up：卸载竞态 + sanitize 异常双重防护。
+      // 注意：本 effect 不持有 Vditor init effect 的 `cancelled` 闭包，改用
+      // editorRef.current === editor 判定——Vditor init effect cleanup 会把
+      // editorRef.current 置 null，相当于跨 effect 的 cancelled 信号。
+      if (editorRef.current !== editor) return;
       applyingExternalValue.current = false;
       // ISS-168 编辑器部分：外部 setValue 完成后 sanitize IR DOM。
       sanitizingRef.current = true;
-      sanitizeIrDom(editor);
-      sanitizingRef.current = false;
-      lockComplexTables();
+      try {
+        const sanitized = sanitizeIrDom(editor);
+        sanitizingRef.current = false;
+        lockComplexTables();
+        if (sanitized) emitEditorValueIfChanged(editor);
+      } catch (error) {
+        sanitizingRef.current = false;
+        console.error('[Folia] [source] useEffect sanitize 失败:', error);
+      }
     });
-  }, [source, lockComplexTables]);
+  }, [source, lockComplexTables, emitEditorValueIfChanged]);
 
   /* Hover layer: when the user hovers a complex table, inject a small "view
      original" button at the top-right corner. The button is removed on

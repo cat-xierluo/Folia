@@ -215,6 +215,21 @@ export function detectCurrentWindowLabel(): string {
   return 'main';
 }
 
+export function detectCurrentWindowTabIds(): string[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const raw = params.get('tabIds');
+    if (!raw) return [];
+    return raw
+      .split(',')
+      .map((id) => id.trim())
+      .filter((id) => /^[a-zA-Z0-9_-]{1,128}$/.test(id));
+  } catch {
+    return [];
+  }
+}
+
 /**
  * 拖出 tab 到独立窗口。
  *
