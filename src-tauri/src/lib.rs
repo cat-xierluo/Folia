@@ -5,7 +5,6 @@ use std::{
   time::Instant,
 };
 
-#[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
 use tauri::Emitter;
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 
