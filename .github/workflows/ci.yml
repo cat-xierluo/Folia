@@ -1,0 +1,52 @@
+name: CI
+
+# ISS-173：拦截前端 typecheck / lint / test 回归，确保 PR 合入前测试套件
+# 处于绿态。push 与 PR 都触发；仅跑 npm 链路，不编译 Tauri（避免 macOS
+# WKWebView / Windows WiX 的 release-only 依赖；Tauri 构建由 release.yml 负责）。
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# 显式最小权限：只读仓库内容 + 自动 token 写权限（用于部分 actions）。
+permissions:
+  contents: read
+
+# 同一分支 / PR 上一次只跑一个，cancel 旧的节省 runner 配额。
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: typecheck / lint / test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        # 使用 npm ci 而不是 npm install：基于 lockfile 精确安装，避免因
+          # package.json 与 lockfile 漂移引入随机失败（ISS-171 的根因之一）。
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Vitest
+        # 不加 --reporter=verbose：默认 reporter 输出更短、CI 日志更易扫读。
+        run: npm test
+
+      - name: Build
+        # 不产出 artifact，只验证 vite build 可成功；防止 chunk 拆分 / 资源路径
+          # 类回归（如 ISS-139 桌面白屏）溜进 main。
+        run: npm run build
