@@ -27,7 +27,11 @@ export function bootstrapSessionForWindow(
   windowLabel = 'main',
   initialTabIds: string[] = [],
 ): SessionState {
-  if (windowLabel === 'main' || initialTabIds.length === 0) {
+  // 主窗口始终按完整 session 恢复。tab-window 必须显式传入 tabIds；空数组
+  // 或全部失配都走占位 tab 分支（下方 `tabs.length === 0` 处理），不泄漏
+  // 主 session 到独立窗口（ISS-170 review follow-up：tab-window URL 缺
+  // tabIds 时不能让独立窗口意外展示主窗口整套标签）。
+  if (windowLabel === 'main') {
     return bootstrapSession(loaded);
   }
 
