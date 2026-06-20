@@ -361,11 +361,6 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   font-weight: 600;
   color: var(--fg);
 }
-.recent-page-subtitle {
-  margin: 0;
-  color: var(--muted);
-  font-size: 13px;
-}
 .recent-page-actions { display: flex; gap: 10px; }
 .recent-page-primary,
 .recent-page-secondary {

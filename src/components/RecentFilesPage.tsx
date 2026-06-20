@@ -36,7 +36,6 @@ export function RecentFilesPage({
     <div className="recent-page">
       <div className="recent-page-inner">
         <h1 className="recent-page-title">Folia</h1>
-        <p className="recent-page-subtitle">{t('recentSubtitle')}</p>
         <div className="recent-page-actions">
           <button type="button" className="recent-page-primary" onClick={onOpenFile}>{t('recentOpenFileLabel')}</button>
           <button type="button" className="recent-page-secondary" onClick={onNew}>{t('recentNewLabel')}</button>
