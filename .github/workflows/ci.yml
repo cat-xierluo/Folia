@@ -44,7 +44,19 @@ jobs:
         # / build 4 步独立捕获漂移；devs 本地仍可继续用 npm ci。
         # --no-audit / --no-fund 跳过 audit 联网与 funding 提示
         # （CONTRIBUTING §5.4 不允许外部依赖）。
-        run: npm install --include=optional --no-audit --no-fund --prefer-offline
+        # 第二步：lockfile 在 darwin 开发机生成时只 materialize 了 darwin-arm64 entry，
+        # 即使 npm install --include=optional 也不会重新拉 linux binary。显式
+        # `npm install --no-save` 装平台原生 binding 让 ubuntu CI 跑通。版本号
+        # 与 package-lock.json 里 rolldown / lightningcss 内部依赖声明的 1.0.1 /
+        # 1.32.0 一致；后续 vitest / vite 升级时一并改。
+        run: |
+          npm install --include=optional --no-audit --no-fund
+          npm install --no-save --no-audit --no-fund \
+            @rolldown/binding-linux-x64-gnu@1.0.1 \
+            lightningcss-linux-x64-gnu@1.32.0
+          echo "---installed bindings---"
+          ls node_modules/@rolldown/ 2>&1
+          ls node_modules/lightningcss-linux* 2>&1 | head -3
 
       - name: Typecheck
         run: npm run typecheck
