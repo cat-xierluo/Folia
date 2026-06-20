@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.1] - 2026-06-20
+
+### Fixed
+
+- **恢复 macOS 自动更新**（DEC-106）：v0.4.0 `bundle.targets: ["dmg", "nsis"]` 删掉了 macOS 的 `"app"` target（updater binary），且 `release.yml` 的 `includeUpdaterJson: false` 让 tauri-action 不生成 .sig——双重原因导致 macOS runner 没生成 `.app.tar.gz` / `.app.tar.gz.sig`，publish job `gh release download --pattern "*.sig"` 拿不到，latest.json 缺 darwin-aarch64 / darwin-x86_64 entry，应用内「检查更新」无法拉到 v0.4.0。修复：`bundle.targets` 加回 `"app"` + `includeUpdaterJson` 改回 `true`，v0.4.1 latest.json 三平台签名齐全。3 次 CI 重打（每次都有真实进展）后发布成功，9 个产物齐全。
+
 ## [0.4.0] - 2026-06-20
 
 ### Changed
