@@ -6,7 +6,7 @@ use std::{
 };
 
 use tauri::Emitter;
-use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{LogicalPosition, Manager, TitleBarStyle, WebviewUrl, WebviewWindowBuilder};
 
 use notify::{
   event::EventKind as NotifyEventKind, Event, RecommendedWatcher, RecursiveMode, Watcher,
@@ -344,11 +344,23 @@ fn create_tab_window(
 
   let url = tab_window_url(&label, &initial_tab_ids);
 
-  WebviewWindowBuilder::new(&app, &label, WebviewUrl::App(url.into()))
+  // ISS-174：与主窗口一致的窗口装饰（macOS overlay title bar + traffic light
+  // overlay 在工具栏左侧），避免撕出窗口顶部出现 NSWindow 标题栏分隔白线。
+  // Windows / Linux 用 decorations(true) 显式声明带原生装饰，与主窗口行为一致。
+  let mut builder = WebviewWindowBuilder::new(&app, &label, WebviewUrl::App(url.into()))
     .title(format!("Folia · {label}"))
     .inner_size(960.0, 680.0)
     .resizable(true)
     .min_inner_size(640.0, 420.0)
+    .decorations(true);
+  #[cfg(target_os = "macos")]
+  {
+    builder = builder
+      .title_bar_style(TitleBarStyle::Overlay)
+      .hidden_title(true)
+      .traffic_light_position(LogicalPosition::new(16.0, 16.0));
+  }
+  builder
     .build()
     .map_err(|error| format!("failed to create tab window '{label}': {error}"))?;
 
