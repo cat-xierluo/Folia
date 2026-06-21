@@ -42,27 +42,22 @@ export function useSession() {
   }, [state]);
 
   // 卸载/关窗时同步 flush：debounce 期间若用户 Cmd+Q / 刷新 / 切后台，挂起的 saveSession
-  // 会被 clearTimeout 丢掉。此处监听 pagehide/beforeunload 与 Tauri onCloseRequested，
-  // 同步写一次 localStorage（写是同步的，能赶在进程退出前完成），满足 DEC-092 核心承诺。
+  // 会被 clearTimeout 丢掉。此处监听 pagehide/beforeunload 同步写一次 localStorage，
+  // 满足 DEC-092 核心承诺。
+  //
+  // 修复（ISS-174 review 跟进）：v0.4.2 实测发现 `getCurrentWindow().onCloseRequested`
+  // 在 macOS 2.11.0 上误拦截 close——即便 handler 未调用 `preventDefault`，窗口
+  // 也不会自动 destroy。Rust 侧 `on_window_event(CloseRequested)` 已保证 emit
+  // `window:closed` 后窗口正常关闭，这里不再注册 JS close handler 避免双重
+  // 监听造成的时序竞态。如未来需要 confirm 后再关（DEC-108），需重新审视
+  // Tauri API 行为后再加。
   useEffect(() => {
     const flush = () => saveSession(stateRef.current);
     window.addEventListener('pagehide', flush);
     window.addEventListener('beforeunload', flush);
-    let unlisten: (() => void) | undefined;
-    if ('__TAURI_INTERNALS__' in window) {
-      void import('@tauri-apps/api/window')
-        .then(({ getCurrentWindow }) =>
-          getCurrentWindow()
-            .onCloseRequested(() => { flush(); })
-            .then((fn) => { unlisten = fn; })
-            .catch(() => {}),
-        )
-        .catch(() => {});
-    }
     return () => {
       window.removeEventListener('pagehide', flush);
       window.removeEventListener('beforeunload', flush);
-      unlisten?.();
     };
   }, []);
 
