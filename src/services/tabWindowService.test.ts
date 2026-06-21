@@ -7,7 +7,6 @@ import {
   __resetTabWindowServiceForTests,
   broadcastFullSync,
   closeTabWindow,
-  confirmCloseWindowWithDirty,
   detectCurrentWindowLabel,
   detectCurrentWindowTabIds,
   makeTabWindowLabel,
@@ -351,87 +350,8 @@ describe('事件常量', () => {
   });
 });
 
-// ──────── ISS-174 dirty 拦截对话框 ────────
-
-import type { Tab } from '../types/session';
-
-function makeTab(id: string, dirty: boolean): Tab {
-  return {
-    id,
-    file: {
-      path: `/tmp/${id}.md`,
-      name: `${id}.md`,
-      content: 'hello',
-      dirty,
-      lastSavedContent: dirty ? '' : 'hello',
-      fileType: 'markdown',
-    },
-    editorMode: 'wysiwyg',
-    rightPanelMode: 'none',
-    isPlaceholder: false,
-    draftPersisted: true,
-  };
-}
-
-describe('confirmCloseWindowWithDirty (ISS-174 review follow-up)', () => {
-  // 顶层 beforeEach 把 __TAURI_INTERNALS__ 注入到 window 让 isTauriRuntime() 为 true；
-  // 这里专门测「非 Tauri runtime → window.confirm 分支」，需要先把 __TAURI_INTERNALS__
-  // 删掉，让 confirmCloseWindowWithDirty 走 jsdom confirm 路径。@tauri-apps/plugin-dialog
-  // 的 mock 在 Tauri 分支测试里再加。
-  let savedInternals: unknown;
-  beforeEach(() => {
-    savedInternals = (window as typeof window & { __TAURI_INTERNALS__?: unknown })
-      .__TAURI_INTERNALS__;
-    delete (window as typeof window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
-  });
-  afterEach(() => {
-    if (savedInternals !== undefined) {
-      Object.defineProperty(window, '__TAURI_INTERNALS__', {
-        configurable: true,
-        value: savedInternals,
-      });
-    }
-  });
-
-  it('没有 dirty tab 时直接返回 true（不弹窗）', async () => {
-    const tabs = [makeTab('t1', false), makeTab('t2', false)];
-    const result = await confirmCloseWindowWithDirty(tabs, 'zh-CN');
-    expect(result).toBe(true);
-  });
-
-  it('任一 tab dirty 时弹窗：用户确认则返回 true', async () => {
-    const tabs = [makeTab('t1', false), makeTab('t2', true)];
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
-    try {
-      const result = await confirmCloseWindowWithDirty(tabs, 'zh-CN');
-      expect(confirmSpy).toHaveBeenCalledTimes(1);
-      expect(result).toBe(true);
-    } finally {
-      confirmSpy.mockRestore();
-    }
-  });
-
-  it('任一 tab dirty 时弹窗：用户取消则返回 false', async () => {
-    const tabs = [makeTab('t1', true)];
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
-    try {
-      const result = await confirmCloseWindowWithDirty(tabs, 'en-US');
-      expect(confirmSpy).toHaveBeenCalledTimes(1);
-      expect(result).toBe(false);
-    } finally {
-      confirmSpy.mockRestore();
-    }
-  });
-
-  it('dirty 检测覆盖 tabs 数组里任意位置', async () => {
-    const tabs = [makeTab('t1', false), makeTab('t2', false), makeTab('t3', true)];
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
-    try {
-      const result = await confirmCloseWindowWithDirty(tabs, 'ja-JP');
-      expect(confirmSpy).toHaveBeenCalledTimes(1);
-      expect(result).toBe(true);
-    } finally {
-      confirmSpy.mockRestore();
-    }
-  });
-});
+// ──────── ISS-174 dirty 拦截对话框（DEC-110 已撤销） ────────
+// DEC-110 移除 toolbar X 按钮后，confirmCloseWindowWithDirty 失去唯一生产端
+// 调用者 AppLayout.closeCurrentTabWindow。DEC-108 dirty 拦截方案需要走 Rust
+// OnCloseRequested + prevent_close() 重做（独立后续项），不再保留前端
+// confirmCloseWindowWithDirty 占位实现与测试。

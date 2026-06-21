@@ -145,10 +145,6 @@ const zhCN = {
   fileLostLabel: '文件已丢失',
   draftTooLargeLabel: '草稿过大未自动保存',
   statusBarSaveAs: '另存为',
-  closeWindowDirtyConfirmTitle: '关闭独立窗口',
-  closeWindowDirtyConfirmMessage: '此独立窗口包含未保存的标签。关闭窗口后，这些标签会回到主窗口并保留草稿标记（不会自动丢弃）。是否仍要关闭？',
-  closeWindowDirtyConfirmOk: '关闭窗口',
-  closeWindowDirtyConfirmCancel: '取消',
 };
 
 type I18nKey = keyof typeof zhCN;
@@ -292,10 +288,6 @@ const enUS: Record<I18nKey, string> = {
   fileLostLabel: 'File missing',
   draftTooLargeLabel: 'Draft too large to auto-save',
   statusBarSaveAs: 'Save as',
-  closeWindowDirtyConfirmTitle: 'Close window',
-  closeWindowDirtyConfirmMessage: 'This window has tabs with unsaved changes. After closing, those tabs will return to the main window and keep the draft marker (nothing is discarded). Close anyway?',
-  closeWindowDirtyConfirmOk: 'Close window',
-  closeWindowDirtyConfirmCancel: 'Cancel',
 };
 
 const jaJP: Record<I18nKey, string> = {
@@ -437,10 +429,6 @@ const jaJP: Record<I18nKey, string> = {
   fileLostLabel: 'ファイルが見つかりません',
   draftTooLargeLabel: '下書きが大きすぎて自動保存できません',
   statusBarSaveAs: '名前を付けて保存',
-  closeWindowDirtyConfirmTitle: 'ウィンドウを閉じる',
-  closeWindowDirtyConfirmMessage: 'このウィンドウには未保存のタブがあります。閉じても、それらのタブはメインウィンドウに戻り下書きマークを保持します（自動破棄はしません）。それでも閉じますか？',
-  closeWindowDirtyConfirmOk: '閉じる',
-  closeWindowDirtyConfirmCancel: 'キャンセル',
 };
 
 const dictionaries: Record<AppLocale, Record<I18nKey, string>> = {

@@ -273,45 +273,10 @@ export async function closeTabWindow(label: string): Promise<void> {
   }
 }
 
-/**
- * ISS-174 dirty 拦截对话框：关闭独立窗口前如果该窗口持有的任一 tab 有未保存
- * 改动，弹原生 confirm；用户取消则阻止 close（让独立窗口留在前台）。
- *
- * 设计取舍：
- * - 当前实现只覆盖「工具栏 X 按钮」路径（前端拦）。macOS 红绿灯 / Windows 标题栏
- *   X 由 Tauri `OnCloseRequested` 触发，前端拦不到——Rust 侧需要扩展 AppState
- *   加 dirty 标志 + `prevent_close()` 才能拦截。DEC-102 / DEC-108 计划为独立后续项。
- * - Tauri runtime 用 `@tauri-apps/plugin-dialog` 的 `ask()` 给 OS 原生 modal；
- *   浏览器 / 单测 fallback 到 `window.confirm`，与 `useSession.confirmCloseDirty`
- *   现有路径一致。
- *
- * 返回 `true` 表示用户确认关闭（应继续调用 closeTabWindow）；
- * 返回 `false` 表示取消（独立窗口应保留）。
- */
-export async function confirmCloseWindowWithDirty(
-  tabs: ReadonlyArray<Tab>,
-  locale: string,
-): Promise<boolean> {
-  const hasDirty = tabs.some((tab) => tab.file.dirty);
-  if (!hasDirty) return true;
-
-  // 懒加载 dialog 与 i18n，避免在每个调用点拉所有依赖。
-  if (isTauriRuntime()) {
-    const [{ ask }, { translate }] = await Promise.all([
-      import('@tauri-apps/plugin-dialog'),
-      import('./i18n'),
-    ]);
-    return await ask(translate(locale as 'zh-CN' | 'en-US' | 'ja-JP', 'closeWindowDirtyConfirmMessage'), {
-      title: translate(locale as 'zh-CN' | 'en-US' | 'ja-JP', 'closeWindowDirtyConfirmTitle'),
-      kind: 'warning',
-      okLabel: translate(locale as 'zh-CN' | 'en-US' | 'ja-JP', 'closeWindowDirtyConfirmOk'),
-      cancelLabel: translate(locale as 'zh-CN' | 'en-US' | 'ja-JP', 'closeWindowDirtyConfirmCancel'),
-    });
-  }
-  return window.confirm(
-    'This window has tabs with unsaved changes. Close anyway?',
-  );
-}
+// DEC-108 dirty 拦截已撤销（commit b8996ae 的 confirmCloseWindowWithDirty
+// 仅被已删除的 AppLayout.closeCurrentTabWindow 调用）。DEC-110 移除 toolbar X
+// 按钮后该函数失去唯一生产端调用者。dirty 拦截方案需走 Rust OnCloseRequested
+// + prevent_close() 重做（独立后续项）。
 
 /** 目标窗口被 drop 时 emit 信号给源窗口，让源主动发起 merge-back（携带完整 tab）。 */
 export async function requestMergeBack(payload: TabDropRequestedPayload): Promise<void> {
