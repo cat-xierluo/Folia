@@ -15,7 +15,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- **tear-off 独立窗口顶部白线 + 缺关闭按钮**（ISS-174）：`create_tab_window` builder 链补齐与主窗口一致的窗口装饰（macOS `TitleBarStyle::Overlay` + `hidden_title(true)` + `traffic_light_position(16, 16)`，Windows / Linux 显式 `decorations(true)`），消除 NSWindow 标题栏分隔白线；独立窗口 Toolbar 渲染条件性关闭按钮（`windowLabel !== 'main'`），点击调 `closeTabWindow(windowLabel)`，Rust `OnCloseRequested` 自动把残余 tab 退回主窗口。主窗口保留原生红绿灯，工具栏不渲染关闭按钮。i18n 三语新增 `toolbarCloseWindowTitle` / `toolbarCloseWindowLabel`。**遗留**：dirty 拦截对话框（DEC-102 本期偏离项）作为独立后续项。
+- **tear-off 独立窗口顶部白线**（ISS-174）：`create_tab_window` builder 链补齐与主窗口一致的窗口装饰（macOS `TitleBarStyle::Overlay` + `hidden_title(true)` + `traffic_light_position(16, 16)`，Windows / Linux 显式 `decorations(true)`），消除 NSWindow 标题栏分隔白线，让红绿灯 overlay 在工具栏左侧。
+- **tear-off 改为纯 drag，移除「弹出此标签」按钮 + toolbar X 关闭按钮**（DEC-110 / ISS-174 follow-up）：用户反馈 tear-off 体验与浏览器不一致——tab 上 ⤴ 按钮 + 独立窗口 toolbar 右侧 X 关闭按钮让独立窗口看起来像「附属页面」。修改后：tear-off 仅靠 HTML5 drag；关闭独立窗口走 OS 原生红绿灯 / Windows 标题栏 X（与浏览器一致）；drag-out 仅在源窗口 ≥2 tab 时启用（单 tab 窗口禁 drag，避免 drag-out 后源窗口变空）。同步清理 dead code：`tabWindowService.confirmCloseWindowWithDirty` + `useSession.tearOffTab` 包装层 + `sessionReducer` 'tearOffTab' action 全部移除（DEC-110 移除 toolbar X 按钮后，前两个无生产端调用者；后者是无 UI dispatch 的 no-op 占位）。**遗留（DEC-108 + DEC-111）**：1) dirty 拦截整体方案需走 Rust `OnCloseRequested` + `prevent_close()` 重做（独立后续项）；2) tear-off 创建新窗口目前只能通过 drag 到其他窗口的 tab bar 实现，drag 到空白处创建新窗口（用户原话「拖出来一个这个页面窗口，它就是一个独立的窗」）尚未实现，DEC-111 跟进。
 
 ## [0.4.1] - 2026-06-20
 

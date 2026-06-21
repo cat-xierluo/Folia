@@ -18,12 +18,6 @@ export interface TabBarProps {
   onNew: () => void;
   onContextMenu?: (id: string, x: number, y: number) => void;
   /**
-   * 拖出当前 tab 到独立窗口。
-   * - 由 AppLayout 包装 `session.tearOffTab`；TabBar 只触发事件。
-   * - 占位标签（isPlaceholder）不参与拖出。
-   */
-  onTearOff?: (id: string) => void;
-  /**
    * drop 到本窗口 tab bar 上的合并请求（其他窗口拖过来的 tab）。
    * - payload 已通过 decodeTabDragPayload 校验。
    * - 调用方负责把 tab 加回 session（通常是 `session.mergeBackTab`）。
@@ -40,15 +34,17 @@ export function TabBar({
   onClose,
   onNew,
   onContextMenu,
-  onTearOff,
   onMergeBackDrop,
 }: TabBarProps) {
   const settings = useSettings();
   const t = (key: Parameters<typeof translate>[1]) => translate(settings.locale, key);
+  // tear-off 仅在源窗口 ≥2 tab 时启用（窗口用户反馈）：单 tab 拖出后源窗口会变空，
+  // 与浏览器范式不符；强制要求至少有「被留下」的 tab 才能 drag-out。
+  const canDragOut = tabs.length >= 2;
 
   const handleDragStart = (event: React.DragEvent<HTMLDivElement>, tab: Tab) => {
-    if (tab.isPlaceholder || !onTearOff) {
-      // 占位 / 不支持 tear-off：禁止拖出。
+    if (tab.isPlaceholder || !canDragOut) {
+      // 占位 / 单 tab 窗口：禁止拖出。
       event.preventDefault();
       return;
     }
@@ -100,7 +96,7 @@ export function TabBar({
               role="tab"
               aria-selected={active}
               title={tab.file.path || tab.file.name}
-              draggable={!tab.isPlaceholder}
+              draggable={!tab.isPlaceholder && canDragOut}
               onDragStart={(e) => handleDragStart(e, tab)}
               onDragOver={handleDragOver}
               onDrop={handleDrop}
@@ -116,19 +112,6 @@ export function TabBar({
                 />
               )}
               <span className="tabbar-name">{tab.file.name}</span>
-              {onTearOff && !tab.isPlaceholder && (
-                <button
-                  type="button"
-                  data-no-window-drag="true"
-                  data-tab-tear-off={tab.id}
-                  className="tabbar-tear-off"
-                  aria-label={`${t('tabTearOffLabel')} ${tab.file.name}`}
-                  title={t('tabTearOffLabel')}
-                  onClick={(e) => { e.stopPropagation(); onTearOff(tab.id); }}
-                >
-                  ⤴
-                </button>
-              )}
               <button
                 type="button"
                 data-no-window-drag="true"

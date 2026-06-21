@@ -349,3 +349,9 @@ describe('事件常量', () => {
     expect(TAB_WINDOW_EVENTS.dropRequested).toBe('tab:drop-requested');
   });
 });
+
+// ──────── ISS-174 dirty 拦截对话框（DEC-110 已撤销） ────────
+// DEC-110 移除 toolbar X 按钮后，confirmCloseWindowWithDirty 失去唯一生产端
+// 调用者 AppLayout.closeCurrentTabWindow。DEC-108 dirty 拦截方案需要走 Rust
+// OnCloseRequested + prevent_close() 重做（独立后续项），不再保留前端
+// confirmCloseWindowWithDirty 占位实现与测试。

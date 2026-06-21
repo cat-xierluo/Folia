@@ -273,6 +273,11 @@ export async function closeTabWindow(label: string): Promise<void> {
   }
 }
 
+// DEC-108 dirty 拦截已撤销（commit b8996ae 的 confirmCloseWindowWithDirty
+// 仅被已删除的 AppLayout.closeCurrentTabWindow 调用）。DEC-110 移除 toolbar X
+// 按钮后该函数失去唯一生产端调用者。dirty 拦截方案需走 Rust OnCloseRequested
+// + prevent_close() 重做（独立后续项）。
+
 /** 目标窗口被 drop 时 emit 信号给源窗口，让源主动发起 merge-back（携带完整 tab）。 */
 export async function requestMergeBack(payload: TabDropRequestedPayload): Promise<void> {
   await emitEvent(TAB_WINDOW_EVENTS.dropRequested, payload);

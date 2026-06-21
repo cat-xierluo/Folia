@@ -10,9 +10,10 @@ import {
   detectCurrentWindowTabIds,
   mergeBackTab,
   syncWindowTabIds,
-  tearOffTabToWindow,
+  // DEC-111「drag 到空白处创建新窗口」独立后续项需直接调用
+  // tabWindowService.tearOffTabToWindow + TabTearOffPayload；当前 useSession
+  // 无消费者，因此这里不 import。
   type TabMergeBackPayload,
-  type TabTearOffPayload,
 } from '../services/tabWindowService';
 
 export interface CloseOptions {
@@ -207,35 +208,10 @@ export function useSession() {
     [state.tabs]
   );
 
-  // ISS-164：把当前 tab 拖出成独立窗口。
-  // 调用方负责 HTML5 drag wiring；这里只做 IPC + reducer。
-  const tearOffTab = useCallback(
-    async (id: string, options?: CloseOptions) => {
-      const tab = state.tabs.find((t) => t.id === id);
-      if (!tab) return false;
-      // dirty 标签在撕出前弹确认（与 closeTab 同款）。
-      if (tab.file.dirty && options?.confirmDirty && !options.confirmDirty()) return false;
-
-      const windowLabel = detectCurrentWindowLabel();
-      const payload: TabTearOffPayload = {
-        tabId: id,
-        sourceLabel: windowLabel,
-        dirty: tab.file.dirty,
-      };
-      try {
-        // 确保新窗口启动时能从共享 localStorage 找到刚撕出的 tab；
-        // debounce save 可能尚未落盘。
-        saveSession(stateRef.current);
-        await tearOffTabToWindow(payload);
-        dispatch({ type: 'removeTabById', id });
-        return true;
-      } catch (error) {
-        console.warn('useSession: tearOffTab failed', error);
-        return false;
-      }
-    },
-    [state.tabs]
-  );
+  // DEC-110：useSession.tearOffTab 包装层已删除——原 tear-off 按钮入口被移除
+  // 后，无 UI 调用此 callback。DEC-111「drag 到空白处创建新窗口」独立后续项
+  // 直接调 tabWindowService.tearOffTabToWindow，跳过包装层（保留更细粒度的
+  // dirty 检查与错误处理）。
 
   // ISS-164：把当前 tab 拖回主窗口（独立窗口调用）。
   const mergeBackTabById = useCallback(
@@ -290,7 +266,7 @@ export function useSession() {
     removeRecentFile,
     clearRecentFiles,
     // ISS-164 tear-off / merge-back
-    tearOffTab,
+    // tearOffTab 包装层已删除（DEC-110）；保留 mergeBackTab 走 drag merge-back 主路径
     mergeBackTab: mergeBackTabById,
   };
 }

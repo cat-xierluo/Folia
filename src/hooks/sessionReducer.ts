@@ -59,11 +59,10 @@ export type SessionAction =
   | { type: 'clearRecentFiles' }
   | { type: 'markPathInvalid'; id: string }
   // ISS-164 tear-off tab 多窗口支持（DEC-102）：
-  // - `tearOffTab` 把本地 tab 标记为已撕出（不删，便于失败回滚；调用方决定 remove）。
   // - `removeTabById` 强制移除（tear-off / merge-back 后调用）。
   // - `receiveTab` 把其他窗口移交过来的 tab 加回本地；merge-back 的目标窗口使用。
   // - `windowClosed` 收回该窗口残余 tabIds（直接 add 回本地）。
-  | { type: 'tearOffTab'; id: string }
+  // DEC-110：`tearOffTab` action 已删除（仅是占位 no-op，未被任何 UI 调用）。
   | { type: 'removeTabById'; id: string }
   | { type: 'receiveTab'; tab: Tab }
   | { type: 'windowClosed'; remainingTabIds: string[]; tabsById: Record<string, Tab> };
@@ -149,12 +148,7 @@ export function sessionReducer(state: SessionState, action: SessionAction): Sess
       if (!state.tabs.some((t) => t.id === action.id)) return state;
       return { ...state, tabs: state.tabs.map((t) => (t.id === action.id ? { ...t, pathInvalid: true } : t)) };
     // ──────── ISS-164 tear-off tab / merge-back tab ────────
-    case 'tearOffTab': {
-      // 仅作为「即将撕出」的标记占位；实际删除走 `removeTabById`。
-      // 这里不删除 tab，避免 create_tab_window 失败时无法回滚。
-      if (!state.tabs.some((t) => t.id === action.id)) return state;
-      return state;
-    }
+    // DEC-110：`tearOffTab` reducer case 已删除（no-op 占位，无 UI dispatch 该 action）。
     case 'removeTabById': {
       const tabs = state.tabs.filter((t) => t.id !== action.id);
       if (tabs.length === state.tabs.length) return state;
