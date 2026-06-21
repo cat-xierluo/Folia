@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.3] - 2026-06-21
+
+### Fixed
+
+- **macOS 红绿灯 / 标题栏 X 关窗失效**（v0.4.2 hotfix）：`useSession` 注册的 `getCurrentWindow().onCloseRequested(() => { flush(); })` handler 在 macOS Tauri 2.11.0 上误拦截 close——即便未调用 `preventDefault()`，窗口也不再自动 destroy。修复：移除 JS onCloseRequested 注册；Rust `on_window_event(CloseRequested)` handler（`lib.rs:496`）已承担独立窗口 tab 回收 + `window:closed` emit，不阻塞关窗。保留 `pagehide` / `beforeunload` 浏览器级事件供 Cmd+Q / 刷新 / 切后台等场景 flush state。**影响范围**：v0.4.2 的 macOS 主窗口与独立 tear-off 窗口均受影响，用户实测发现红绿灯 / 标题栏 X 点击无效。DEC-108「关窗前 dirty confirm」延后——若需 onCloseRequested 拦截，需先研究 Tauri 2.11 的 close 行为或显式调用 `window.destroy()`。
+
 ## [0.4.2] - 2026-06-21
 
 ### Fixed
