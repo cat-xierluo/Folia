@@ -164,6 +164,7 @@ export function AppLayout() {
     activeTabId,
     updateActiveFile,
     updateActiveTabMeta,
+    tearOffViaDrag,
   } = session;
   const confirmCloseDirty = useCallback(() => window.confirm('该标签有未保存改动，确定关闭吗？'), []);
   const windowLabel = useMemo(() => detectCurrentWindowLabel(), []);
@@ -791,6 +792,7 @@ export function AppLayout() {
             onContextMenu={(id, x, y) => setContextMenu({ tabId: id, x, y })}
             onClose={(id) => session.closeTab(id, { confirmDirty: confirmCloseDirty })}
             onNew={() => session.openInNewTab(createEmptyFile())}
+            onTearOffViaDrag={isTearOffSupported ? tearOffViaDrag : undefined}
             onMergeBackDrop={isTearOffSupported ? handleMergeBackDrop : undefined}
           />
         }
