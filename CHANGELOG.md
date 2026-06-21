@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- **tear-off 独立窗口显式 destroy() 兜底**（PR #54 cherry-pick）：`on_window_event(CloseRequested)` 处理 tear-off 窗口时，`handle_window_close` emit `window:closed` 后追加 `window.destroy()`，应对 macOS 上偶发的 CloseRequested 默认不销毁窗口问题（PR #54 报告）。destroy() 不再触发 CloseRequested，无递归。主窗口维持 v0.4.3 的「关窗即退出」语义（不引入 PR #54 提议的 hide-to-Dock 模式）。**范围**：tear-off 路径才走 destroy；main 路径维持默认 close 行为。
+
 ## [0.4.3] - 2026-06-21
 
 ### Fixed

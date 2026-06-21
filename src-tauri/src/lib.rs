@@ -496,7 +496,18 @@ pub fn run() {
     .on_window_event(|window, event| {
       // ISS-164：新窗口（包括 tear-off 出的独立窗口）创建时也挂上关闭监听。
       if let tauri::WindowEvent::CloseRequested { .. } = event {
+        if window.label() == "main" {
+          // 主窗口：关窗即退出（不做 hide-to-Dock——见 DEC-110 设计：与用户「关窗即退出」
+          // 期望一致；macOS 标准 hide-to-Dock 是 UX 决策，需用户明确要求再合入）。
+          handle_window_close(window);
+          return;
+        }
+        // 独立 tear-off 窗口：emit window:closed 回收 tab，然后显式 destroy()。
+        // macOS 上偶发 CloseRequested 默认不销毁窗口（PR #54 报告），destroy() 强制销毁
+        // 且不再触发 CloseRequested（无递归）。如果 Rust 默认行为已稳定，destroy() 是
+        // 多余调用但不破坏行为——保留作为兜底。
         handle_window_close(window);
+        let _ = window.destroy();
       }
     })
     .build(tauri::generate_context!())
