@@ -18,6 +18,12 @@ export interface TabBarProps {
   onNew: () => void;
   onContextMenu?: (id: string, x: number, y: number) => void;
   /**
+   * DEC-111：drag 到空白处时调用，撕出当前 tab 到新独立窗口。
+   * - dragend 事件 + dropEffect === 'none' 时触发。
+   * - 调用方负责创建新窗口 + 从当前 session 删除 tab（通常是 `session.tearOffViaDrag`）。
+   */
+  onTearOffViaDrag?: (id: string) => void;
+  /**
    * drop 到本窗口 tab bar 上的合并请求（其他窗口拖过来的 tab）。
    * - payload 已通过 decodeTabDragPayload 校验。
    * - 调用方负责把 tab 加回 session（通常是 `session.mergeBackTab`）。
@@ -34,6 +40,7 @@ export function TabBar({
   onClose,
   onNew,
   onContextMenu,
+  onTearOffViaDrag,
   onMergeBackDrop,
 }: TabBarProps) {
   const settings = useSettings();
@@ -76,10 +83,24 @@ export function TabBar({
     if (!payload) return;
     if (payload.sourceLabel === windowLabel) {
       // 同窗口内拖动：MVP 简化 = 不处理（后续精确 drop index 再做）。
+      // 但仍 preventDefault 标记为「接受 drop」，让 dragend 不触发 tear-off。
+      event.preventDefault();
       return;
     }
     event.preventDefault();
     onMergeBackDrop(payload);
+  };
+
+  // DEC-111：drag 结束时检查 dropEffect。dropEffect === 'none' 表示没有任何
+  // drop target 接受这个 drag（即拖到了空白处或浏览器取消）——这是「撕出当前
+  // tab 到新独立窗口」的触发点。同窗口 drop 由 handleDrop 标记 preventDefault，
+  // dropEffect 会保持 move/copy，本 handler 不会触发 tear-off。
+  const handleDragEnd = (event: React.DragEvent<HTMLDivElement>, tab: Tab) => {
+    if (!onTearOffViaDrag) return;
+    if (tab.isPlaceholder || !canDragOut) return;
+    if (event.dataTransfer.dropEffect !== 'none') return;
+    event.preventDefault();
+    void onTearOffViaDrag(tab.id);
   };
 
   return (
@@ -100,6 +121,7 @@ export function TabBar({
               onDragStart={(e) => handleDragStart(e, tab)}
               onDragOver={handleDragOver}
               onDrop={handleDrop}
+              onDragEnd={(e) => handleDragEnd(e, tab)}
               onClick={() => onSelect(tab.id)}
               onContextMenu={onContextMenu ? (e) => { e.preventDefault(); onContextMenu(tab.id, e.clientX, e.clientY); } : undefined}
             >

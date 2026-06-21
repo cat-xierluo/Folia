@@ -194,4 +194,34 @@ describe('TabBar', () => {
     expect(html).toContain('draggable="true"');
     expect(spy).not.toHaveBeenCalled();
   });
+
+  // ──────── DEC-111 drag-out 到空白处创建新窗口 ────────
+
+  it('render 接受 onTearOffViaDrag 属性而不报错（多 tab 窗口）', () => {
+    // 验证 TabBar 暴露 onTearOffViaDrag prop。dragend 真正触发逻辑在 jsdom
+    // 模拟 dragstart → dragend 事件流（renderToStaticMarkup 不挂载 DOM，
+    // 这里仅验证 prop 被接受且不会破坏基本渲染）。
+    const spy = vi.fn();
+    const html = render({
+      ...baseProps,
+      tabs: [tab('a', 'a.md'), tab('b', 'b.md')],
+      activeTabId: 'a',
+      onTearOffViaDrag: spy,
+    });
+    expect(html).toContain('draggable="true"');
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('单 tab 窗口不暴露 drag-out 入口（draggable=false，onTearOffViaDrag 不会被 dragend 触发）', () => {
+    const spy = vi.fn();
+    const html = render({
+      ...baseProps,
+      tabs: [tab('a', 'a.md')],
+      activeTabId: 'a',
+      onTearOffViaDrag: spy,
+    });
+    // draggable=false → handleDragEnd 第一行 `if (tab.isPlaceholder || !canDragOut) return;`
+    // 直接 return，drag-out 永远不会被触发。
+    expect(html).toContain('draggable="false"');
+  });
 });
