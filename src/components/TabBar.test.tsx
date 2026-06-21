@@ -93,69 +93,44 @@ describe('TabBar', () => {
     expect(html).toContain('草稿过大未自动保存');
   });
 
-  // ──────── ISS-164 tear-off tab ────────
+  // ──────── DEC-110 tear-off 仅靠 drag；按钮已移除 ────────
 
-  it('正常标签含 draggable 属性（支持 HTML5 拖拽）', () => {
+  it('单 tab 窗口的 tab 不含 draggable 属性（避免单 tab drag-out）', () => {
     const html = render({ ...baseProps, tabs: [tab('a', 'a.md')], activeTabId: 'a' });
-    // jsdom/renderToStaticMarkup 把 React 的 draggable prop 输出为 draggable="true"。
+    // DEC-110：源窗口只有 1 个 tab 时禁 drag——drag-out 后源窗口会变空，
+    // 与浏览器范式不符。draggable 必须为 false。
+    expect(html).toContain('draggable="false"');
+  });
+
+  it('多 tab 窗口的 tab 含 draggable="true"（支持 HTML5 拖拽）', () => {
+    const html = render({
+      ...baseProps,
+      tabs: [tab('a', 'a.md'), tab('b', 'b.md')],
+      activeTabId: 'a',
+    });
     expect(html).toContain('draggable="true"');
   });
 
   it('占位标签不含 draggable 属性（占位不允许拖出）', () => {
     const html = render({
       ...baseProps,
-      tabs: [tab('a', 'a.md', false, true, true)],
+      tabs: [tab('a', 'a.md', false, true, true), tab('b', 'b.md')],
       activeTabId: 'a',
     });
-    expect(html).not.toContain('draggable="true"');
+    // 多 tab 窗口里：占位 tab 单独不可拖（受 isPlaceholder 限制），
+    // 普通 tab 可拖（受 tabs.length >= 2 限制）。
+    expect(html).toContain('draggable="false"');
+    expect(html).toContain('draggable="true"');
   });
 
-  it('onTearOff 提供时渲染「弹出此标签」按钮', () => {
-    const html = render({
-      ...baseProps,
-      tabs: [tab('a', 'a.md')],
-      activeTabId: 'a',
-      onTearOff: noop,
-    });
-    expect(html).toContain('data-tab-tear-off');
-    expect(html).toContain('弹出此标签');
-  });
-
-  it('onTearOff 未提供时不渲染「弹出此标签」按钮（兜底禁用）', () => {
-    const html = render({ ...baseProps, tabs: [tab('a', 'a.md')], activeTabId: 'a' });
-    expect(html).not.toContain('data-tab-tear-off');
-  });
-
-  it('占位标签不渲染「弹出此标签」按钮', () => {
-    const html = render({
-      ...baseProps,
-      tabs: [tab('a', 'a.md', false, true, true)],
-      activeTabId: 'a',
-      onTearOff: noop,
-    });
-    expect(html).not.toContain('data-tab-tear-off');
-  });
-
-  it('每个标签的弹出按钮带正确 tab id（data-tab-tear-off）', () => {
+  it('不渲染「弹出此标签」按钮（DEC-110：tear-off 仅靠 drag）', () => {
     const html = render({
       ...baseProps,
       tabs: [tab('a', 'a.md'), tab('b', 'b.md')],
       activeTabId: 'a',
-      onTearOff: noop,
     });
-    expect(html).toContain('data-tab-tear-off="a"');
-    expect(html).toContain('data-tab-tear-off="b"');
-  });
-
-  it('en-US locale 下弹出按钮 aria-label 含 Pop out tab', () => {
-    localStorage.setItem('folia-settings', JSON.stringify({ locale: 'en-US' }));
-    const html = render({
-      ...baseProps,
-      tabs: [tab('a', 'a.md')],
-      activeTabId: 'a',
-      onTearOff: noop,
-    });
-    expect(html).toContain('Pop out tab');
+    expect(html).not.toContain('data-tab-tear-off');
+    expect(html).not.toContain('弹出此标签');
   });
 
   it('decodeTabDragPayload 反序列化合法 payload', () => {
@@ -211,10 +186,11 @@ describe('TabBar', () => {
     const spy = vi.fn();
     const html = render({
       ...baseProps,
-      tabs: [tab('a', 'a.md')],
+      tabs: [tab('a', 'a.md'), tab('b', 'b.md')],
       activeTabId: 'a',
       onMergeBackDrop: spy,
     });
+    // DEC-110：多 tab 窗口下 tab 可拖（drop 由 onMergeBackDrop 处理）。
     expect(html).toContain('draggable="true"');
     expect(spy).not.toHaveBeenCalled();
   });
