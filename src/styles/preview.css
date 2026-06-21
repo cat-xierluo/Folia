@@ -257,3 +257,15 @@
 .preview-content .vditor-wysiwyg__preview {
   overflow: auto;
 }
+
+/* SVG 兼容性兜底（feat/svg-compat）：
+   - 即使 SVG <text> 没显式声明 font-family（AI 生成的 SVG 经常漏掉），WebView 也能
+     命中项目内已有的中文 / 拉丁字体变量，避免 □（豆腐块）。
+   - fill / stroke 颜色由 SVG 自身控制（不在此处覆盖），尊重 SVG 设计意图。 */
+.preview-content svg text,
+.preview-content svg tspan {
+  font-family:
+    var(--preview-latin-font-family, -apple-system),
+    var(--preview-chinese-font-family, var(--font-reading)),
+    var(--preview-font-family, var(--font-body)) !important;
+}

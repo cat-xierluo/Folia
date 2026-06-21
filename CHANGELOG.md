@@ -6,6 +6,13 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **SVG 兼容性补强（feat/svg-compat）**：AI 生成 / 外部导入的 SVG 在 Folia HTML 阅读预览路径下被完整 strip（`htmlReadingPreviewService` ALLOWED_TAGS 没 `svg` / `g` / `rect` 等子元素），即使不被 strip，inline `style="font-family: ..."` 也会被 `sanitizeInlineStyles` 拒绝 → 中文显示为 □（豆腐块）。修复：① ALLOWED_TAGS 加 SVG 子元素（svg / g / path / rect / circle / ellipse / line / polyline / polygon / text / tspan / defs / marker / pattern / mask / clipPath / linearGradient / radialGradient / stop / use / symbol / title / desc）；② ALLOWED_ATTR 加 SVG 关键属性（viewBox / preserveAspectRatio / fill / stroke / font-family / text-anchor / transform 等）；③ SAFE_STYLE_VALUES 加 SVG 关键样式正则（fill / stroke 仅允许 hex / rgb / rgba / 命名颜色 + none + transparent，font-family 仅允许「字母数字 + 空格 + 常见引号 + 逗号 + 连字符 + 下划线」屏蔽 `url()` / `expression()` 注入向量）；④ `preview.css` 加全局 SVG text / tspan font-family 兜底（即使 SVG 不显式声明 font-family 也能命中项目内已有字体变量）。新增 5 个测试覆盖：保留常见 SVG 结构 / fill-stroke 颜色 / inline font-family 保留 / 危险 font-family 拒绝 / onload-onclick-script 全 strip。**适用范围**：HTML 阅读预览（.html 文件）。Markdown 预览（Vditor）走 `sanitizeForVditor` 路径，原生支持 svg profile，未受影响。
+- **tear-off 独立窗口显式 destroy() 兜底**（PR #54 cherry-pick）：`on_window_event(CloseRequested)` 处理 tear-off 窗口时，`handle_window_close` emit `window:closed` 后追加 `window.destroy()`，应对 macOS 上偶发的 CloseRequested 默认不销毁窗口问题（PR #54 报告）。destroy() 不再触发 CloseRequested，无递归。主窗口维持 v0.4.3 的「关窗即退出」语义（不引入 PR #54 提议的 hide-to-Dock 模式）。**范围**：tear-off 路径才走 destroy；main 路径维持默认 close 行为。
+
+## [0.4.3] - 2026-06-21
+
+### Fixed
+
 - **tear-off 独立窗口显式 destroy() 兜底**（PR #54 cherry-pick）：`on_window_event(CloseRequested)` 处理 tear-off 窗口时，`handle_window_close` emit `window:closed` 后追加 `window.destroy()`，应对 macOS 上偶发的 CloseRequested 默认不销毁窗口问题（PR #54 报告）。destroy() 不再触发 CloseRequested，无递归。主窗口维持 v0.4.3 的「关窗即退出」语义（不引入 PR #54 提议的 hide-to-Dock 模式）。**范围**：tear-off 路径才走 destroy；main 路径维持默认 close 行为。
 
 ## [0.4.3] - 2026-06-21
