@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-06-22
+
 ### Fixed
 
 - **修复 Markdown 内联 SVG 在主编辑器、HTML 预览、Word 预览中被截断或变白的问题**（ISS-176 / DEC-112）：Vditor IR / Lute 会把漂亮排版的多行 SVG 拆成多个 `html-block`，部分 SVG 的 marker 还会被截成只有背景 `<rect>` 的片段；旧清洗逻辑会把这些片段补闭合并回写到会话，导致右侧预览也拿到污染内容。Folia 现在按原始 Markdown SVG 块修复 IR 可见预览，安全跳过无害 SVG 片段 marker 的单独清洗，并在 Vditor preview 前用占位符保护完整 SVG；HTML/Word 预览会移除 Vditor 复制按钮等 preview chrome。Playwright Chromium 注入用户 `ch07.md` 实测：主编辑器、HTML 预览、Word 预览测量层和分页层均为 7 张完整 SVG，初始化后 session 仍保持干净。
