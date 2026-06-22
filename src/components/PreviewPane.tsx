@@ -8,7 +8,7 @@ import { VDITOR_PREVIEW_I18N } from '../services/vditorPreviewConfig';
 import { createHtmlReadingPreviewHtml } from '../services/htmlReadingPreviewService';
 import { resolveLocalImages } from '../services/localImageResolver';
 import { openExternalUrl } from '../services/urlOpener';
-import { sanitizeForVditor } from '../services/sanitizeService';
+import { prepareMarkdownForVditorPreview } from '../services/markdownSvgPreviewService';
 
 type PreviewPaneProps = {
   source: string;
@@ -26,6 +26,10 @@ export function PreviewPane({ source, tocIds, wideTables = false, renderMode = '
   const settings = useSettings();
   const renderFeatures = useMemo(
     () => detectMarkdownRenderFeatures(deferredSource),
+    [deferredSource],
+  );
+  const markdownPreviewInput = useMemo(
+    () => prepareMarkdownForVditorPreview(deferredSource),
     [deferredSource],
   );
   const previewFontFamily = resolvePreviewFontFamily(settings);
@@ -68,7 +72,7 @@ export function PreviewPane({ source, tocIds, wideTables = false, renderMode = '
       // html + svg + svgFilters profile（见 sanitizeService.ts），保留
       // svg 子元素及滤镜，剥离 <script>/on*/javascript: 等。后处理再无
       // 必要（after 内不再 sanitize；保留给本地图片与 toc id 注入）。
-      Vditor.preview(el, deferredSource, {
+      Vditor.preview(el, markdownPreviewInput.markdown, {
         mode: 'light',
         anchor: 0,
         cdn: '/vditor',
@@ -86,9 +90,7 @@ export function PreviewPane({ source, tocIds, wideTables = false, renderMode = '
         markdown: {
           sanitize: false,
         },
-        transform(html) {
-          return sanitizeForVditor(html);
-        },
+        transform: markdownPreviewInput.transform,
         after() {
           if (cancelled) return;
           // ISS-169：sanitize 已由 transform 钩子在 innerHTML 设置前完成，
@@ -103,7 +105,7 @@ export function PreviewPane({ source, tocIds, wideTables = false, renderMode = '
     return () => {
       cancelled = true;
     };
-  }, [deferredSource, deferredTocIds, filePath, renderFeatures.hasHighlightableCode, renderMode]);
+  }, [deferredSource, deferredTocIds, filePath, markdownPreviewInput, renderFeatures.hasHighlightableCode, renderMode]);
 
   useEffect(() => {
     const shell = shellRef.current;

@@ -10,6 +10,10 @@ import {
   type CustomHtmlExportPresetId,
   type HtmlExportPreset,
 } from './htmlExportPresets';
+import {
+  removeVditorPreviewChrome,
+  stripVditorPreviewChrome,
+} from './vditorPreviewChromeService';
 
 export {
   HTML_EXPORT_ARTICLE_CLASS,
@@ -178,6 +182,12 @@ const ALLOWED_TAGS = [
   'div', 'section', 'span',
   'a', 'img',
   'details', 'summary',
+  'svg', 'g', 'defs', 'marker',
+  'path', 'rect', 'circle', 'ellipse', 'line', 'polyline', 'polygon',
+  'text', 'tspan', 'title', 'desc',
+  'filter', 'fedropshadow', 'fegaussianblur', 'feoffset', 'feblend',
+  'fecolormatrix', 'feflood', 'fecomposite',
+  'lineargradient', 'radialgradient', 'stop',
 ];
 
 const ALLOWED_ATTR = [
@@ -185,6 +195,18 @@ const ALLOWED_ATTR = [
   'colspan', 'rowspan',
   'align', 'width', 'height',
   'class', 'style',
+  'id', 'xmlns', 'viewBox', 'viewbox', 'preserveAspectRatio', 'preserveaspectratio',
+  'x', 'y', 'x1', 'y1', 'x2', 'y2',
+  'cx', 'cy', 'r', 'rx', 'ry',
+  'd', 'points',
+  'fill', 'fill-opacity', 'stroke', 'stroke-width', 'stroke-linecap',
+  'stroke-linejoin', 'stroke-dasharray', 'stroke-opacity',
+  'font-family', 'font-size', 'font-weight', 'text-anchor', 'dominant-baseline',
+  'marker-start', 'marker-mid', 'marker-end',
+  'refX', 'refx', 'refY', 'refy',
+  'markerWidth', 'markerwidth', 'markerHeight', 'markerheight',
+  'orient', 'offset', 'opacity', 'transform',
+  'filter', 'stop-color', 'stop-opacity',
 ];
 
 const ALLOWED_CLASS_NAME = /^(?:hljs(?:-[a-z0-9_-]+)?|language-[a-z0-9_-]+)$/i;
@@ -197,6 +219,7 @@ const INLINEABLE_ARTICLE_TAGS = new Set([
   'strong', 'b', 'em', 'i', 'u', 's',
   'span', 'div', 'section', 'hr',
   'code', 'pre',
+  'svg',
 ]);
 
 export const DEFAULT_INLINE_STYLE_RULES: InlineStyleRule[] = [
@@ -250,6 +273,10 @@ export const DEFAULT_INLINE_STYLE_RULES: InlineStyleRule[] = [
   },
   {
     selectors: [`.${WECHAT_ARTICLE_CLASS} img`],
+    declarations: 'display: block; max-width: 100%; height: auto; margin: 1em auto',
+  },
+  {
+    selectors: [`.${WECHAT_ARTICLE_CLASS} svg`],
     declarations: 'display: block; max-width: 100%; height: auto; margin: 1em auto',
   },
   {
@@ -556,6 +583,43 @@ function isUnsafeHtmlUrl(value: string, attributeName: string): boolean {
   return normalized.startsWith('data:');
 }
 
+const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
+
+const SVG_LOCAL_REFERENCE_ATTRS = [
+  'marker-start',
+  'marker-mid',
+  'marker-end',
+  'filter',
+  'fill',
+  'stroke',
+];
+
+function isSvgElement(element: Element): boolean {
+  return element.namespaceURI === SVG_NAMESPACE;
+}
+
+function isUnsafeSvgReferenceValue(value: string): boolean {
+  const normalized = Array.from(value).filter((character) => {
+    const code = character.charCodeAt(0);
+    return code > 31 && code !== 127 && !/\s/.test(character);
+  }).join('').toLowerCase();
+  if (/^(?:javascript|vbscript|data):/.test(normalized)) return true;
+  if (!/url\(/i.test(value)) return false;
+
+  return !/^url\((?:"#[A-Za-z][\w:.-]*"|'#[A-Za-z][\w:.-]*'|#[A-Za-z][\w:.-]*)\)$/i.test(value.trim());
+}
+
+function sanitizeSvgReferenceAttributes(root: ParentNode): void {
+  root.querySelectorAll('svg, svg *').forEach((element) => {
+    SVG_LOCAL_REFERENCE_ATTRS.forEach((attributeName) => {
+      const value = element.getAttribute(attributeName);
+      if (value && isUnsafeSvgReferenceValue(value)) {
+        element.removeAttribute(attributeName);
+      }
+    });
+  });
+}
+
 function normalizeSafeArticleClasses(root: ParentNode): void {
   root.querySelectorAll<HTMLElement>('[class]').forEach((element) => {
     const classNames = Array.from(element.classList);
@@ -596,7 +660,7 @@ function sanitizeUrlAttributes(root: ParentNode): void {
 }
 
 function sanitizeHtmlExportArticleFragment(articleHtml: string): string {
-  const sanitized = DOMPurify.sanitize(articleHtml, {
+  const sanitized = DOMPurify.sanitize(stripVditorPreviewChrome(articleHtml), {
     ALLOWED_TAGS,
     ALLOWED_ATTR,
     ALLOW_DATA_ATTR: false,
@@ -604,10 +668,14 @@ function sanitizeHtmlExportArticleFragment(articleHtml: string): string {
   const template = document.createElement('template');
   template.innerHTML = sanitized;
 
+  removeVditorPreviewChrome(template.content);
   template.content.querySelectorAll('[id]').forEach((element) => {
-    element.removeAttribute('id');
+    if (!isSvgElement(element)) {
+      element.removeAttribute('id');
+    }
   });
   sanitizeUrlAttributes(template.content);
+  sanitizeSvgReferenceAttributes(template.content);
   normalizeSafeArticleClasses(template.content);
   sanitizeInlineStyleAttributes(template.content);
 
