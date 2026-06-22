@@ -9,7 +9,7 @@ import { useSettings } from '../hooks/useSettings';
 import { translate } from '../services/i18n';
 import { resolveLocalImages } from '../services/localImageResolver';
 import { openExternalUrl } from '../services/urlOpener';
-import { sanitizeVditorIrHtml } from '../services/vditorIrSanitizeService';
+import { repairSvgIrPreviewsFromMarkdown, sanitizeVditorIrHtml } from '../services/vditorIrSanitizeService';
 
 type WysiwygEditorPaneProps = {
   source: string;
@@ -43,6 +43,11 @@ function collapseExpandedMarkers(editor: import('vditor').default | null): void 
   ir.querySelectorAll('.vditor-ir__node--expand').forEach((node) => {
     node.classList.remove('vditor-ir__node--expand');
   });
+}
+
+function editorHasFocus(editor: import('vditor').default): boolean {
+  const ir = getIrElement(editor);
+  return !!ir && (document.activeElement === ir || ir.contains(document.activeElement));
 }
 
 /**
@@ -80,7 +85,7 @@ function collapseExpandedMarkers(editor: import('vditor').default | null): void 
  * 否则会与 Vditor 自身的 setValue 死循环（用 applyingExternalValue /
  * sanitizingRef 双重 guard）。
  */
-function sanitizeIrDom(editor: import('vditor').default | null): boolean {
+function sanitizeIrDom(editor: import('vditor').default | null, markdownSource: string): boolean {
   if (!editor) return false;
   const ir = getIrElement(editor);
   if (!ir) return false;
@@ -90,7 +95,8 @@ function sanitizeIrDom(editor: import('vditor').default | null): boolean {
   if (result.changed) {
     ir.innerHTML = result.html;
   }
-  return result.changed;
+  repairSvgIrPreviewsFromMarkdown(ir, markdownSource);
+  return result.sourceChanged;
 }
 
 export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePath }: WysiwygEditorPaneProps) {
@@ -108,6 +114,8 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
   // ISS-168 编辑器部分：sanitize 写入 innerHTML 会触发 Vditor 自身的
   // 渲染回调，需要此 guard 防止 setValue -> sanitize -> input 死循环。
   const sanitizingRef = useRef(false);
+  const initializingRef = useRef(false);
+  const userInteractedRef = useRef(false);
   const [phase, setPhase] = useState<EditorPhase>('loading');
   // retryKey 递增时强制重新初始化 Vditor
   const [retryKey, setRetryKey] = useState(0);
@@ -171,12 +179,21 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
     let cancelled = false;
     setPhase('loading');
 
+    const markUserInteracted = () => {
+      userInteractedRef.current = true;
+    };
+    host.addEventListener('beforeinput', markUserInteracted, true);
+    host.addEventListener('paste', markUserInteracted, true);
+    host.addEventListener('drop', markUserInteracted, true);
+
     void Promise.all([
       import('vditor/dist/index.css'),
       import('vditor'),
     ]).then(([, { default: Vditor }]) => {
       if (cancelled || !hostRef.current) return;
 
+      initializingRef.current = true;
+      userInteractedRef.current = false;
       const editor = new Vditor(hostRef.current, {
         value: latestSource.current,
         mode: 'ir',
@@ -229,7 +246,7 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
             // DOMException 让 sanitizingRef 卡死（ISS-170 review follow-up）。
             sanitizingRef.current = true;
             try {
-              const sanitized = sanitizeIrDom(editor);
+              const sanitized = sanitizeIrDom(editor, latestSource.current);
               sanitizingRef.current = false;
               lockComplexTables();
               const host = hostRef.current;
@@ -238,6 +255,8 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
             } catch (error) {
               sanitizingRef.current = false;
               console.error('[Folia] after() queueMicrotask sanitize 失败:', error);
+            } finally {
+              initializingRef.current = false;
             }
           });
 
@@ -263,7 +282,7 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
                 applyingExternalValue.current = false;
                 sanitizingRef.current = true;
                 try {
-                  const sanitized = sanitizeIrDom(editor);
+                  const sanitized = sanitizeIrDom(editor, latestSource.current);
                   sanitizingRef.current = false;
                   lockComplexTables();
                   if (sanitized) emitEditorValueIfChanged(editor);
@@ -276,7 +295,9 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
           }
         },
         input(value) {
-          if (applyingExternalValue.current || sanitizingRef.current) return;
+          if (initializingRef.current || applyingExternalValue.current || sanitizingRef.current) return;
+          if (!editorHasFocus(editor)) return;
+          if (!userInteractedRef.current) return;
 
           // ISS-151: 每次 input 后安排折叠定时器。
           // 粘贴（insertText）不触发 keydown，所以需要在 input 中也安排折叠，
@@ -298,7 +319,7 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
           sanitizingRef.current = true;
           let sanitized = false;
           try {
-            sanitized = sanitizeIrDom(editor);
+            sanitized = sanitizeIrDom(editor, latestSource.current);
           } catch (error) {
             console.error('[Folia] input() sanitize 失败:', error);
           } finally {
@@ -347,7 +368,7 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
               applyingExternalValue.current = false;
               sanitizingRef.current = true;
               try {
-                const restoredSanitized = sanitizeIrDom(editor);
+                const restoredSanitized = sanitizeIrDom(editor, latestSource.current);
                 sanitizingRef.current = false;
                 lockComplexTables();
                 if (restoredSanitized) emitEditorValueIfChanged(editor);
@@ -368,6 +389,7 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
           onChange(nextValue);
         },
         keydown() {
+          userInteractedRef.current = true;
           // 每次按键重置折叠定时器，避免编辑过程中误折叠正在编辑的 IR 节点
           if (collapseTimerRef.current !== null) {
             window.clearTimeout(collapseTimerRef.current);
@@ -389,6 +411,7 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
       editorRef.current = editor;
     }).catch((error) => {
       console.error('[Folia] Vditor 初始化失败:', error);
+      initializingRef.current = false;
       if (!cancelled) {
         setPhase('error');
       }
@@ -396,6 +419,9 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
 
     return () => {
       cancelled = true;
+      host.removeEventListener('beforeinput', markUserInteracted, true);
+      host.removeEventListener('paste', markUserInteracted, true);
+      host.removeEventListener('drop', markUserInteracted, true);
       if (collapseTimerRef.current !== null) {
         window.clearTimeout(collapseTimerRef.current);
         collapseTimerRef.current = null;
@@ -404,6 +430,8 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
       editorRef.current = null;
       lastComplexBlocksRef.current = [];
       pendingSourceRef.current = null;
+      initializingRef.current = false;
+      userInteractedRef.current = false;
     };
   }, [filePath, lockComplexTables, emitEditorValueIfChanged, onChange, retryKey]);
 
@@ -431,7 +459,7 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
       // ISS-168 编辑器部分：外部 setValue 完成后 sanitize IR DOM。
       sanitizingRef.current = true;
       try {
-        const sanitized = sanitizeIrDom(editor);
+        const sanitized = sanitizeIrDom(editor, source);
         sanitizingRef.current = false;
         lockComplexTables();
         if (sanitized) emitEditorValueIfChanged(editor);

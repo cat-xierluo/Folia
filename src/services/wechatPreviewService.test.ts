@@ -116,6 +116,74 @@ describe('wechatPreviewService', () => {
     expect(html).not.toContain('<script');
   });
 
+  it('preserves safe inline SVG and marker references while removing dangerous SVG markup', () => {
+    const result = createHtmlExportResult('', `
+      <svg onload="alert(1)" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" width="20" height="20">
+        <defs>
+          <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#2C5282"></path>
+          </marker>
+        </defs>
+        <line onclick="alert(2)" x1="1" y1="10" x2="18" y2="10" stroke="#2C5282" stroke-width="2" marker-end="url(#arr)"></line>
+        <script>alert(3)</script>
+      </svg>
+    `);
+
+    for (const html of [result.previewHtml, result.clipboardHtml]) {
+      expect(html).toContain('<svg');
+      expect(html).toContain('<marker');
+      expect(html).toContain('id="arr"');
+      expect(html).toContain('marker-end="url(#arr)"');
+      expect(html).not.toContain('onload');
+      expect(html).not.toContain('onclick');
+      expect(html).not.toContain('<script');
+      expect(html).not.toContain('alert(');
+    }
+
+    const svg = queryRequired<Element>(getDocumentBody(result.previewHtml), 'svg');
+    const marker = queryRequired<Element>(svg, 'marker');
+    const line = queryRequired<Element>(svg, 'line');
+
+    expect(svg.getAttribute('viewBox')).toBe('0 0 20 20');
+    expect(marker.getAttribute('id')).toBe('arr');
+    expect(line.getAttribute('marker-end')).toBe('url(#arr)');
+  });
+
+  it('does not create blank duplicate SVGs when sanitizing pretty-printed SVG blocks', () => {
+    const result = createHtmlExportResult('', [
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 80" width="120" height="80">',
+      '  <rect width="120" height="80" fill="#FFFFFF"/>',
+      '',
+      '  <!-- 标题 -->',
+      '  <text x="60" y="24" font-size="14" fill="#111111" text-anchor="middle">标题</text>',
+      '',
+      '  <!-- 连接线 -->',
+      '  <line x1="10" y1="48" x2="110" y2="48" stroke="#222222" stroke-width="2"/>',
+      '</svg>',
+    ].join('\n'));
+    const body = getDocumentBody(result.previewHtml);
+    const svgs = body.querySelectorAll('svg');
+
+    expect(svgs).toHaveLength(1);
+    expect(svgs[0].querySelectorAll('text')).toHaveLength(1);
+    expect(svgs[0].querySelectorAll('line')).toHaveLength(1);
+    expect(svgs[0].querySelectorAll('rect')).toHaveLength(1);
+  });
+
+  it('removes Vditor preview chrome before wrapping export HTML', () => {
+    const result = createHtmlExportResult('', `
+      <pre><code class="language-ts hljs">const ok = true</code></pre>
+      <button class="vditor-tooltipped vditor-tooltipped__w" aria-label="复制">
+        <svg><use xlink:href="#vditor-icon-copy"></use></svg>
+      </button>
+    `);
+
+    expect(result.previewHtml).toContain('<pre><code class="language-ts hljs">');
+    expect(result.previewHtml).not.toContain('vditor-tooltipped');
+    expect(result.previewHtml).not.toContain('vditor-icon-copy');
+    expect(getDocumentBody(result.previewHtml).querySelectorAll('svg')).toHaveLength(0);
+  });
+
   it('detects local relative images that cannot be copied directly to WeChat', () => {
     const warnings = detectLocalRelativeImages(`
       <img src="./images/local.png" alt="local" />

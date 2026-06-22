@@ -13,6 +13,10 @@ type PreviewCall = {
   source: string;
   options: {
     after?: () => void;
+    markdown?: {
+      sanitize?: boolean;
+    };
+    transform?: (html: string) => string;
   };
   reject: (error: Error) => void;
   resolve: () => void;
@@ -197,6 +201,31 @@ describe('WechatPreviewPane', () => {
     });
     expect(host.querySelector('.wechat-preview-article-shell')?.textContent).toContain('恢复文章');
     expect(host.textContent).not.toContain('HTML 预览生成失败');
+  });
+
+  it('HTML 导出预览注册 transform 以保留安全 SVG 并剥离危险属性', async () => {
+    await act(async () => {
+      root.render(<WechatPreviewPane source="<svg></svg>" onClose={() => undefined} />);
+      await flushPromises();
+    });
+    await waitForPreviewCall(1);
+
+    const options = previewCalls[0].options;
+    expect(options.markdown?.sanitize).toBe(false);
+    expect(options.transform).toBeTypeOf('function');
+
+    const transformed = options.transform?.([
+      '<svg onload="alert(1)" viewBox="0 0 10 10">',
+      '<rect width="10" height="10" fill="#fff"></rect>',
+      '</svg>',
+      '<script>alert(2)</script>',
+    ].join('')) ?? '';
+
+    expect(transformed).toContain('<svg');
+    expect(transformed).toContain('<rect');
+    expect(transformed).not.toContain('onload');
+    expect(transformed).not.toContain('<script');
+    expect(transformed).not.toContain('alert(');
   });
 
   it('copies rich text HTML and plain text fallback to the clipboard when available', async () => {

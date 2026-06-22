@@ -1,5 +1,6 @@
 import { detectMarkdownRenderFeatures } from './markdownFeatureDetector';
-import { sanitizeHtml } from './sanitizeService';
+import { prepareMarkdownForVditorPreview } from './markdownSvgPreviewService';
+import { stripVditorPreviewChrome } from './vditorPreviewChromeService';
 import { VDITOR_PREVIEW_I18N } from './vditorPreviewConfig';
 
 export interface MarkdownHtmlPreviewArtifact {
@@ -19,6 +20,7 @@ export async function createWordPreviewArtifact(
 
   const container = document.createElement('div');
   const renderFeatures = detectMarkdownRenderFeatures(markdown);
+  const markdownPreviewInput = prepareMarkdownForVditorPreview(markdown);
 
   await new Promise<void>((resolve, reject) => {
     let settled = false;
@@ -29,7 +31,7 @@ export async function createWordPreviewArtifact(
     };
 
     try {
-      const result = Vditor.preview(container, markdown, {
+      const result = Vditor.preview(container, markdownPreviewInput.markdown, {
         mode: 'light',
         anchor: 0,
         cdn: '/vditor',
@@ -45,8 +47,9 @@ export async function createWordPreviewArtifact(
           lineNumber: false,
         },
         markdown: {
-          sanitize: true,
+          sanitize: false,
         },
+        transform: markdownPreviewInput.transform,
         after: finish,
       });
 
@@ -58,5 +61,8 @@ export async function createWordPreviewArtifact(
     }
   });
 
-  return { source: 'markdown-html', html: sanitizeHtml(container.innerHTML) };
+  return {
+    source: 'markdown-html',
+    html: markdownPreviewInput.transform(stripVditorPreviewChrome(container.innerHTML)),
+  };
 }

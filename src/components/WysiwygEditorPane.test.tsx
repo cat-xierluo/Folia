@@ -3,6 +3,7 @@ import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WysiwygEditorPane } from './WysiwygEditorPane';
+import { FOLIA_IR_SVG_FRAGMENT_CLASS, FOLIA_IR_SVG_ROOT_CLASS } from '../services/vditorIrSanitizeService';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -191,6 +192,54 @@ describe('WysiwygEditorPane 内联 SVG 显示 + sanitize (ISS-168 编辑器部�
       });
     });
 
+    it('after() 回调重组被 Vditor IR 按空行拆开的 SVG 预览', async () => {
+      let root: Root | null = null;
+
+      await act(async () => {
+        root = createRoot(host);
+        root.render(
+          React.createElement(WysiwygEditorPane, {
+            source: '',
+            onChange: () => undefined,
+          }),
+        );
+        await flushMicrotasks();
+      });
+
+      const call = vditorCalls[0];
+      const ir = call.host.querySelector<HTMLElement>('.vditor-ir pre');
+      expect(ir).not.toBeNull();
+
+      ir!.innerHTML = [
+        '<div data-block="0" data-type="html-block" class="vditor-ir__node">',
+        '<pre class="vditor-ir__marker--pre vditor-ir__marker"><code data-type="html-block">&lt;svg viewBox="0 0 120 80" width="120" height="80"&gt;\n  &lt;rect width="120" height="80" fill="#FFFFFF"/&gt;</code></pre>',
+        '<pre class="vditor-ir__preview" data-render="1"><svg viewBox="0 0 120 80" width="120" height="80"><rect width="120" height="80" fill="#FFFFFF"></rect></svg></pre>',
+        '</div>',
+        '<div data-block="0" data-type="html-block" class="vditor-ir__node">',
+        '<pre class="vditor-ir__marker--pre vditor-ir__marker"><code data-type="html-block"></code></pre>',
+        '<pre class="vditor-ir__preview" data-render="1"></pre>',
+        '</div>',
+        '<div data-block="0" data-type="html-block" class="vditor-ir__node">',
+        '<pre class="vditor-ir__marker--pre vditor-ir__marker"><code data-type="html-block">&lt;text x="60" y="24" font-size="14" fill="#111111" text-anchor="middle"&gt;标题&lt;/text&gt;\n&lt;/svg&gt;</code></pre>',
+        '<pre class="vditor-ir__preview" data-render="1"><text x="60" y="24" font-size="14" fill="#111111" text-anchor="middle">标题</text></pre>',
+        '</div>',
+      ].join('');
+
+      await act(async () => {
+        call.options.after?.();
+        await flushMicrotasks();
+        await flushFrames();
+      });
+
+      const repairedPreview = ir!.querySelector(`.${FOLIA_IR_SVG_ROOT_CLASS} .vditor-ir__preview`);
+      expect(repairedPreview?.querySelector('svg text')?.textContent).toBe('标题');
+      expect(ir!.querySelectorAll(`.${FOLIA_IR_SVG_FRAGMENT_CLASS}`)).toHaveLength(2);
+
+      await act(async () => {
+        root?.unmount();
+      });
+    });
+
     it('input() 回调跑 sanitizeIrDom 让用户输入后的 IR DOM 内 svg 保留 + onerror 剥离', async () => {
       let root: Root | null = null;
 
@@ -209,7 +258,7 @@ describe('WysiwygEditorPane 内联 SVG 显示 + sanitize (ISS-168 编辑器部�
       // 先跑一次 after() 让组件进入 ready 阶段
       await act(async () => {
         call.options.after?.();
-        await flushMicrotasks();
+        await flushFrames();
       });
 
       const ir = call.host.querySelector<HTMLElement>('.vditor-ir pre');
@@ -217,6 +266,8 @@ describe('WysiwygEditorPane 内联 SVG 显示 + sanitize (ISS-168 编辑器部�
 
       // 模拟用户输入后 Lute 把 svg + onerror 渲染到 IR DOM
       ir!.innerHTML = '<p data-block="0"><svg viewBox="0 0 5 5"><rect width="5" height="5"/></svg><img src="y" onerror="alert(1)"></p>';
+      ir!.focus();
+      ir!.dispatchEvent(new Event('beforeinput', { bubbles: true }));
 
       // 模拟 input(value) 回调触发 sanitize
       await act(async () => {
@@ -269,6 +320,8 @@ describe('WysiwygEditorPane 内联 SVG 显示 + sanitize (ISS-168 编辑器部�
         '<pre class="vditor-ir__preview" data-render="2"><div><img src="x" onerror="alert(1)"></div></pre>',
         '</div>',
       ].join('');
+      ir!.focus();
+      ir!.dispatchEvent(new Event('beforeinput', { bubbles: true }));
 
       await act(async () => {
         call.options.input?.('<div><img src="x" onerror="alert(1)"></div>');
@@ -279,6 +332,48 @@ describe('WysiwygEditorPane 内联 SVG 显示 + sanitize (ISS-168 编辑器部�
       expect(saved).toContain('<img src="x"');
       expect(saved).not.toContain('onerror');
       expect(saved).not.toContain('alert(');
+
+      await act(async () => {
+        root?.unmount();
+      });
+    });
+
+    it('忽略 Vditor 初始化完成前触发的 input，避免用 Lute 中间值覆盖原文', async () => {
+      let root: Root | null = null;
+      const onChange = vi.fn();
+
+      await act(async () => {
+        root = createRoot(host);
+        root.render(
+          React.createElement(WysiwygEditorPane, {
+            source: '<p data-block="0"><span data-type="text">init</span></p>',
+            onChange,
+          }),
+        );
+        await flushMicrotasks();
+      });
+
+      const call = vditorCalls[0];
+
+      await act(async () => {
+        call.options.input?.('<svg viewBox="0 0 10 10"><rect width="10"/></svg>');
+        await flushMicrotasks();
+      });
+      expect(onChange).not.toHaveBeenCalled();
+
+      await act(async () => {
+        call.options.after?.();
+        await flushMicrotasks();
+      });
+
+      await act(async () => {
+        const ir = call.host.querySelector<HTMLElement>('.vditor-ir pre');
+        ir?.focus();
+        ir?.dispatchEvent(new Event('beforeinput', { bubbles: true }));
+        call.options.input?.('用户输入');
+        await flushFrames();
+      });
+      expect(onChange).toHaveBeenLastCalledWith('用户输入');
 
       await act(async () => {
         root?.unmount();
@@ -328,6 +423,8 @@ describe('WysiwygEditorPane 内联 SVG 显示 + sanitize (ISS-168 编辑器部�
       // 让 nextBlocks 与 original.html 不一致——但因为 sanitized === true，
       // restore 必须被跳过，replaceHtmlTableBlock 不应被调用。
       ir!.innerHTML = '<p data-block="0"><span data-type="text">x</span></p>';
+      ir!.focus();
+      ir!.dispatchEvent(new Event('beforeinput', { bubbles: true }));
 
       await act(async () => {
         call.options.input?.('x');
