@@ -1231,6 +1231,7 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   display: block;
   max-width: 100%;
   height: auto;
+  font-family: var(--reading-font-family, var(--font-reading));
 }
 
 /* ===== Preview Shell ===== */
