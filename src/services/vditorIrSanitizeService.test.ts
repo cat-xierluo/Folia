@@ -210,6 +210,59 @@ describe('sanitizeVditorIrHtml', () => {
     expect(svg?.querySelector('marker')?.getAttribute('id')).toBe('arr');
   });
 
+  it('从 Markdown 原文修复后隐藏被普通段落承载的 SVG 残留片段', () => {
+    const markdown = [
+      '<svg viewBox="0 0 120 80" width="120" height="80">',
+      '  <rect width="120" height="80" fill="#FFFFFF"/>',
+      '',
+      '  <!-- 标题 -->',
+      '  <text x="60" y="24" font-size="14">源标题</text>',
+      '',
+      '  <path d="M 10 40 L 110 40" stroke="#222222"/>',
+      '',
+      '  <text x="60" y="62" font-size="14">尾部</text>',
+      '</svg>',
+      '',
+      '**图：源标题**',
+    ].join('\n');
+    const root = document.createElement('div');
+    root.innerHTML = [
+      '<div data-block="0" data-type="html-block" class="vditor-ir__node">',
+      '<pre class="vditor-ir__marker--pre vditor-ir__marker"><code data-type="html-block">',
+      '&lt;svg viewBox="0 0 120 80" width="120" height="80"&gt;\n',
+      '  &lt;rect width="120" height="80" fill="#FFFFFF"/&gt;',
+      '</code></pre>',
+      '<pre class="vditor-ir__preview" data-render="1"><svg viewBox="0 0 120 80"><rect width="120" height="80"></rect></svg></pre>',
+      '</div>',
+      '<div data-block="0" data-type="html-block" class="vditor-ir__node">',
+      '<pre class="vditor-ir__marker--pre vditor-ir__marker"><code data-type="html-block">&lt;!-- 标题 --&gt;</code></pre>',
+      '<pre class="vditor-ir__preview" data-render="1"></pre>',
+      '</div>',
+      '<div data-block="0" data-type="html-block" class="vditor-ir__node">',
+      '<pre class="vditor-ir__marker--pre vditor-ir__marker"><code data-type="html-block">&lt;text x="60" y="24" font-size="14"&gt;源标题&lt;/text&gt;</code></pre>',
+      '<pre class="vditor-ir__preview" data-render="1"></pre>',
+      '</div>',
+      '<p><code class="vditor-ir__marker">&lt;path d="M 10 40 L 110 40" stroke="#222222"/&gt;</code></p>',
+      '<div data-block="0" data-type="html-block" class="vditor-ir__node">',
+      '<pre class="vditor-ir__marker--pre vditor-ir__marker"><code data-type="html-block">&lt;text x="60" y="62" font-size="14"&gt;尾部&lt;/text&gt;\n&lt;/svg&gt;</code></pre>',
+      '<pre class="vditor-ir__preview" data-render="1"></pre>',
+      '</div>',
+      '<p>**图：源标题**</p>',
+    ].join('');
+
+    const changed = repairSvgIrPreviewsFromMarkdown(root, markdown);
+    const repairedRoot = root.querySelector(`.${FOLIA_IR_SVG_ROOT_CLASS} .vditor-ir__preview`);
+    const hiddenFragments = Array.from(root.querySelectorAll<HTMLElement>(`.${FOLIA_IR_SVG_FRAGMENT_CLASS}`));
+    const caption = Array.from(root.querySelectorAll('p')).find((node) => node.textContent?.includes('图：源标题'));
+
+    expect(changed).toBe(true);
+    expect(repairedRoot?.querySelector('svg text')?.textContent).toContain('源标题');
+    expect(repairedRoot?.querySelector('svg path')?.getAttribute('d')).toBe('M 10 40 L 110 40');
+    expect(hiddenFragments).toHaveLength(4);
+    expect(hiddenFragments.some((node) => node.tagName === 'P' && node.textContent?.includes('<path'))).toBe(true);
+    expect(caption?.classList.contains(FOLIA_IR_SVG_FRAGMENT_CLASS)).toBe(false);
+  });
+
   it('不会把安全的未闭合 SVG 起始 marker 补成截断完整 SVG', () => {
     const root = document.createElement('div');
     root.innerHTML = [
