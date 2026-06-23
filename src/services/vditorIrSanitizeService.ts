@@ -72,6 +72,20 @@ function getIrHtmlMarkerText(node: HTMLElement): string | null {
   return marker.textContent ?? '';
 }
 
+function getHtmlMarkerTextFromElement(element: Element | null): string | null {
+  if (!(element instanceof HTMLElement)) return null;
+  const isHtmlNode = element.classList.contains('vditor-ir__node')
+    && (
+      element.getAttribute('data-type') === 'html-block'
+      || element.getAttribute('data-type') === 'html-inline'
+    );
+  if (isHtmlNode) return getIrHtmlMarkerText(element);
+
+  const marker = element.querySelector<HTMLElement>('code[data-type="html-block"], code.vditor-ir__marker');
+  if (!marker) return null;
+  return marker.textContent ?? '';
+}
+
 function isSvgStart(text: string): boolean {
   return /^<svg(?:\s|>)/i.test(text.trimStart());
 }
@@ -191,6 +205,81 @@ function renderSvgPreviewFromSource(node: HTMLElement, sourceSvg: string): boole
   firstPreview.innerHTML = repairedSvg;
   node.classList.add(FOLIA_IR_SVG_ROOT_CLASS);
   return true;
+}
+
+function clearSvgRepairClasses(root: ParentNode): boolean {
+  let changed = false;
+  root.querySelectorAll<HTMLElement>(`.${FOLIA_IR_SVG_ROOT_CLASS}, .${FOLIA_IR_SVG_FRAGMENT_CLASS}`)
+    .forEach((element) => {
+      if (element.classList.contains(FOLIA_IR_SVG_ROOT_CLASS)) {
+        element.classList.remove(FOLIA_IR_SVG_ROOT_CLASS);
+        changed = true;
+      }
+      if (element.classList.contains(FOLIA_IR_SVG_FRAGMENT_CLASS)) {
+        element.classList.remove(FOLIA_IR_SVG_FRAGMENT_CLASS);
+        changed = true;
+      }
+    });
+  return changed;
+}
+
+function findSvgMarkerInSource(sourceSvg: string, marker: string, startIndex: number): { index: number; length: number } | null {
+  const trimmed = marker.trim();
+  if (trimmed === '') return null;
+
+  const rawIndex = sourceSvg.indexOf(marker, startIndex);
+  if (rawIndex >= 0) {
+    return { index: rawIndex, length: marker.length };
+  }
+
+  const trimmedIndex = sourceSvg.indexOf(trimmed, startIndex);
+  if (trimmedIndex >= 0) {
+    return { index: trimmedIndex, length: trimmed.length };
+  }
+
+  return null;
+}
+
+function hideFollowingSvgSourceFragments(svgRoot: HTMLElement, sourceSvg: string): boolean {
+  const rootMarker = getIrHtmlMarkerText(svgRoot);
+  let sourceCursor = 0;
+  if (rootMarker !== null) {
+    const rootMatch = findSvgMarkerInSource(sourceSvg, rootMarker, 0);
+    if (rootMatch) {
+      sourceCursor = rootMatch.index + rootMatch.length;
+    }
+  }
+
+  let changed = false;
+  let hiddenAny = false;
+  let current = svgRoot.nextElementSibling;
+
+  while (current) {
+    const marker = getHtmlMarkerTextFromElement(current);
+    if (marker === null) break;
+    if (isSvgStart(marker)) break;
+    if (!isSvgFragmentLike(marker)) break;
+
+    const sourceMatch = findSvgMarkerInSource(sourceSvg, marker, sourceCursor);
+    if (!sourceMatch) break;
+
+    if (current instanceof HTMLElement && !current.classList.contains(FOLIA_IR_SVG_FRAGMENT_CLASS)) {
+      current.classList.add(FOLIA_IR_SVG_FRAGMENT_CLASS);
+      changed = true;
+    }
+    hiddenAny = true;
+    sourceCursor = sourceMatch.index + sourceMatch.length;
+
+    if (hasSvgEnd(marker)) break;
+    current = current.nextElementSibling;
+  }
+
+  if (hiddenAny && !svgRoot.classList.contains(FOLIA_IR_SVG_ROOT_CLASS)) {
+    svgRoot.classList.add(FOLIA_IR_SVG_ROOT_CLASS);
+    changed = true;
+  }
+
+  return changed;
 }
 
 function containsDangerousSvgMarkup(svg: string): boolean {
@@ -320,21 +409,9 @@ export function sanitizeVditorIrHtml(irHtml: string): VditorIrSanitizeResult {
  * by Vditor.
  */
 export function repairSplitSvgIrPreviews(root: ParentNode): boolean {
+  let changed = clearSvgRepairClasses(root);
   const nodes = getIrHtmlNodes(root);
-  if (nodes.length === 0) return false;
-
-  let changed = false;
-
-  nodes.forEach((node) => {
-    if (node.classList.contains(FOLIA_IR_SVG_ROOT_CLASS)) {
-      node.classList.remove(FOLIA_IR_SVG_ROOT_CLASS);
-      changed = true;
-    }
-    if (node.classList.contains(FOLIA_IR_SVG_FRAGMENT_CLASS)) {
-      node.classList.remove(FOLIA_IR_SVG_FRAGMENT_CLASS);
-      changed = true;
-    }
-  });
+  if (nodes.length === 0) return changed;
 
   collectSplitSvgGroups(nodes, { includeSingleClosed: true }).forEach((group) => {
     const firstPreview = group.nodes[0].querySelector<HTMLElement>('.vditor-ir__preview');
@@ -395,6 +472,9 @@ export function repairSvgIrPreviewsFromMarkdown(root: ParentNode, markdown: stri
     if (!sourceSvg) return;
 
     if (renderSvgPreviewFromSource(node, sourceSvg)) {
+      changed = true;
+    }
+    if (hideFollowingSvgSourceFragments(node, sourceSvg)) {
       changed = true;
     }
   });
