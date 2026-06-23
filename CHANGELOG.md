@@ -4,10 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.4.5] - 2026-06-23
+
 ### Fixed
 
-- 修复部分多行 SVG 后方仍出现大段白色条的问题：Vditor IR 在清洗后会把部分 SVG 子片段（尤其是 `<path>`）降级成普通段落，旧的 SVG 修复器只沿相邻 IR HTML 节点收集，遇到普通段落就停止，导致“初版 Skill 的文件结构”等图后方残留空白源码块。现在 source-aware SVG 修复会按原始 Markdown SVG 源码顺序继续识别并隐藏后续残留片段，同时保留图注和正文；Playwright 注入用户 `ch07.md` 实测 7 张 SVG 全部恢复且无可见残留，session 仍保持未修改。
-- 修复主编辑器内 SVG 文本继承 `<pre>` 等宽字体的问题：部分 AI 生成 SVG 未指定 `font-family`，在 Vditor IR 预览中会继承代码块字体，导致长英文标签比原设计更宽，看起来像被框或白底截掉。现在修复后的 SVG 预览使用阅读正文字体；“初版 Skill 的文件结构”根节点文字宽度实测由约 285px 降为约 226.6px，可正常落在 240px 蓝框内。
+- 修复部分多行 SVG 后方仍出现大段白色条的问题（DEC-114 / PR #61）：Vditor IR 在清洗后会把部分 SVG 子片段（尤其是 `<path>`）降级成普通段落，旧的 SVG 修复器只沿相邻 IR HTML 节点收集，遇到普通段落就停止，导致“初版 Skill 的文件结构”等图后方残留空白源码块。现在 source-aware SVG 修复会按原始 Markdown SVG 源码顺序继续识别并隐藏后续残留片段，同时保留图注和正文；Playwright 注入用户 `ch07.md` 实测 7 张 SVG 全部恢复且无可见残留，session 仍保持未修改。
+- 修复主编辑器内 SVG 文本继承 `<pre>` 等宽字体的问题（DEC-114 / PR #61）：部分 AI 生成 SVG 未指定 `font-family`，在 Vditor IR 预览中会继承代码块字体，导致长英文标签比原设计更宽，看起来像被框或白底截掉。现在修复后的 SVG 预览使用阅读正文字体；“初版 Skill 的文件结构”根节点文字宽度实测由约 285px 降为约 226.6px，可正常落在 240px 蓝框内。
 
 ## [0.4.4] - 2026-06-22
 
