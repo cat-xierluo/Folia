@@ -104,6 +104,31 @@ describe('resolveLocalImages', () => {
     expect(container.querySelector('img')?.getAttribute('src')).toBe('file:///Users/demo/photo.png');
   });
 
+  it('resolves local WebP via Markdown image syntax', async () => {
+    // ISS-178 follow-up: lock down that .webp goes through the same path as
+    // .png / .jpg — extension-agnostic. Real Tauri runtime verified via
+    // `folia-fresh-1.png` (test.md with `![](./sample.webp)`).
+    const { resolveLocalImages: resolve } = await importFresh();
+    const container = createContainerWithImages([{ src: './sample.webp' }]);
+    await resolve(container, '/tmp/folia-webp-test/test.md');
+    const src = container.querySelector('img')?.getAttribute('src');
+    expect(src).toContain('asset.localhost');
+    expect(src).toContain('/tmp/folia-webp-test/sample.webp');
+  });
+
+  it('resolves local WebP via inline HTML <img src> tag', async () => {
+    // Markdown允许直接写 HTML 标签。Folia 不应只走 Markdown 解析路径，
+    // inline <img> 也需要被 localImageResolver 接管。
+    const { resolveLocalImages: resolve } = await importFresh();
+    const container = document.createElement('div');
+    const img = document.createElement('img');
+    img.setAttribute('src', './sample.webp');
+    container.appendChild(img);
+    await resolve(container, '/tmp/folia-webp-test/test.md');
+    expect(img.getAttribute('src')).toContain('asset.localhost');
+    expect(img.getAttribute('src')).toContain('/tmp/folia-webp-test/sample.webp');
+  });
+
   it('handles multiple images in one container', async () => {
     const { resolveLocalImages: resolve } = await importFresh();
     const container = createContainerWithImages([

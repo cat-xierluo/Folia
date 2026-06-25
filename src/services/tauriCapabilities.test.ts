@@ -27,6 +27,11 @@ describe('Tauri capabilities', () => {
     // DEC-096: img-src must include asset: / http://asset.localhost so that
     // convertFileSrc() URLs for local images can load in the WebView.
     expect(csp).toContain("img-src 'self' asset: http://asset.localhost");
+    // ISS-178: img-src / media-src must also include https: so external HTTPS
+    // images (e.g. WebP hosted on Tencent COS / S3 / CDN) are not blocked by
+    // CSP. connect-src / frame-src / font-src remain restrictive on purpose.
+    expect(csp).toMatch(/img-src [^;]*\bhttps:/);
+    expect(csp).toMatch(/media-src [^;]*\bhttps:/);
     expect(csp).toContain("frame-src 'self' data: blob:");
     expect(csp).toContain("connect-src 'self'");
   });
