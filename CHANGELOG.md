@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **修复 HTTPS 图片（含 WebP）在主编辑器 / 预览窗不显示的问题**（ISS-178 / DEC-116）：`src-tauri/tauri.conf.json` 的 CSP `img-src` / `media-src` 此前只放行 `'self' asset: http://asset.localhost data: blob: file:`，任何 `https://` 来源的 `<img>` / `<source>` / `<video>` 都会被 WebView 拒绝加载——`<img>` 节点能进 DOM，但浏览器拦截图片数据，表现为"图片语法在、图片本身没法渲染"。用户报告的具体场景是腾讯云 COS 上的 WebP（`https://xierluo-1257032130.cos.ap-shanghai.myqcloud.com/...webp`），但根因与 WebP 无关，是 CSP 不允许 `https:` 协议。修复：在 `img-src` / `media-src` 加上 `https:`；`connect-src` / `frame-src` / `font-src` 维持原状，避免放开脚本 fetch 与 iframe 来源。`src/services/tauriCapabilities.test.ts` 增加 `expect(csp).toMatch(/img-src [^;]*\bhttps:/)` 与 `expect(csp).toMatch(/media-src [^;]*\bhttps:/)` 两条断言守住，防止后续 CSS 改动再把 `https:` 删掉。
+
 ## [0.4.5] - 2026-06-23
 
 ### Fixed
