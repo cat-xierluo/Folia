@@ -24,8 +24,16 @@ const vditorCalls: VditorConstructorCall[] = [];
  *  DOMPurify 行为约束）。getValue() 简单返回当前 IR DOM 的 innerHTML
  *  包含 svg 时的占位 MD——保存 round-trip 测试重点在 IR DOM 内的 svg
  *  被 sanitizeForVditor 保留这一事实，不需要真实 Lute 反序列化。*/
-vi.mock('vditor', () => ({
-  default: class VditorMock {
+vi.mock('vditor', () => {
+  // ISS-63 / DEC-119：rerenderAsyncCodeBlocks 在 sanitizeIrDom 完成后调
+  // Vditor 的静态渲染方法（mermaidRender / mathRender / flowchartRender /
+  // plantumlRender / graphvizRender / markmapRender / mindmapRender /
+  // chartRender / abcRender / SMILESRender）。mock 必须暴露这些方法（用
+  // vi.fn() no-op 即可），否则 rerenderAsyncCodeBlocks 会抛
+  // `Vditor.mermaidRender is not a function` 把 sanitizeIrDom 的 promise
+  // reject 成 unhandled rejection。
+  const noopRender = () => undefined;
+  class VditorMock {
     public vditor: {
       ir: { element: HTMLElement };
     };
@@ -53,8 +61,20 @@ vi.mock('vditor', () => ({
     public destroy(): void {
       // no-op
     }
-  },
-}));
+
+    public static mermaidRender = noopRender;
+    public static mathRender = noopRender;
+    public static flowchartRender = noopRender;
+    public static plantumlRender = noopRender;
+    public static graphvizRender = noopRender;
+    public static markmapRender = noopRender;
+    public static mindmapRender = noopRender;
+    public static chartRender = noopRender;
+    public static abcRender = noopRender;
+    public static SMILESRender = noopRender;
+  }
+  return { default: VditorMock };
+});
 
 vi.mock('vditor/dist/index.css', () => ({}));
 

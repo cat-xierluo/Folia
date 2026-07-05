@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **修复主编辑器 IR 模式下 Mermaid / ECharts / KaTeX / flowchart / plantuml / graphviz / markmap / mindmap / abc / smiles 等 Vditor 自渲染围栏不显示的问题**（ISS-63 / DEC-119）：v0.4.5 / v0.4.6 桌面包里，含这些围栏的 Markdown 文档在主编辑器只显示围栏源码、不渲染成图。根因是 `vditorIrSanitizeService.sanitizeVditorIrHtml` 在 `WysiwygEditorPane.after()` / `input()` / `setValue()` RAF 回调中同步用 DOMPurify 整体重写整个 IR DOM（`USE_PROFILES: { html, svg, svgFilters }`），与 Vditor 内部 mermaid / echarts 等异步代码块渲染器产生 detached-node 写入竞争——folia sanitize 跑完后旧节点全 detached，Vditor 异步加载完成（实测 Network 200 OK）调 `item.innerHTML = svg` 写到了 detached 节点上，新 IR DOM 永远停在占位。修复采用方案 A + B 组合：方案 A 在 DOMPurify 处理前后保留 `.vditor-ir__preview[data-render="1"]` 的 innerHTML，防御 sanitize 期间已渲染完成的代码块产物被破坏；方案 B 在 `sanitizeIrDom` 完成后重新触发 Vditor 静态渲染方法（`Vditor.mermaidRender` / `Vditor.mathRender` / `Vditor.flowchartRender` / `Vditor.plantumlRender` / `Vditor.graphvizRender` / `Vditor.markmapRender` / `Vditor.mindmapRender` / `Vditor.chartRender` / `Vditor.abcRender` / `Vditor.SMILESRender`），addScript 二次调用因 script 标签已存在会直接 resolve，但 mermaid.render / echarts.init 等渲染部分会重新跑，把 svg / canvas 写入 sanitize 后的新 IR DOM 活节点。这是 v0.4.4 / v0.4.5（DEC-112 / DEC-114 修 SVG 渲染）引入的回归。`e2e/mermaid-ir-renders.spec.ts` 新增 Playwright 回归：修复前 `hasSvg: false`，修复后 `hasSvg: true, svgCount: 1` 且 preview innerHTML 含 `<div class="language-mermaid" data-processed="true"><svg id="mermaid..." class="flowchart">...</svg></div>`。`npm run typecheck` / `lint` / `test`（47 文件 / 388 测试）/ `build` 全绿。PR #64。
+
 ## [0.4.6] - 2026-06-26
 
 ### Fixed
