@@ -380,6 +380,16 @@ function sanitizeHtmlBlockMarkers(root: HTMLElement): boolean {
  * IR mode keeps raw HTML blocks twice: a rendered preview and escaped marker
  * text used by `VditorIRDOM2Md()`. Sanitizing only the preview leaves dangerous
  * source text available for save/export round-trip.
+ *
+ * ISS-63 / DEC-119 sanitize 期间保留 Vditor 内部 `.vditor-ir__preview` 的
+ * innerHTML：Vditor 的 mermaid / echarts / mathjax / flowchart / plantuml /
+ * graphviz / markmap / mindmap / abc / smiles / chart 等代码块渲染器是
+ * 异步的（addScript 异步加载脚本 → 异步调 mermaid.render / echarts.init
+ * 等），如果在 sanitize 之前已经渲染完成（多次 input 触发的快速 race），
+ * 整体 DOMPurify 重写 IR DOM 会把已渲染的 svg / canvas / katex html 抹掉。
+ * 这里在 sanitize 前后保留 preview 节点 innerHTML，sanitize 完成后还原。
+ * 占位状态（`<div class="language-mermaid">graph TD...</div>` 等）下
+ * sanitized 与 preserved 一致无需还原；异步产物存在时还原阻止被破坏。
  */
 export function sanitizeVditorIrHtml(irHtml: string): VditorIrSanitizeResult {
   if (irHtml === '') return { html: irHtml, changed: false, sourceChanged: false };
@@ -387,13 +397,47 @@ export function sanitizeVditorIrHtml(irHtml: string): VditorIrSanitizeResult {
   const root = document.createElement('div');
   root.innerHTML = irHtml;
 
+  // 收集已渲染的 Vditor 内部代码块预览（data-render="1" 表明
+  // Vditor 已经调过 processCodeRender；data-render="0/2" 还在排队）。
+  const previews = Array.from(root.querySelectorAll('.vditor-ir__preview[data-render="1"]'));
+  const preservedPreviewHtml = previews.map((p) => p.innerHTML);
+
   const markerChanged = sanitizeHtmlBlockMarkers(root);
   const withSanitizedMarkers = root.innerHTML;
   const sanitized = sanitizeForVditor(withSanitizedMarkers);
 
+  // 还原 preview innerHTML（如果 sanitize 抹掉了已渲染产物）
+  if (preservedPreviewHtml.length === 0) {
+    return {
+      html: sanitized,
+      changed: markerChanged || sanitized !== irHtml,
+      sourceChanged: markerChanged,
+    };
+  }
+
+  const restoredRoot = document.createElement('div');
+  restoredRoot.innerHTML = sanitized;
+  const restoredPreviews = Array.from(restoredRoot.querySelectorAll('.vditor-ir__preview[data-render="1"]'));
+  let restoredAny = false;
+  for (let i = 0; i < restoredPreviews.length && i < preservedPreviewHtml.length; i++) {
+    // ISS-63 / DEC-118 review follow-up：还原前对 preservedPreviewHtml
+    // 再过一遍 sanitizeForVditor（与上方整体 sanitize 一致的 DOMPurify 配置）。
+    // 防止 mermaid / echarts 异步渲染产物本身含 <script> / onerror / 危险
+    // 协议时，方案 A 的「直接还原 innerHTML」绕过 sanitize 防线 —— mermaid
+    // CVE（历史上 CVE-2021-43307 类）若生效，产物可能含恶意 svg，sanitize
+    // 整体过 IR DOM 已剥一次，但 innerHTML 还原会重写 DOMPurify 抹掉的
+    // 安全状态。二次 sanitizeForVditor 防御性剥回，确保 SVG profile 保留
+    // + html profile 阻断危险标签/属性/协议。
+    const safePreserved = sanitizeForVditor(preservedPreviewHtml[i]);
+    if (restoredPreviews[i].innerHTML !== safePreserved) {
+      restoredPreviews[i].innerHTML = safePreserved;
+      restoredAny = true;
+    }
+  }
+
   return {
-    html: sanitized,
-    changed: markerChanged || sanitized !== irHtml,
+    html: restoredRoot.innerHTML,
+    changed: markerChanged || restoredAny || sanitized !== irHtml,
     sourceChanged: markerChanged,
   };
 }

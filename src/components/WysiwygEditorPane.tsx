@@ -84,6 +84,13 @@ function editorHasFocus(editor: import('vditor').default): boolean {
  * 入稳定后）调用 `sanitizeIrDom`；不要在 input 事件回调内立即调用，
  * 否则会与 Vditor 自身的 setValue 死循环（用 applyingExternalValue /
  * sanitizingRef 双重 guard）。
+ *
+ * ISS-63 / DEC-119 sanitize 完成后重置 `.vditor-ir__preview[data-render="1"]`
+ * 的 data-render 为 "0" 并重跑 Vditor 内置代码块渲染器：DOMPurify 整体重写
+ * IR DOM 后 Vditor 内部 mermaid / echarts 等异步渲染拿到的是 detached 节
+ * 点引用，svg / canvas 写入被丢弃。重置 data-render 让 Vditor 知道这些 preview
+ * 需要重新处理；调 `Vditor.mermaidRender` / `Vditor.mathRender` 等静态方法
+ * 让渲染器找到新 IR DOM 节点引用，异步产物会写到活节点上。
  */
 function sanitizeIrDom(editor: import('vditor').default | null, markdownSource: string): boolean {
   if (!editor) return false;
@@ -96,7 +103,77 @@ function sanitizeIrDom(editor: import('vditor').default | null, markdownSource: 
     ir.innerHTML = result.html;
   }
   repairSvgIrPreviewsFromMarkdown(ir, markdownSource);
+  // ISS-63 / DEC-118：sanitize 完成后重跑 Vditor 内部代码块渲染器，让
+  // mermaid / echarts 等异步产物写入 sanitize 后的新 IR DOM 活节点（绕
+  // 开 detached-node 竞争）。Try/catch 防 unhandled rejection + 卸载竞态
+  // 检查防 await 期间 editor 被 cleanup 销毁。
+  rerenderAsyncCodeBlocks(editor);
   return result.sourceChanged;
+}
+
+/**
+ * 重跑 Vditor 内部代码块渲染器，让 mermaid / echarts / mathjax / flowchart /
+ * plantuml / graphviz / markmap / mindmap / abc / smiles / chart 等异步
+ * 渲染产物能正确写入 sanitize 后的新 IR DOM 节点（绕过 folia sanitize
+ * 与 Vditor 异步渲染之间的 detached-node 竞争 —— ISS-63 / DEC-118）。
+ *
+ * cdn / theme 从 editor 实例动态拿（避免 hardcoded 主题与编辑器切换不一
+ * 致）。try/catch 包裹所有 Render 调用 + 卸载竞态检查防止 mermaid /
+ * katex 加载失败变成 unhandled rejection。
+ *
+ * 用 `editor.constructor` 拿 Vditor 类引用（避免 `await import('vditor')`
+ * 的二次动态 import —— 在 vitest jsdom 环境中 fire-and-forget promise
+ * 链会让 AppLayout 异步启动链 flake，3 次跑有 1 次等不到 read_opened_document
+ * invoke 调用）。Vditor 已在 useEffect 内 await import 完成，editor 实例
+ * 持有同一类引用，`editor.constructor.mermaidRender` 与 `Vditor.mermaidRender`
+ * 等价。
+ *
+ * addScript 二次调用因 script 标签已存在会直接 resolve；mermaid.render
+ * / echarts.init 等渲染部分会重新跑，把 svg / canvas 写入新 IR DOM 节
+ * 点。Vditor 内部 input handler 不会自动响应 data-render 重置，这里不
+ * 重置 data-render（Vditor.processCodeRender 末尾总是设为 "1"，但我
+ * 们直接调 Render 方法绕过 processCodeRender，data-render 维持 sanitize
+ * 后的值，不影响功能）。
+ *
+ * 已知高频 input 时 mermaid 渲染会被重复触发（Vditor Render API 是
+ * fire-and-forget，folia 无法拦截过期产物），最终胜出者覆盖前者。功
+ * 能正确，仅极短窗口 preview 闪烁；权衡修复 detached-node 竞争后这是
+ * 可接受的副作用，未来如需消除可由 Vditor 上游 processCodeRender 暴露
+ * promise-based API 后重构。
+ */
+function rerenderAsyncCodeBlocks(editor: import('vditor').default): void {
+  try {
+    if (!editor) return;
+    const ir = getIrElement(editor);
+    if (!ir) return;
+    // editor.constructor === Vditor 类（Vditor 在 useEffect 内已加载，
+    // editor 实例持有同一类引用，静态方法直接可用）。这种用法避免
+    // `await import('vditor')` 二次动态导入导致 vitest jsdom + React act
+    // microtask 链 flake。
+    const Vditor = editor.constructor as typeof import('vditor').default;
+    const opts = (editor as unknown as {
+      vditor?: { options?: { cdn?: string; theme?: string } };
+    }).vditor?.options ?? {};
+    const cdn = opts.cdn ?? '/vditor';
+    const theme = opts.theme === 'dark' ? 'dark' : 'light';
+    const mathOptions = (editor as unknown as {
+      vditor?: { options?: { preview?: { math?: Record<string, unknown> } } };
+    }).vditor?.options?.preview?.math ?? { inlineDigit: false, macros: {} };
+    Vditor.mermaidRender(ir, cdn, theme);
+    Vditor.flowchartRender(ir, cdn);
+    Vditor.plantumlRender(ir, cdn);
+    Vditor.graphvizRender(ir, cdn);
+    Vditor.markmapRender(ir, cdn);
+    Vditor.mindmapRender(ir, cdn, theme);
+    Vditor.chartRender(ir, cdn, theme);
+    Vditor.abcRender(ir, cdn);
+    Vditor.SMILESRender(ir, cdn, theme);
+    Vditor.mathRender(ir, { cdn, math: mathOptions });
+  } catch (error) {
+    // mermaid / echarts / katex 等加载失败或渲染抛错时不能让 promise
+    // 变成 unhandled rejection；记录 console.error 便于用户定位。
+    console.error('[Folia] rerenderAsyncCodeBlocks 失败:', error);
+  }
 }
 
 export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePath }: WysiwygEditorPaneProps) {
