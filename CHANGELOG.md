@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **DEC-119 / ISS-179 Phase 0 富媒体统一渲染契约 fixture 与失败测试**：为后续 RenderCoordinator / ResourceResolver / DiagramAsset 落地准备可公开、机器可读的富媒体 fixture 与确定性红测试。新增 `fixtures/rich-media/`（13 Markdown 场景 + 7 个 1×1 PNG/WebP/CJK/space/emoji/corrupt 资产 + README + manifest.json，共 92KB）；新增 `src/__tests__/rich-media/delayed-renderer.test.ts`（2 用例）验证 50ms 后到的 mermaid SVG 必须进入 HTML artifact / Word artifact；新增 `src/__tests__/rich-media/a-b-out-of-order.test.ts`（4 用例）锁定 RenderCoordinator generation / cancellation 契约，导入未来 Phase 1 必须建立的 `src/services/renderCoordinator.ts`；新增 `e2e/rich-media-cross-surface.spec.ts`（3 用例）把 2026-07-12 真实 Tauri v0.4.7 生产探针「主 IR 含 SVG / HTML 复制无 SVG / Word 预览 svg=0」转正为正式门禁。基线对照：原 388 个 vitest 仍全绿，Phase 0 新增 4 个 vitest / 3 个 Playwright 用例全部为红，符合「先红后绿」的 Phase 0 gate。结果凭证与失败输出见 `docs/dec-119/phase0/RESULT.md`。
+
 ## [0.4.7] - 2026-07-07
 
 ### Fixed
