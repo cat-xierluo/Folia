@@ -402,6 +402,13 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
           } finally {
             sanitizingRef.current = false;
           }
+
+          // DEC-119 / ISS-179 Phase 2：用户输入 / 粘贴 / 拖入后重新解析
+          // 新插入的相对路径图片，无需重开文档即可显示。
+          // 仅在编辑器仍有焦点时调用，避免外部 setValue 路径误触发。
+          const irEl = editorRef.current?.vditor.ir?.element;
+          const host = irEl?.parentElement ?? null;
+          if (host) void resolveLocalImages(host, filePath);
           const nextValue = sanitized ? editor.getValue() : value;
 
           const complex = lastComplexBlocksRef.current;
