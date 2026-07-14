@@ -72,3 +72,49 @@ jobs:
         # 不产出 artifact，只验证 vite build 可成功；防止 chunk 拆分 / 资源路径
           # 类回归（如 ISS-139 桌面白屏）溜进 main。
         run: npm run build
+
+  playwright:
+    # DEC-119 / ISS-179 Phase 4：把 Playwright 富媒体矩阵纳入 CI 门禁。
+    # 独立 job 跑 e2e/rich-media-* 与 mermaid IR / preview-resources，避免
+    # 拖慢主 typecheck / lint / test 反馈环；macOS WKWebView / Windows
+    # WebView2 真实桌面验证仍由 release.yml 负责。
+    name: playwright e2e (chromium)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          npm install --include=optional --no-audit --no-fund
+          npm install --no-save --no-audit --no-fund \
+            @rolldown/binding-linux-x64-gnu@1.0.1 \
+            lightningcss-linux-x64-gnu@1.32.0
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run rich-media cross-surface + fixture matrix + mermaid IR e2e
+        # 限定到富媒体 + 主 IR 矩阵，不跑全部 e2e（其它 e2e 由本地 / release 验证）。
+        run: |
+          npx playwright test \
+            e2e/rich-media-cross-surface.spec.ts \
+            e2e/rich-media-fixture-matrix.spec.ts \
+            e2e/mermaid-ir-renders.spec.ts \
+            --workers=1 \
+            --reporter=list
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-rich-media-report
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 7
