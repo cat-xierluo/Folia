@@ -85,7 +85,7 @@ function editorHasFocus(editor: import('vditor').default): boolean {
  * 否则会与 Vditor 自身的 setValue 死循环（用 applyingExternalValue /
  * sanitizingRef 双重 guard）。
  *
- * ISS-63 / DEC-119 sanitize 完成后重置 `.vditor-ir__preview[data-render="1"]`
+ * ISS-63 / DEC-118 sanitize 完成后重置 `.vditor-ir__preview[data-render="1"]`
  * 的 data-render 为 "0" 并重跑 Vditor 内置代码块渲染器：DOMPurify 整体重写
  * IR DOM 后 Vditor 内部 mermaid / echarts 等异步渲染拿到的是 detached 节
  * 点引用，svg / canvas 写入被丢弃。重置 data-render 让 Vditor 知道这些 preview

@@ -381,7 +381,7 @@ function sanitizeHtmlBlockMarkers(root: HTMLElement): boolean {
  * text used by `VditorIRDOM2Md()`. Sanitizing only the preview leaves dangerous
  * source text available for save/export round-trip.
  *
- * ISS-63 / DEC-119 sanitize 期间保留 Vditor 内部 `.vditor-ir__preview` 的
+ * ISS-63 / DEC-118 sanitize 期间保留 Vditor 内部 `.vditor-ir__preview` 的
  * innerHTML：Vditor 的 mermaid / echarts / mathjax / flowchart / plantuml /
  * graphviz / markmap / mindmap / abc / smiles / chart 等代码块渲染器是
  * 异步的（addScript 异步加载脚本 → 异步调 mermaid.render / echarts.init
