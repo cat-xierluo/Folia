@@ -7,7 +7,6 @@ import {
   listEnabledHtmlExportPresets,
   setHtmlExportPreset,
 } from '../services/settingsService';
-import { VDITOR_PREVIEW_I18N } from '../services/vditorPreviewConfig';
 import {
   copyWechatPreviewToClipboard,
   createHtmlExportArticleStyles,
@@ -19,6 +18,7 @@ import { getHtmlExportPresetDefinition } from '../services/htmlExportPresets';
 import type { HtmlExportPresetId } from '../services/htmlExportPresets';
 import { resolveLocalImages } from '../services/localImageResolver';
 import { prepareMarkdownForVditorPreview } from '../services/markdownSvgPreviewService';
+import { createRenderCoordinator } from '../services/renderCoordinator';
 
 type WechatPreviewPaneProps = {
   source: string;
@@ -69,6 +69,7 @@ export function WechatPreviewPane({ source, fileName = 'document.md', onClose, f
     const renderId = renderIdRef.current + 1;
     renderIdRef.current = renderId;
     let cancelled = false;
+    const abortController = new AbortController();
     queueMicrotask(() => {
       if (cancelled || renderIdRef.current !== renderId) return;
       setPreviewResult(null);
@@ -80,53 +81,47 @@ export function WechatPreviewPane({ source, fileName = 'document.md', onClose, f
       el.replaceChildren();
       return () => {
         cancelled = true;
+        abortController.abort();
       };
     }
 
-    void Promise.all([
-      import('vditor/dist/index.css'),
-      import('vditor'),
-    ]).then(async ([, { default: Vditor }]) => {
-      if (cancelled || renderIdRef.current !== renderId) return;
-      await Vditor.preview(el, markdownPreviewInput.markdown, {
-        mode: 'light',
-        anchor: 0,
-        cdn: '/vditor',
-        i18n: VDITOR_PREVIEW_I18N,
-        icon: undefined,
-        theme: {
-          current: 'light',
-          path: '',
-        },
-        hljs: {
-          style: 'github',
-          enable: renderFeatures.hasHighlightableCode,
-          lineNumber: false,
-        },
-        markdown: {
-          sanitize: false,
-        },
-        transform: markdownPreviewInput.transform,
-        after() {
-          if (cancelled || renderIdRef.current !== renderId) return;
-          void resolveLocalImages(el, filePath);
-          setPreviewResult(createHtmlExportResult(deferredSource, el.innerHTML, {
+    // DEC-119 / ISS-179 Phase 1：HTML 预览通过 RenderCoordinator 拿到
+    // 包含 mermaid/svg 等异步终态的稳定 artifact，避免 2026-07-12 生产
+    // 探针的「剪贴板含 graph TD 源码」分叉。
+    const coordinator = createRenderCoordinator();
+    coordinator
+      .renderMarkdownArtifact(deferredSource, {
+        surface: 'html-preview',
+        filePath: filePath ?? null,
+        generation: renderId,
+        signal: abortController.signal,
+      })
+      .then(async (artifact) => {
+        if (cancelled || renderIdRef.current !== renderId) return;
+        if (artifact.diagnostics.some((d) => d.code === 'aborted')) return;
+        // 直接把稳定 artifact 写入 DOM 容器；vditor chrome 由 coordinator 内的 transform 剥过
+        el.innerHTML = artifact.html;
+        // local image resolve 继续走原有路径（Phase 3 收口到 ResourceResolver）
+        void resolveLocalImages(el, filePath);
+        setPreviewResult(
+          createHtmlExportResult(deferredSource, artifact.html, {
             preset: htmlExportPreset,
             title: fileName,
-          }));
-          setStatus('ready');
-        },
+          }),
+        );
+        setStatus('ready');
+      })
+      .catch((error) => {
+        if (cancelled || renderIdRef.current !== renderId) return;
+        console.warn('Failed to render HTML export preview:', error);
+        el.replaceChildren();
+        setPreviewResult(null);
+        setStatus('error');
       });
-    }).catch((error) => {
-      if (cancelled || renderIdRef.current !== renderId) return;
-      console.warn('Failed to render HTML export preview:', error);
-      el.replaceChildren();
-      setPreviewResult(null);
-      setStatus('error');
-    });
 
     return () => {
       cancelled = true;
+      abortController.abort();
     };
   }, [deferredSource, fileName, filePath, htmlExportPreset, markdownPreviewInput, renderFeatures.hasHighlightableCode, sourceIsEmpty]);
 

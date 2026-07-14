@@ -1,68 +1,39 @@
-import { detectMarkdownRenderFeatures } from './markdownFeatureDetector';
-import { prepareMarkdownForVditorPreview } from './markdownSvgPreviewService';
-import { stripVditorPreviewChrome } from './vditorPreviewChromeService';
-import { VDITOR_PREVIEW_I18N } from './vditorPreviewConfig';
+import { createRenderCoordinator } from './renderCoordinator';
 
 export interface MarkdownHtmlPreviewArtifact {
   source: 'markdown-html';
   html: string;
+  /** 渲染诊断信息（abort / timeout / generation-superseded / 错误摘要）。 */
+  diagnostics: Array<{ code: string; message: string }>;
 }
 
 export type WordPreviewArtifact = MarkdownHtmlPreviewArtifact;
 
+let coordinatorInstance: ReturnType<typeof createRenderCoordinator> | null = null;
+function getCoordinator(): ReturnType<typeof createRenderCoordinator> {
+  if (!coordinatorInstance) {
+    coordinatorInstance = createRenderCoordinator();
+  }
+  return coordinatorInstance;
+}
+
+let generationCounter = 0;
+
 export async function createWordPreviewArtifact(
   markdown: string,
 ): Promise<WordPreviewArtifact> {
-  const [, { default: Vditor }] = await Promise.all([
-    import('vditor/dist/index.css'),
-    import('vditor'),
-  ]);
-
-  const container = document.createElement('div');
-  const renderFeatures = detectMarkdownRenderFeatures(markdown);
-  const markdownPreviewInput = prepareMarkdownForVditorPreview(markdown);
-
-  await new Promise<void>((resolve, reject) => {
-    let settled = false;
-    const finish = () => {
-      if (settled) return;
-      settled = true;
-      resolve();
-    };
-
-    try {
-      const result = Vditor.preview(container, markdownPreviewInput.markdown, {
-        mode: 'light',
-        anchor: 0,
-        cdn: '/vditor',
-        i18n: VDITOR_PREVIEW_I18N,
-        icon: undefined,
-        theme: {
-          current: 'light',
-          path: '',
-        },
-        hljs: {
-          style: 'github',
-          enable: renderFeatures.hasHighlightableCode,
-          lineNumber: false,
-        },
-        markdown: {
-          sanitize: false,
-        },
-        transform: markdownPreviewInput.transform,
-        after: finish,
-      });
-
-      Promise.resolve(result).then(() => {
-        window.setTimeout(finish, 0);
-      }, reject);
-    } catch (error) {
-      reject(error);
-    }
+  const coordinator = getCoordinator();
+  const controller = new AbortController();
+  const generation = ++generationCounter;
+  const artifact = await coordinator.renderMarkdownArtifact(markdown, {
+    surface: 'word-preview',
+    filePath: null,
+    generation,
+    signal: controller.signal,
   });
-
   return {
     source: 'markdown-html',
-    html: markdownPreviewInput.transform(stripVditorPreviewChrome(container.innerHTML)),
+    html: artifact.html,
+    diagnostics: artifact.diagnostics,
   };
 }

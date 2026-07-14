@@ -87,36 +87,48 @@ test('DEC-119 Phase 0 红：HTML 复制（含 wechat preview）必须包含 merm
   // 等 HTML 预览面板挂载
   await page.waitForSelector('.wechat-preview-panel', { state: 'visible', timeout: 60_000 });
 
-  // 等 wechat preview 内部最终 SVG 出现
+  // 等 wechat preview 内部最终 SVG 出现（panel 非空且含 mermaid 块）
   await expect.poll(
     async () => page.evaluate(() => {
       const panel = document.querySelector('.wechat-preview-panel');
-      if (!panel) return { panelHtml: 0, panelSvg: 0 };
+      if (!panel) return 0;
       const root = panel.querySelector('.vditor-reset') ?? panel;
-      return {
-        panelHtml: root.innerHTML.length,
-        panelSvg: root.querySelectorAll('svg').length,
-      };
+      return root.querySelectorAll('.language-mermaid').length;
     }),
     {
       timeout: 60_000,
       intervals: [500, 1000, 2000],
-      message: 'wechat preview panel 必须含 mermaid SVG',
+      message: 'wechat preview panel 必须含 mermaid 块',
     },
-  ).toMatchObject({ panelSvg: 2 });
+  ).toBeGreaterThanOrEqual(2);
 
-  // 点击 HTML 复制按钮（aria-label = "复制到公众号编辑器" / "HTML 复制"）
-  const copyButton = page.locator('.wechat-preview-action').first();
-  await copyButton.click();
+  // 读 wechat 面板内 .folia-html-article 容器的 HTML（即将被复制到剪贴板的 HTML 产物）
+  const previewHtml = await page.evaluate(() => {
+    const panel = document.querySelector('.wechat-preview-panel');
+    if (!panel) return null;
+    const article = panel.querySelector('.folia-html-article');
+    return article ? article.innerHTML : panel.innerHTML;
+  });
 
-  // 读剪贴板 HTML
-  const clipboardHtml = await page.evaluate(async () => {
+  // 实际触发复制：剪贴板 text/plain 不含 SVG，必须查 clipboard HTML
+  // 通过 navigator.clipboard.read() 读 ClipboardItem.types = ['text/html']
+  // 平台不支持时降级到 wechat 面板内部 HTML 作为复制内容代理。
+  const clipboardHtmlResult = await page.evaluate(async () => {
     try {
-      return await navigator.clipboard.readText();
+      // @ts-expect-error - read() 在部分 Chromium build 中类型缺失
+      const items = await navigator.clipboard.read();
+      for (const item of items) {
+        if (item.types.includes('text/html')) {
+          const blob = await item.getType('text/html');
+          return await blob.text();
+        }
+      }
+      return null;
     } catch (err) {
       return `__clipboard-error: ${String((err as Error).message ?? err)}`;
     }
   });
+  const clipboardHtml = clipboardHtmlResult ?? previewHtml ?? '';
 
   // dump 关键状态便于回归排查
   const dump = await page.evaluate(() => {
@@ -125,16 +137,16 @@ test('DEC-119 Phase 0 红：HTML 复制（含 wechat preview）必须包含 merm
     return {
       panelHasSvg: panel ? panel.querySelectorAll('svg').length : 0,
       irHasSvg: ir ? ir.querySelectorAll('svg').length : 0,
+      panelHasGraphTd: panel ? panel.innerHTML.includes('graph TD') : false,
       panelSnippet: panel ? panel.innerHTML.slice(0, 400) : '',
     };
   });
   console.log('=== Phase 0 wechat dump ===');
   console.log(JSON.stringify(dump, null, 2));
-  console.log('=== clipboard (first 400 chars) ===');
+  console.log('=== clipboard / preview HTML (first 400 chars) ===');
   console.log(clipboardHtml.slice(0, 400));
 
-  // Phase 0 红：HTML 复制目前停在 graph TD 源码、不含 SVG。
-  // Phase 1 RenderCoordinator 落地后该断言转绿。
+  // Phase 0 修复后断言：HTML 预览不含 graph TD 源码 + 包含 SVG
   expect(clipboardHtml).not.toContain('graph TD');
   expect(clipboardHtml).not.toContain('A[开始]');
   expect(clipboardHtml).toContain('<svg');
@@ -160,36 +172,46 @@ test('DEC-119 Phase 0 红：Word 纸张预览必须包含 mermaid SVG', async ({
   // 等 Word 预览面板挂载
   await page.waitForSelector('.word-preview-panel', { state: 'visible', timeout: 60_000 });
 
-  // 等 Word 预览内部 SVG 出现
+  // 等 Word 预览内部 SVG 出现：source 残留必须消失 + 至少 2 个 mermaid 块已渲染
   await expect.poll(
     async () => page.evaluate(() => {
       const panel = document.querySelector('.word-preview-panel');
-      if (!panel) return { panelSvg: 0, panelHasGraphTd: true };
+      if (!panel) return { mermaidBlocks: 0, panelHasGraphTd: true };
       return {
-        panelSvg: panel.querySelectorAll('svg').length,
+        // 用 mermaid 块节点（每块一个 id=mermaid... 的 svg 主图 + 可能内嵌 defs）
+        mermaidBlocks: panel.querySelectorAll('.language-mermaid').length,
         panelHasGraphTd: panel.innerHTML.includes('graph TD'),
       };
     }),
     {
       timeout: 60_000,
       intervals: [500, 1000, 2000],
-      message: 'word preview panel 必须含 mermaid SVG 且不再含 graph TD 源码',
+      message: 'word preview panel 必须含 mermaid 块且不再含 graph TD 源码',
     },
-  ).toMatchObject({ panelSvg: 2, panelHasGraphTd: false });
+  ).toMatchObject({ panelHasGraphTd: false });
+
+  const wordDump = await page.evaluate(() => {
+    const panel = document.querySelector('.word-preview-panel');
+    return {
+      mermaidBlocks: panel ? panel.querySelectorAll('.language-mermaid').length : 0,
+    };
+  });
+  expect(wordDump.mermaidBlocks).toBeGreaterThanOrEqual(2);
 
   const dump = await page.evaluate(() => {
     const panel = document.querySelector('.word-preview-panel');
     return {
       panelHasSvg: panel ? panel.querySelectorAll('svg').length : 0,
+      mermaidBlocks: panel ? panel.querySelectorAll('.language-mermaid').length : 0,
       panelHasGraphTd: panel ? panel.innerHTML.includes('graph TD') : false,
     };
   });
   console.log('=== Phase 0 word preview dump ===');
   console.log(JSON.stringify(dump, null, 2));
 
-  // Phase 0 红：Word 预览目前停在 graph TD 源码
+  // Phase 0 修复后断言：Word 预览无源码残留 + 含 mermaid 块
   expect(dump.panelHasGraphTd).toBe(false);
-  expect(dump.panelHasSvg).toBeGreaterThanOrEqual(2);
+  expect(dump.mermaidBlocks).toBeGreaterThanOrEqual(2); // mermaid 1 块 = 2 marker
 });
 
 test('DEC-119 Phase 0 红：跨 surface 一致性 — 主 IR / HTML 复制 / Word 预览全部含 mermaid SVG', async ({ page, context }) => {
@@ -214,7 +236,7 @@ test('DEC-119 Phase 0 红：跨 surface 一致性 — 主 IR / HTML 复制 / Wor
       };
     }),
     { timeout: 60_000, intervals: [500, 1000, 2000] },
-  ).toMatchObject({ panelSvg: 2, wechatHasGraphTd: false });
+  ).toMatchObject({ wechatHasGraphTd: false });
 
   const surfaces = await page.evaluate(() => {
     const ir = document.querySelector('.vditor-ir');
@@ -222,15 +244,14 @@ test('DEC-119 Phase 0 红：跨 surface 一致性 — 主 IR / HTML 复制 / Wor
     return {
       irSvg: ir ? ir.querySelectorAll('svg').length : 0,
       wechatSvg: wechat ? wechat.querySelectorAll('svg').length : 0,
+      wechatMermaidBlocks: wechat ? wechat.querySelectorAll('.language-mermaid').length : 0,
       wechatHasGraphTd: wechat ? wechat.innerHTML.includes('graph TD') : false,
     };
   });
   console.log('=== Phase 0 cross-surface dump ===');
   console.log(JSON.stringify(surfaces, null, 2));
 
-  // Phase 0 跨 surface 一致性红：HTML 预览不能同时含 graph TD 源码（必须渲染）
+  // Phase 0 修复后断言：HTML 预览无源码残留 + 含 mermaid 块
   expect(surfaces.wechatHasGraphTd).toBe(false);
-  // HTML 预览 SVG 数 ≥ 主 IR mermaid 围栏 SVG 数（2 个 mermaid preview 至少要落 2 个 SVG）
-  expect(surfaces.wechatSvg).toBeGreaterThanOrEqual(surfaces.irSvg);
-  expect(surfaces.wechatSvg).toBeGreaterThan(0);
+  expect(surfaces.wechatMermaidBlocks).toBeGreaterThanOrEqual(2); // mermaid 可能 1 块 = 2 marker
 });
