@@ -171,6 +171,8 @@
 
 ## 进度日志
 
+- **2026-07-16**
+  - DEC-119 / ISS-179 富媒体统一渲染与资源治理 Phase 0–4 在 `feat/dec-119-phase0-fixtures` 分支推进完毕（PR #65 待合并）。Phase 0 新增 `fixtures/rich-media/`（13 Markdown 场景 + 7 个 1×1 资产，92KB）+ 4 个 vitest 红测试 + 3 个 Playwright 红测试；Phase 1 落地 `src/services/renderCoordinator.ts`（DEC-120，generation / cancellation / MutationObserver 等待 mermaid+math 终态），接入 word artifact / WechatPreviewPane / WordPaperPreviewPane；Phase 2 `WysiwygEditorPane input()` 路径加 `resolveLocalImages` 让粘贴 / 拖入的相对图片即时显示，新增 fixture 端到端矩阵（6 用例）；Phase 3 前端骨架 `src/services/imageAssetService.ts`（DEC-121，sha-256 去重 + sanitizeFileName + pending↔persisted state machine）落地，Rust asset scope / persisted-scope 留给后续 PR；Phase 4 `.github/workflows/ci.yml` 新增 `playwright` job 把富媒体矩阵纳入 CI 门禁。基线 388 个 vitest → 408 / 408 全绿；Playwright 10 / 10 全绿；typecheck / lint / build 全绿。macOS WKWebView / Windows WebView2 真实桌面验证仍依赖 release.yml，未在本次本地跑。
 - **2026-05-31**
   - 发布 `v0.3.13`：归档 Word JSON / md2word 兼容、JSON v2 样式映射、预览与 DOCX 一致性修复、公文/学术论文内置预设优化，版本号统一到 `0.3.13`。Release workflow run `26703759018` 已成功完成三平台构建、GitHub Release 发布、`latest.json` 上传和 Gitee 资产同步。
   - 发布流程后续加固：Gitee Release 同步保留为镜像能力，但改为带步骤超时和请求超时的 best-effort，避免国内镜像上传过慢时阻塞 GitHub Release 主路径。
