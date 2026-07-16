@@ -10,6 +10,11 @@ import { translate } from '../services/i18n';
 import { resolveLocalImages } from '../services/localImageResolver';
 import { openExternalUrl } from '../services/urlOpener';
 import { repairSvgIrPreviewsFromMarkdown, sanitizeVditorIrHtml } from '../services/vditorIrSanitizeService';
+import { useImageAssetStore } from '../context/useImageAssetStore';
+import {
+  pickImageFiles,
+  registerImageAssetFromFile,
+} from '../services/mediaInsertionService';
 
 type WysiwygEditorPaneProps = {
   source: string;
@@ -334,6 +339,7 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
     (key: Parameters<typeof translate>[1]) => translate(settings.locale, key),
     [settings.locale],
   );
+  const imageAssetStore = useImageAssetStore();
   const hostRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<import('vditor').default | null>(null);
   const applyingExternalValue = useRef(false);
@@ -361,6 +367,49 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
       onChange(sanitizedValue);
     }
   }, [onChange]);
+
+  /**
+   * DEC-119 / ISS-179 Phase 3：拦截 paste/drop 拖入的 image File，
+   * 注册到共享 ImageAssetStore 并把待落盘 markdown 片段插入 Vditor。
+   * 流程：pickImageFiles -> 若非空 -> preventDefault 阻止 Vditor 默认
+   * （Base64）行为 -> registerImageAssetFromFile -> editor.insertValue。
+   * 非 image 内容（如纯文本）放行 Vditor 默认处理。
+   *
+   * 复用 editorRef + imageAssetStore 闭包，避免触发 Vditor 重建。
+   * 注册 / 插入均 async，串行处理多张图，最后统一在 onChange 触发。
+   */
+  const handleImageFiles = useCallback(
+    async (event: ClipboardEvent | DragEvent): Promise<boolean> => {
+      const dt = 'clipboardData' in event ? event.clipboardData : event.dataTransfer;
+      if (!dt) return false;
+      const items = dt.items;
+      if (!items) return false;
+      const files = pickImageFiles(items as unknown as DataTransferItemList);
+      if (files.length === 0) return false;
+      event.preventDefault();
+      event.stopPropagation();
+      const editor = editorRef.current;
+      if (!editor) return true;
+      try {
+        const fragments: string[] = [];
+        for (const file of files) {
+          const result = await registerImageAssetFromFile(imageAssetStore, file);
+          fragments.push(result.markdown);
+        }
+        if (fragments.length > 0) {
+          // 用换行分隔多张图，避免贴成一团
+          editor.insertValue(fragments.join('\n\n'));
+          // 触发 onChange 让上层 source prop 同步
+          emitEditorValueIfChanged(editor);
+        }
+      } catch (error) {
+        // registerImageAssetFromFile 失败不应让编辑器锁死；记录错误让用户感知
+        console.error('[Folia] 粘贴/拖入图片注册失败:', error);
+      }
+      return true;
+    },
+    [imageAssetStore, emitEditorValueIfChanged],
+  );
 
   const lockComplexTables = useCallback(() => {
     const editor = editorRef.current;
@@ -414,6 +463,18 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
     host.addEventListener('beforeinput', markUserInteracted, true);
     host.addEventListener('paste', markUserInteracted, true);
     host.addEventListener('drop', markUserInteracted, true);
+
+    // DEC-119 / ISS-179 Phase 3：拦截 paste/drop 中的 image File，
+    // 走 ImageAssetStore -> 待落盘 markdown 插入 Vditor。
+    // 非 image 内容返回 false，让 markUserInteracted / Vditor 默认处理。
+    const pasteHandler = (event: Event) => {
+      void handleImageFiles(event as ClipboardEvent);
+    };
+    const dropHandler = (event: Event) => {
+      void handleImageFiles(event as DragEvent);
+    };
+    host.addEventListener('paste', pasteHandler);
+    host.addEventListener('drop', dropHandler);
 
     void Promise.all([
       import('vditor/dist/index.css'),
@@ -653,11 +714,29 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
       }
     });
 
+    // DEC-119 / ISS-179 Phase 3：监听 Toolbar 派发的「插入图片」事件。
+    // 活跃 tab 的 WysiwygEditorPane 实例会收到 markdown 片段，调用
+    // editor.insertValue 插入 Vditor。非活跃 tab 不渲染 WysiwygEditorPane，
+    // 所以不会有多个实例同时响应（AppLayout 控制挂载）。
+    const toolbarInsertHandler = (event: Event) => {
+      const detail = (event as CustomEvent<{ markdown?: string }>).detail;
+      const markdown = detail?.markdown;
+      if (!markdown) return;
+      const editor = editorRef.current;
+      if (!editor) return;
+      editor.insertValue(markdown);
+      emitEditorValueIfChanged(editor);
+    };
+    window.addEventListener('folia:toolbar-insert-image', toolbarInsertHandler);
+
     return () => {
       cancelled = true;
       host.removeEventListener('beforeinput', markUserInteracted, true);
       host.removeEventListener('paste', markUserInteracted, true);
       host.removeEventListener('drop', markUserInteracted, true);
+      host.removeEventListener('paste', pasteHandler);
+      host.removeEventListener('drop', dropHandler);
+      window.removeEventListener('folia:toolbar-insert-image', toolbarInsertHandler);
       if (collapseTimerRef.current !== null) {
         window.clearTimeout(collapseTimerRef.current);
         collapseTimerRef.current = null;
@@ -669,7 +748,7 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
       initializingRef.current = false;
       userInteractedRef.current = false;
     };
-  }, [filePath, lockComplexTables, emitEditorValueIfChanged, onChange, retryKey]);
+  }, [filePath, lockComplexTables, emitEditorValueIfChanged, onChange, retryKey, handleImageFiles]);
 
   useEffect(() => {
     const editor = editorRef.current;
