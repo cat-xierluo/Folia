@@ -75,6 +75,7 @@
 - [x] TOC 改为默认浮动大纲：弱刻度显示，hover / click / focus 展开，面板按钮固定 / 关闭，固定态支持”总是固定大纲”偏好，点击条目跳转
 - [x] HTML 演示预览：直接打开受信任 HTML 演示文件，隔离运行其 JS/CSS/本地资源，并支持常见翻页操作
 - [x] Vditor WYSIWYG 一体化（ISS-155 / DEC-085）：所有 Markdown / HTML 文档默认进入 Vditor IR；含 `rowspan/colspan` 的复杂表格在 Vditor 中自动锁定（`contenteditable=false` + `data-folia-locked=”table”`），输入回调对比 `classifyHtmlTableBlocks` 自动恢复被改动的复杂表源码；hover 复杂表格弹出”查看原貌”图标，弹窗渲染 `createHtmlReadingPreviewHtml` 忠实 HTML；删除结构化表格编辑、HTML 阅读预览切换按钮、`html-reading-toolbar` / `markdown-preview-toolbar` 整段
+- [ ] 富媒体统一渲染与资源治理（ISS-179 / DEC-119）：统一 Mermaid / SVG / 图片在主编辑器、HTML 预览 / 复制 / 导出、Word 预览 / DOCX 中的完成契约、终态清洗、资源解析与错误诊断；新插入图片默认写入同目录 `文档名.assets/` 并使用相对路径；以正式 fixture、Chromium CI 和 macOS / Windows 真实 WebView 作为完成门禁
 - [ ] 继续提升 WYSIWYG 编辑细节：快捷格式化、表格编辑工具、复杂 HTML 块的编辑提示
 
 ### v0.5 桌面发布体验（已完成）
@@ -171,6 +172,8 @@
 
 ## 进度日志
 
+- **2026-07-16**
+  - DEC-119 / ISS-179 Phase 3 主编辑器接入 + IR 块级 generation 调度（DEC-122，Wave-1 三个并行 worker 合并到 main）：(1) `src/context/ImageAssetStoreProvider.tsx` + `useImageAssetStore.ts` + `imageAssetStoreContextObject.ts` Context 拆分；(2) `WysiwygEditorPane` paste / drop 拦截 image File，调 `MediaInsertionService.pickImageFiles` + `registerImageAssetFromFile` 注册到 store 并 `editor.insertValue(markdown)`；(3) Toolbar 加图片插入按钮，通过 `CustomEvent('folia:toolbar-insert-image')` 把 markdown 广播给活跃 tab 的 `WysiwygEditorPane`，非 Tauri 环境直接禁用；(4) `WysiwygEditorPane` rerenderAsyncCodeBlocks 按 `data-source-hash` 跳过未变化 block 的 renderer 调度，10 个 renderer 各自 querySelectorAll 比对 hash，全部命中时整条 renderer 调用链 skip；(5) `i18n.ts` 三语新增 `toolbarInsertImageTitle` / `toolbarInsertImageLabel`；(6) PM 收口阶段修复 `block-skipping.test.ts` 测试 wiring 适配 `ImageAssetStoreProvider`；(7) README.md 新增「富媒体支持」/「富媒体开发与测试」/「已知限制」3 段落（commit `7e83578`）。基线 408 → 427 / 427 vitest 全绿（388 原 + 39 DEC-119/120/121/122 新增）；typecheck / lint / build 全绿；Playwright 矩阵不动。详见 [DEC-122](DECISIONS.md#dec-122) 与 commit `5f665ae` / `a219f06` / `7e83578` / `e98f58d`。
 - **2026-07-16**
   - DEC-119 / ISS-179 富媒体统一渲染与资源治理 Phase 0–4 在 `feat/dec-119-phase0-fixtures` 分支推进完毕（PR #65 待合并）。Phase 0 新增 `fixtures/rich-media/`（13 Markdown 场景 + 7 个 1×1 资产，92KB）+ 4 个 vitest 红测试 + 3 个 Playwright 红测试；Phase 1 落地 `src/services/renderCoordinator.ts`（DEC-120，generation / cancellation / MutationObserver 等待 mermaid+math 终态），接入 word artifact / WechatPreviewPane / WordPaperPreviewPane；Phase 2 `WysiwygEditorPane input()` 路径加 `resolveLocalImages` 让粘贴 / 拖入的相对图片即时显示，新增 fixture 端到端矩阵（6 用例）；Phase 3 前端骨架 `src/services/imageAssetService.ts`（DEC-121，sha-256 去重 + sanitizeFileName + pending↔persisted state machine）落地，Rust asset scope / persisted-scope 留给后续 PR；Phase 4 `.github/workflows/ci.yml` 新增 `playwright` job 把富媒体矩阵纳入 CI 门禁。基线 388 个 vitest → 408 / 408 全绿；Playwright 10 / 10 全绿；typecheck / lint / build 全绿。macOS WKWebView / Windows WebView2 真实桌面验证仍依赖 release.yml，未在本次本地跑。
 - **2026-05-31**
