@@ -1,0 +1,182 @@
+{
+  "$schema": "./manifest.schema-not-required",
+  "version": 1,
+  "owner": "DEC-119 / ISS-179 Phase 0",
+  "purpose": "Minimal, public-safe rich-media fixtures for unified render contract tests.",
+  "fixtures": [
+    {
+      "id": "double-mermaid",
+      "file": "double-mermaid.md",
+      "scenario": "render",
+      "kind": "mermaid",
+      "blocks": ["mermaid:flowchart", "mermaid:sequence"],
+      "asserts": [
+        "main IR: all .vditor-ir__preview contain SVG",
+        "HTML copy: includes rendered SVG, not raw source",
+        "Word artifact: includes DiagramAsset for both blocks"
+      ],
+      "expectedDiagnostics": []
+    },
+    {
+      "id": "illegal-mermaid",
+      "file": "illegal-mermaid.md",
+      "scenario": "render-error",
+      "kind": "mermaid",
+      "blocks": ["mermaid:invalid"],
+      "asserts": [
+        "main IR: visible error summary, source remains editable",
+        "no console error from folia, only from mermaid renderer",
+        "HTML copy / Word artifact carry error placeholder, not empty"
+      ],
+      "expectedDiagnostics": ["mermaid-syntax-error"]
+    },
+    {
+      "id": "multi-line-svg",
+      "file": "multi-line-svg.md",
+      "scenario": "render",
+      "kind": "svg",
+      "blocks": ["svg:multi-line"],
+      "asserts": [
+        "main IR: single coherent <svg> with text",
+        "no whitespace strip after the block",
+        "HTML copy / Word artifact: same surface text present"
+      ],
+      "expectedDiagnostics": []
+    },
+    {
+      "id": "complex-svg-features",
+      "file": "complex-svg-features.md",
+      "scenario": "render",
+      "kind": "svg",
+      "blocks": ["svg:defs+marker+clipPath+use+style+foreignObject"],
+      "asserts": [
+        "main IR: keep vector SVG with feature support",
+        "HTML copy: canonical subset, complex parts may rasterize",
+        "Word artifact: rasterized PNG, but <foreignObject> text visible"
+      ],
+      "expectedDiagnostics": []
+    },
+    {
+      "id": "dangerous-svg-attrs",
+      "file": "dangerous-svg-attrs.md",
+      "scenario": "sanitize",
+      "kind": "svg",
+      "blocks": ["svg:onload", "svg:xlink-javascript"],
+      "asserts": [
+        "onload attribute stripped in final sanitize",
+        "<a xlink:href=\"javascript:...\"> stripped",
+        "no alert/console error fired during render"
+      ],
+      "expectedDiagnostics": ["svg-attrs-stripped"]
+    },
+    {
+      "id": "relative-png-webp",
+      "file": "relative-png-webp.md",
+      "scenario": "resource-resolve",
+      "kind": "image",
+      "blocks": ["img:relative-png", "img:relative-png-red", "img:relative-webp"],
+      "asserts": [
+        "all <img> resolve to relative path under fixtures/rich-media/assets/",
+        "naturalWidth > 0 for PNG / WebP",
+        "decode() resolves"
+      ],
+      "expectedDiagnostics": []
+    },
+    {
+      "id": "unicode-paths",
+      "file": "unicode-paths.md",
+      "scenario": "resource-resolve",
+      "kind": "image",
+      "blocks": ["img:unicode-cn", "img:unicode-space", "img:unicode-emoji"],
+      "asserts": [
+        "all <img> resolve correctly with %-encoded paths",
+        "naturalWidth > 0"
+      ],
+      "expectedDiagnostics": []
+    },
+    {
+      "id": "missing-image",
+      "file": "missing-image.md",
+      "scenario": "resource-resolve",
+      "kind": "image",
+      "blocks": ["img:relative-missing"],
+      "asserts": [
+        "UI shows not-found placeholder",
+        "diagnostics: not-found"
+      ],
+      "expectedDiagnostics": ["not-found"]
+    },
+    {
+      "id": "corrupt-image",
+      "file": "corrupt-image.md",
+      "scenario": "resource-resolve",
+      "kind": "image",
+      "blocks": ["img:corrupt-bytes"],
+      "asserts": [
+        "UI shows decode-failed placeholder",
+        "diagnostics: decode-failed"
+      ],
+      "expectedDiagnostics": ["decode-failed"]
+    },
+    {
+      "id": "http-blocked",
+      "file": "http-blocked.md",
+      "scenario": "resource-resolve",
+      "kind": "image",
+      "blocks": ["img:http-scheme"],
+      "asserts": [
+        "CSP blocks http: scheme",
+        "UI shows blocked-scheme placeholder",
+        "diagnostics: blocked-scheme"
+      ],
+      "expectedDiagnostics": ["blocked-scheme"]
+    },
+    {
+      "id": "https-image",
+      "file": "https-image.md",
+      "scenario": "resource-resolve",
+      "kind": "image",
+      "blocks": [],
+      "asserts": [
+        "https: scheme allowed by CSP",
+        "external fetch may fail in offline test env, placeholder is acceptable"
+      ],
+      "expectedDiagnostics": []
+    },
+    {
+      "id": "data-uri",
+      "file": "data-uri.md",
+      "scenario": "resource-resolve",
+      "kind": "image",
+      "blocks": ["img:data-png"],
+      "asserts": [
+        "data:image/png is parsed and rendered",
+        "naturalWidth > 0"
+      ],
+      "expectedDiagnostics": []
+    },
+    {
+      "id": "fast-edit-a-b",
+      "file": "fast-edit-a-b.md",
+      "scenario": "scenario-doc",
+      "kind": "doc-only",
+      "blocks": [],
+      "asserts": [
+        "tests in src/__tests__/rich-media/a-b-out-of-order.test.ts and e2e/rich-media/a-b-generation.spec.ts validate generation / cancellation"
+      ],
+      "expectedDiagnostics": []
+    }
+  ],
+  "assets": {
+    "root": "assets/",
+    "files": [
+      { "name": "sample.png", "sizeBytes": 308, "format": "PNG 1x1 transparent", "purpose": "general relative PNG" },
+      { "name": "flowchart.png", "sizeBytes": 295, "format": "PNG 1x1 red", "purpose": "second relative PNG" },
+      { "name": "sample.webp", "sizeBytes": 72, "format": "WebP 1x1 transparent", "purpose": "general relative WebP" },
+      { "name": "中文名.png", "sizeBytes": 308, "format": "PNG 1x1 transparent (CJK filename)", "purpose": "unicode CN" },
+      { "name": "space file.png", "sizeBytes": 308, "format": "PNG 1x1 transparent (space filename)", "purpose": "unicode space" },
+      { "name": "emoji🖼️.png", "sizeBytes": 308, "format": "PNG 1x1 transparent (emoji filename)", "purpose": "unicode emoji" },
+      { "name": "corrupt.png", "sizeBytes": 20, "format": "ASCII text (not a PNG)", "purpose": "decode-failed" }
+    ]
+  }
+}

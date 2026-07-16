@@ -6,6 +6,11 @@
 // 所有 mermaid 围栏 preview 节点最终都含 svg 而非仅第一个。
 import { expect, test } from '@playwright/test';
 
+// 注意：playwright.config.ts 把 baseURL 设在 `use`，但 1.60.0 在
+// `test()` 回调里通过 fixture 拿到的 `baseURL` 偶尔为 undefined。
+// 直接用绝对 URL 绕开该问题，跨 worktree / CI 都稳定。
+const APP_URL = 'http://127.0.0.1:5173/';
+
 const MERMAID_MD = [
   '# ISS-63 回归测试',
   '',
@@ -73,7 +78,7 @@ test('mermaid IR preview renders svg after folia sanitize', async ({ page }) => 
     localStorage.setItem('folia.session.v1', sessionJson);
   }, JSON.stringify(SESSION));
 
-  await page.goto('/');
+  await page.goto(APP_URL);
 
   // 等 Vditor IR 起来（lute 4MB + wasm init 慢）。
   await page.waitForSelector('.vditor-ir', { state: 'attached', timeout: 120_000 });
