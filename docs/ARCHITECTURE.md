@@ -143,7 +143,9 @@ word/table-handler.ts 输出 docx Table；Markdown 管道表格使用专用 pars
 | `licenseService.ts` | 额外槽位授权抽象层：本地内测码验证、本地授权缓存、未来在线激活、在线校验、撤销/停用均通过该层封装 |
 | `sanitizeService.ts` | DOMPurify HTML 清洗；当前用于 Word 纸张预览和 docx 预览 HTML 安全边界 |
 | `docxPreviewService.ts` | 按需加载 mammoth，将 docx 转换为已清洗 HTML |
-| `wordPreviewArtifactService.ts` | 按需加载 Vditor，将当前 Markdown 渲染为 Word 纸张预览使用的快速 HTML |
+| `wordPreviewArtifactService.ts` | 按需加载 Vditor，将当前 Markdown 渲染为 Word 纸张预览使用的快速 HTML（DEC-119 / DEC-120 之后已迁移到 RenderCoordinator，本文件保留其作为对外稳定 API，内部实现走 coordinator） |
+| `renderCoordinator.ts` | DEC-120 富媒体统一渲染协调器：`createRenderCoordinator()` 工厂 + `renderMarkdownArtifact(source, options)` 契约；generation 单调递增，旧 generation 完成被丢弃；AbortSignal 让当前 generation resolve 为 aborted artifact；MutationObserver 等待 `.language-mermaid` SVG / `.language-math` KaTeX 终态而非依赖 `after()` / `data-render="1"`；5s 软超时返回 timeout diagnostics。统一接管 `wordPreviewArtifactService` / `WechatPreviewPane` / `WordPaperPreviewPane` 的静态 HTML 链路。Phase 0 / 1 红测试 4 vitest + 3 Playwright 全部转绿 |
+| `imageAssetService.ts` | DEC-121 受管图片资源服务：sha-256 hash 去重（jsdom 降级 FNV-1a 兜底）+ `sanitizeFileName` / `resolveAssetFileName` 纯函数；`ImageAssetStore` pending↔persisted state machine；object URL 与相对路径切换。Phase 3 后续由 Rust 侧 `protocol-asset` feature + persisted-scope 完成实际落盘 |
 | `wordExportService.ts` | 按需加载 Word 导出转换链路并写入 .docx 文件 |
 
 ### components/
@@ -272,4 +274,84 @@ word/table-handler.ts 输出 docx Table；Markdown 管道表格使用专用 pars
   - 独立窗口位置 / 大小记忆。
   - macOS WKWebView HTML5 drag 行为差异实测（由开发者本地 `npm run etv:run` 复测）。
 - **依赖 / 权限**：`capabilities/default.json` 增加 `core:webview:allow-create-webview-window` / `core:webview:allow-webview-close` / `core:window:allow-close` / `core:event:default`，`windows` 含 `tab-window-*` glob。
+
+## 富媒体统一渲染管线（DEC-119 / DEC-120 / DEC-121）
+
+### 设计动机
+
+ISS-156 / 168 / 169 / 176 / 177 / 178 / 63 在 2026-06 至 2026-07 一个月内连续修复本地图片、SVG 清洗、SVG 拆块、HTTPS CSP、Mermaid detached-node 竞争，每次都按单一格式追加孤立补丁。2026-07-12 真实 Tauri v0.4.7 生产探针稳定复现「HTML 复制无 SVG / Word 预览 svg=0」的跨 surface 分叉结果，证明「各 surface 局部正确 ≠ 系统正确」。DEC-119 决定按 Phase 0–4 顺序重构：先建立统一完成契约与失败测试，再实现统一渲染入口，最后落到 CI 矩阵。
+
+### 统一渲染入口（DEC-120 / RenderCoordinator）
+
+```
+                  ┌─────────────────────────────┐
+                  │ RenderCoordinator           │
+                  │ src/services/renderCoordinator.ts │
+                  │                             │
+ Markdown  ───►   │  createRenderCoordinator() │
+  source         │   → renderMarkdownArtifact │
+  + options      │     (source, options)       │ ──► RenderArtifact
+                 │                             │     { html, generation,
+                 │  - MutationObserver 等待    │       diagnostics[] }
+                 │    .language-mermaid <svg>  │
+                 │    .language-math katex     │     surface ∈ {
+                 │  - 5s 软超时                │       html-preview,
+                 │  - generation / abort       │       html-export,
+                 │  - Vditor.preview reject    │       word-preview,
+                 │    透传到外层 artifact     │       docx-export }
+                 └─────────────────────────────┘
+                              │
+       ┌──────────────────────┼──────────────────────┐
+       ▼                      ▼                      ▼
+ wordPreviewArtifactService   WechatPreviewPane     WordPaperPreviewPane
+ (Markdown → Word HTML)        (HTML 预览 + 复制)    (Word 纸张预览 + DOCX)
+```
+
+关键不变量：
+- `after()` 与 `data-render="1"` 都不是完成信号；完成信号是「`language-mermaid` 子树含 `<svg>` 且其他终态谓词满足」+ 5s 软超时兜底
+- generation 单调递增；旧 generation 完成时只能丢弃，不能写 artifact
+- AbortSignal.abort() 让当前 generation resolve 为 aborted artifact，UI 显示 loading 占位而非半成品
+- diagnostics 含 code ∈ {aborted, timeout, mermaid-timeout, math-timeout, render-error, generation-superseded}
+
+### 主 IR 输入路径（DEC-118 继承 + DEC-119 增量）
+
+主 IR（WysiwygEditorPane 的 Vditor IR）仍走 DEC-118 修复路径：`sanitizeIrDom` + `rerenderAsyncCodeBlocks`。DEC-119 在 `input()` 回调里追加 `resolveLocalImages(irParent, filePath)`，让用户粘贴 / 拖入的相对路径图片无需重开即可显示。主 IR 块级 generation 调度的性能优化留给独立 PR（不强制走 coordinator，避免 caret / focus 失稳风险）。
+
+### 受管图片资源（DEC-121 / Phase 3 前端骨架）
+
+```
+图片源（选择 / 粘贴 / 拖入）
+   ↓ bytes + mime
+ImageAssetStore.registerPending(bytes, desiredName, mime)
+   ├─ sha-256 hash 去重（已存在则返回旧 asset）
+   ├─ sanitizeFileName + resolveAssetFileName 找唯一名
+   └─ 创建 object URL（Blob）
+   ↓
+state = 'pending'；Markdown 插入为 `![alt（待落盘）](objectUrl)`
+   ↓
+首次保存 / 另存为时（Tauri fs 写盘）
+   ↓
+markPersisted(hash) → state = 'persisted'
+   ↓
+重新插入为 `![alt](./<docBase>.assets/<fileName>)`
+```
+
+Phase 3 后续工作（不在本期）：
+- ❌ Rust `protocol-asset` feature + persisted-scope + 受控路径授权接口
+- ❌ Vditor toolbar 图片插入命令接入（Vditor 默认 upload handler 把剪贴板图片读为 Base64 data URI，需要由 folia 拦截）
+- ❌ 首次保存 / 另存为时实际落盘 + Markdown 改写为相对路径
+- ❌ 跨平台路径 canonicalize（POSIX / Windows / UNC / 外置盘）
+- ❌ 资源失败映射 `not-found / scope-denied / blocked-scheme / decode-failed / too-large / unsupported-mime` 的 UI 占位 + diagnostics
+
+### 失败诊断结构
+
+RenderCoordinator 暴露的 diagnostics 是 Phase 2 / 3 / 4 跨 surface 错误提示的统一中间产物。当前 UI 层只做了最小映射（WechatPreviewPane 显示「HTML 预览生成失败」、Word 预览显示空白页 + console warn）；后续 Phase 3 把 diagnostics 映射到统一的 UI 占位组件（占位插画 + 短文案 + 「详情」按钮展开 diagnostics）。
+
+### CI 矩阵（DEC-119 Phase 4）
+
+`.github/workflows/ci.yml` 新增独立 `playwright` job（ubuntu-latest + 安装 Chromium with-deps + 跑 3 个 e2e spec 文件）：
+- `e2e/rich-media-cross-surface.spec.ts`：HTML 复制 + Word 预览 + 跨 surface 一致性
+- `e2e/rich-media-fixture-matrix.spec.ts`：6 个 fixture 的端到端可用性
+- `e2e/mermaid-ir-renders.spec.ts`：DEC-118 主 IR mermaid 回归
+failure 时自动上传 `test-results/` 与 `playwright-report/` 为 7 天 artifact。macOS WKWebView / Windows WebView2 真实桌面验证仍由 release.yml 负责，不在本 CI 矩阵内。
 

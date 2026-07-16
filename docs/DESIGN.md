@@ -850,6 +850,59 @@ Folia 是 Tauri 桌面应用，响应窗口大小变化。
 
 | 版本 | 日期 | 变更 |
 |------|------|------|
+| 2.2.0 | 2026-07-16 | 新增 §13 富媒体资源状态：mermaid / SVG / 图片在加载中、缺失、损坏、被阻止、超时场景下的占位与降级视觉约定（DEC-119 / DEC-120 / DEC-121） |
 | 2.1.0 | 2026-05-28 | 新增官方网站设计补充：定义 Astro 官网的品牌延展、首屏要求和移动端约束 |
 | 2.0.0 | 2026-05-16 | **全面重写**：从 Typora 风格简表扩展为 12 节完整设计系统；色彩从 hex 迁移到 oklch()；引入衬线 display 字体（Iowan Old Style）；布局从固定分屏改为可拖拽 resizer + 三种视图模式；新增 Command Palette 和 Settings 组件；新增信息密度、深度层级、页面状态、禁止事项、设计评审清单等段 |
 | 1.0.0 | 2026-05-15 | 初始版本：Typora 风格简表，色彩/布局/字体/组件/交互/跨平台 |
+
+## 13. 富媒体资源状态（DEC-119 / DEC-120 / DEC-121）
+
+mermaid / SVG / 图片三类富媒体在主 IR、HTML 预览、Word 预览、DOCX 导出四条 surface 都可能呈现不同状态。RenderCoordinator 的 diagnostics 输出 + ImageAssetStore 的 pending / persisted state machine 是 UI 占位组件的唯一事实来源；占位组件必须按以下约定统一渲染，避免各面板各自实现差异化错误提示。
+
+### 13.1 状态矩阵
+
+| State | 触发条件 | 主 IR | HTML 预览 | Word 预览 |
+|-------|---------|-------|-----------|-----------|
+| `loading` | RenderCoordinator 在 generation 内等待 renderer 终态 | Vditor 自身保留占位（`data-render="1"` 但 svg 未到），不强加 Folia 占位 | `aria-busy="true"` + 顶部状态文案「正在生成 HTML 预览…」 | Word 预览顶部状态文案「正在生成 Word 预览…」+ 渲染空页 |
+| `ready` | 全部 renderer 终态到达、sanitize 完成、本地资源解析成功、字体与布局测量稳定、generation 仍是最新 | 正常 mermaid / SVG / 图片 | 正常 SVG / 图片 + 可复制 | 正常 SVG / 图片 + 可分页 |
+| `aborted` | AbortSignal.abort() 在生成完成前触发（如切换 tab、组件卸载、外部 setValue） | 上一代稳定态保持 | 静默丢弃，保持上一代 artifact；新 generation 接管 | 静默丢弃 |
+| `timeout` | 5s 软超时到达，仍有 renderer 未完成 | 保留已完成的 mermaid / SVG；未完成的 fallback 为源码文本（带警示图标） | 顶部短提示「部分图表未在 5 秒内完成渲染，已显示原始 Markdown」 | 同左，但提示放在面板顶部 |
+| `mermaid-syntax-error` | mermaid renderer 自己返回 syntax error | 显示 mermaid 渲染器的错误摘要 + 源码可编辑 | 同左 | 同左，但 word 预览走 PNG fallback 或纯文本 fallback |
+| `blocked-scheme` | `http://` 外链命中 CSP 黑名单 | 显示「此图片来源被阻止（HTTP 不安全）」占位 + 安全提示 | 不复制不安全外部 URL 到剪贴板 / 导出文件 | 同左 |
+| `decode-failed` | 图片字节损坏（`naturalWidth=0`） | 显示「图片数据损坏」占位 + 「查看原图」按钮展开 diagnostics | 同左 | 导出时该图 fallback 为占位文本「[损坏图片]」 |
+| `not-found` | 本地路径无法解析（file 不存在 / scope-denied） | 显示「找不到图片」占位 + 路径提示 + 诊断详情 | 同左 | 同左 |
+| `scope-denied` | Tauri asset scope 未授权路径（仅 Tauri runtime） | 显示「路径不在授权范围内」占位 + 「在 Settings 中授权目录」提示 | 同左 | 同左 |
+
+### 13.2 占位组件统一约定
+
+- 颜色：使用 `--bg-elevated` 背景（暖调奶油色阶），与正文卡片同源；不要使用纯白或纯灰
+- 形状：圆角 6px；左侧 3px accent 边框（`--accent`），暗示这是「可点击查看详情」的位置
+- 高度：图片占位最小 80px（防止 1×1 占位塌陷），mermaid / SVG 占位最小 120px
+- 文案：1 行短文案（≤ 14 字符）+ 可选 1 行副文案（解释为什么）
+- 详情入口：占位右上角放「详情」图标按钮，点击展开 diagnostics 完整 JSON（用于开发者 / 用户排障）
+- 主题：跟随系统暗色模式；占位背景用 `--bg-elevated`，accent 边框用 `--accent`，错误文案用 `--text-secondary`
+- 禁止：
+  - 不要用红框 / 警告色（避免给用户造成「出错」心理压力，但保留 accent 蓝边）
+  - 不要用 emoji 图标
+  - 不要在占位中显示 raw diagnostics JSON（必须由「详情」按钮展开）
+  - 不要让占位高度大于 240px（避免空白占位挤压正文）
+
+### 13.3 Loading 过渡
+
+- RenderCoordinator 在 generation 内等待时（最长 5s），面板顶部状态文案显示「正在生成 XXX 预览…」（用 `aria-live="polite"`）
+- 超过 1s 仍未完成时，文案追加进度点：「正在生成 XXX 预览…」→「正在生成 XXX 预览……」→ 3 个点后回到 1 个点循环，避免用户误以为卡死
+- RenderCoordinator resolve 后立即清掉状态文案，不需要 transition
+- 如果 generation 在 1s 内完成（多数情况），用户看不到 loading 文案，符合「工具退到背景层」原则
+
+### 13.4 暗色模式适配
+
+所有占位组件必须同时支持 `--theme-light` 与 `--theme-dark`，由全局主题切换自动响应：
+- `--bg-elevated` 在暗色模式下用深色卡背景（避免与正文背景 `oklch(0.18 0.02 80)` 混在一起）
+- accent 边框在暗色模式下用更亮的 accent 色（避免被深色背景吞掉）
+- 文案颜色用 `--text-secondary`，明暗模式下都是次要文字色
+
+### 13.5 跨 surface 一致性
+
+- HTML 预览 / Word 预览 / DOCX 导出三条链路在面对同一 fixture 时必须呈现相同的资源状态：要么都 ready，要么都 timeout，绝不允许主 IR 含 mermaid SVG 而 HTML 预览无 SVG（这正是 2026-07-12 生产探针的根因）
+- RenderCoordinator 通过 `mutation.ts` 中的 diagnostics 与 `aborted` / `generation-superseded` 协调三 surface 的 generation 同步
+- `data-render="1"` 不再视为完成信号；completion 必须以 `.language-mermaid` 子树含 `<svg>` 为准（RenderCoordinator.detectPendingRenderers）
