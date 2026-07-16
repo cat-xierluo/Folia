@@ -135,12 +135,126 @@ function sanitizeIrDom(editor: import('vditor').default | null, markdownSource: 
  * 们直接调 Render 方法绕过 processCodeRender，data-render 维持 sanitize
  * 后的值，不影响功能）。
  *
+ * DEC-119 Phase 2 调度优化：每个 renderer 调用前先按 selector 扫 IR
+ * DOM 节点，对比每个节点 textContent 的 hash 与 data-source-hash
+ * attr；全部匹配时直接跳过整条 renderer（含 addScript 微任务 + 整片
+ * DOM 扫描）。高频 input 场景（5+ mermaid 块文档，20+ cps）下省去对
+ * 未变化语言的全量重跑。详细见下方 ASYNC_RENDERER_SPECS。
+ *
  * 已知高频 input 时 mermaid 渲染会被重复触发（Vditor Render API 是
  * fire-and-forget，folia 无法拦截过期产物），最终胜出者覆盖前者。功
  * 能正确，仅极短窗口 preview 闪烁；权衡修复 detached-node 竞争后这是
  * 可接受的副作用，未来如需消除可由 Vditor 上游 processCodeRender 暴露
  * promise-based API 后重构。
  */
+/**
+ * Vditor 内部代码块渲染器 + 触发它的 CSS selector + 调用形态。
+ *
+ * DEC-119 Phase 2 调度优化：对每种语言，rerenderAsyncCodeBlocks 先用
+ * selector 找 IR DOM 中所有匹配节点，对比每个节点 textContent 的 hash
+ * 与节点上 `data-source-hash` 属性：所有节点 hash 都匹配时直接跳过
+ * 整个 renderer 调用（包括 addScript 微任务 + 整片 DOM 扫描），省掉
+ * DEC-118 修 detached-node 竞争时引入的"每次 input 全量 10 renderer"
+ * 冗余。
+ *
+ * call 字段为四类：(ir, cdn, theme) / (ir, cdn) / (ir, cdn, theme) /
+ * (ir, { cdn, math }) 第四种仅 mathRender 用。`needsTheme` / `needsMath`
+ * 标记 call 形态，rerenderAsyncCodeBlocks 据此分发参数。
+ */
+type RendererSpec = {
+  selector: string;
+  needsTheme: boolean;
+  needsMath: boolean;
+  call: (Vditor: typeof import('vditor').default, ir: HTMLElement, cdn: string, theme: string) => void;
+  callMath: (Vditor: typeof import('vditor').default, ir: HTMLElement, cdn: string, math: Record<string, unknown>) => void;
+};
+
+const ASYNC_RENDERER_SPECS: ReadonlyArray<RendererSpec> = [
+  {
+    selector: '.language-mermaid',
+    needsTheme: true,
+    needsMath: false,
+    call: (V, ir, cdn, theme) => V.mermaidRender(ir, cdn, theme),
+    callMath: () => {},
+  },
+  {
+    selector: '.language-flowchart',
+    needsTheme: false,
+    needsMath: false,
+    call: (V, ir, cdn) => V.flowchartRender(ir, cdn),
+    callMath: () => {},
+  },
+  {
+    selector: '.language-plantuml',
+    needsTheme: false,
+    needsMath: false,
+    call: (V, ir, cdn) => V.plantumlRender(ir, cdn),
+    callMath: () => {},
+  },
+  {
+    selector: '.language-graphviz',
+    needsTheme: false,
+    needsMath: false,
+    call: (V, ir, cdn) => V.graphvizRender(ir, cdn),
+    callMath: () => {},
+  },
+  {
+    selector: '.language-markmap',
+    needsTheme: false,
+    needsMath: false,
+    call: (V, ir, cdn) => V.markmapRender(ir, cdn),
+    callMath: () => {},
+  },
+  {
+    selector: '.language-mindmap',
+    needsTheme: true,
+    needsMath: false,
+    call: (V, ir, cdn, theme) => V.mindmapRender(ir, cdn, theme),
+    callMath: () => {},
+  },
+  {
+    selector: '.language-echarts',
+    needsTheme: true,
+    needsMath: false,
+    call: (V, ir, cdn, theme) => V.chartRender(ir, cdn, theme),
+    callMath: () => {},
+  },
+  {
+    selector: '.language-abc',
+    needsTheme: false,
+    needsMath: false,
+    call: (V, ir, cdn) => V.abcRender(ir, cdn),
+    callMath: () => {},
+  },
+  {
+    selector: '.language-smiles',
+    needsTheme: true,
+    needsMath: false,
+    call: (V, ir, cdn, theme) => V.SMILESRender(ir, cdn, theme),
+    callMath: () => {},
+  },
+  {
+    selector: '.language-math',
+    needsTheme: false,
+    needsMath: true,
+    call: () => {},
+    callMath: (V, ir, cdn, math) => V.mathRender(ir, { cdn, math }),
+  },
+];
+
+/**
+ * 对一段 source text 算一个稳定的短 hash（djb2 xor variant），用于
+ * 比对"块源代码是否变化"。不需要加密强度，只需要稳定 + 冲突率极低
+ * （djb2 在 32-bit 空间碰撞概率 < 1e-9 for strings < 1000 chars）。
+ */
+function hashBlockSource(text: string): string {
+  let h = 5381;
+  for (let i = 0; i < text.length; i++) {
+    h = ((h << 5) + h) ^ text.charCodeAt(i);
+  }
+  return (h >>> 0).toString(36);
+}
+
 function rerenderAsyncCodeBlocks(editor: import('vditor').default): void {
   try {
     if (!editor) return;
@@ -152,23 +266,61 @@ function rerenderAsyncCodeBlocks(editor: import('vditor').default): void {
     // microtask 链 flake。
     const Vditor = editor.constructor as typeof import('vditor').default;
     const opts = (editor as unknown as {
-      vditor?: { options?: { cdn?: string; theme?: string } };
+      vditor?: { options?: { cdn?: string; theme?: string; preview?: { math?: Record<string, unknown> } } };
     }).vditor?.options ?? {};
     const cdn = opts.cdn ?? '/vditor';
     const theme = opts.theme === 'dark' ? 'dark' : 'light';
-    const mathOptions = (editor as unknown as {
-      vditor?: { options?: { preview?: { math?: Record<string, unknown> } } };
-    }).vditor?.options?.preview?.math ?? { inlineDigit: false, macros: {} };
-    Vditor.mermaidRender(ir, cdn, theme);
-    Vditor.flowchartRender(ir, cdn);
-    Vditor.plantumlRender(ir, cdn);
-    Vditor.graphvizRender(ir, cdn);
-    Vditor.markmapRender(ir, cdn);
-    Vditor.mindmapRender(ir, cdn, theme);
-    Vditor.chartRender(ir, cdn, theme);
-    Vditor.abcRender(ir, cdn);
-    Vditor.SMILESRender(ir, cdn, theme);
-    Vditor.mathRender(ir, { cdn, math: mathOptions });
+    const mathOptions = opts.preview?.math ?? { inlineDigit: false, macros: {} };
+
+    // DEC-119 Phase 2 per-block source-hash skip：每个 renderer 在
+    // 调用前先扫 selector 找所有匹配节点，对比每个节点当前 textContent
+    // 的 hash 与 data-source-hash attr。若全部匹配，说明该语言下没有
+    // 任何"新增或源代码变化"的块，直接跳过该 renderer —— 省一次
+    // addScript().then() 微任务 hop 与一次 querySelectorAll 全片扫描。
+    // Vditor 自身的 mermaidRender / chartRender 内部虽然有
+    // `data-processed="true"` per-block skip，但即使没有变化的块，仍要
+    // 付出 addScript 微任务 + 内部 getElements().forEach 迭代成本。
+    // 高频 input 场景（5+ mermaid 块文档，20+ cps）下跳过未变化语言
+    // 收益显著。
+    //
+    // 必须注意：调用 renderer 前先把当前 textContent 的 hash 写回节点
+    // 的 data-source-hash attr —— Vditor 渲染器会把 textContent 替换为
+    // SVG / canvas / katex HTML，渲染后 textContent 不再是源代码，hash
+    // attr 必须保留才能在下次 input 时作为"上次成功渲染的源代码标识"。
+    for (const spec of ASYNC_RENDERER_SPECS) {
+      const elements = ir.querySelectorAll<HTMLElement>(spec.selector);
+      if (elements.length === 0) continue;
+
+      const hashes: string[] = [];
+      let allUpToDate = true;
+      for (let i = 0; i < elements.length; i++) {
+        const el = elements[i];
+        const source = el.textContent ?? '';
+        const hash = hashBlockSource(source);
+        hashes[i] = hash;
+        if (el.getAttribute('data-source-hash') !== hash) {
+          allUpToDate = false;
+        }
+      }
+
+      if (allUpToDate) {
+        // 没有任何块需要重新渲染，跳过整条 addScript 链
+        continue;
+      }
+
+      // 渲染前先把 hash 写回 attr（Vditor 渲染器随后会改 textContent）
+      for (let i = 0; i < elements.length; i++) {
+        elements[i].setAttribute('data-source-hash', hashes[i]);
+      }
+
+      if (spec.needsMath) {
+        spec.callMath(Vditor, ir, cdn, mathOptions);
+      } else if (spec.needsTheme) {
+        spec.call(Vditor, ir, cdn, theme);
+      } else {
+        spec.call(Vditor, ir, cdn, theme);
+      }
+    }
   } catch (error) {
     // mermaid / echarts / katex 等加载失败或渲染抛错时不能让 promise
     // 变成 unhandled rejection；记录 console.error 便于用户定位。
