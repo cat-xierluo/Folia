@@ -15,6 +15,7 @@ import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WysiwygEditorPane } from '../../components/WysiwygEditorPane';
+import { ImageAssetStoreProvider } from '../../context/ImageAssetStoreProvider';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -95,6 +96,14 @@ function flushMicrotasks(): Promise<void> {
   });
 }
 
+function renderWithProvider(node: React.ReactElement): React.ReactElement {
+  return React.createElement(
+    ImageAssetStoreProvider,
+    null,
+    node,
+  );
+}
+
 function flushFrames(count = 4): Promise<void> {
   return new Promise<void>((resolve) => {
     let remaining = count;
@@ -162,10 +171,12 @@ describe('DEC-119 Phase 2 — IR 异步代码块渲染 per-block hash 跳过', (
     await act(async () => {
       root = createRoot(host);
       root.render(
-        React.createElement(WysiwygEditorPane, {
-          source: '# 标题',
-          onChange: () => undefined,
-        }),
+        renderWithProvider(
+          React.createElement(WysiwygEditorPane, {
+            source: '# 标题',
+            onChange: () => undefined,
+          }),
+        ),
       );
       await flushMicrotasks();
     });
@@ -232,10 +243,12 @@ describe('DEC-119 Phase 2 — IR 异步代码块渲染 per-block hash 跳过', (
     await act(async () => {
       root = createRoot(host);
       root.render(
-        React.createElement(WysiwygEditorPane, {
-          source: '# 标题',
-          onChange: () => undefined,
-        }),
+        renderWithProvider(
+          React.createElement(WysiwygEditorPane, {
+            source: '# 标题',
+            onChange: () => undefined,
+          }),
+        ),
       );
       await flushMicrotasks();
     });
@@ -297,10 +310,12 @@ describe('DEC-119 Phase 2 — IR 异步代码块渲染 per-block hash 跳过', (
     await act(async () => {
       root = createRoot(host);
       root.render(
-        React.createElement(WysiwygEditorPane, {
-          source: '# 标题',
-          onChange: () => undefined,
-        }),
+        renderWithProvider(
+          React.createElement(WysiwygEditorPane, {
+            source: '# 标题',
+            onChange: () => undefined,
+          }),
+        ),
       );
       await flushMicrotasks();
     });
