@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { MediaPlaceholder } from './MediaPlaceholder';
+import type { RenderDiagnostic } from '../services/renderCoordinator';
 import { VDITOR_PREVIEW_I18N } from '../services/vditorPreviewConfig';
 import {
   classifyHtmlTableBlocks,
@@ -352,6 +354,7 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
   const initializingRef = useRef(false);
   const userInteractedRef = useRef(false);
   const [phase, setPhase] = useState<EditorPhase>('loading');
+  const [imageDiagnostics, setImageDiagnostics] = useState<RenderDiagnostic[]>([]);
   // retryKey 递增时强制重新初始化 Vditor
   const [retryKey, setRetryKey] = useState(0);
   // 如果 [source] effect 在 editor 就绪前触发，缓存待应用的内容
@@ -447,6 +450,51 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
         window.clearTimeout(collapseTimerRef.current);
         collapseTimerRef.current = null;
       }
+    };
+  }, []);
+
+  // DEC-122 Phase 3 收口：监听主 IR 内 <img> 的 load / error 事件，
+  // 聚合失败的资源为 RenderDiagnostic[]，渲染在编辑器上方的 banner
+  // （不在 IR DOM 内，避免 caret / focus 风险）。onload 也收集以便
+  // 用户后续可点击「详情」查看 imageDiagnostics。
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return undefined;
+
+    const aggregate: RenderDiagnostic[] = [];
+    const seen = new Set<string>();
+
+    const classifyError = (img: HTMLImageElement, error: boolean): RenderDiagnostic | null => {
+      const src = img.currentSrc || img.src || '';
+      if (!src) return null;
+      const code: RenderDiagnostic['code'] = error
+        ? (src.startsWith('http://') ? 'blocked-scheme' : src.startsWith('asset:') || src.startsWith('data:') ? 'decode-failed' : 'not-found')
+        : 'decode-failed';
+      return {
+        code,
+        message: error
+          ? (code === 'blocked-scheme' ? '图片协议被阻止' : code === 'not-found' ? '找不到图片' : '图片数据损坏')
+          : '图片加载失败',
+        language: img.alt ?? undefined,
+      };
+    };
+
+    const handleImgError = (event: Event): void => {
+      const target = event.target as Element | null;
+      if (!(target instanceof HTMLImageElement)) return;
+      const src = target.currentSrc || target.src || '';
+      if (!src || seen.has(src)) return;
+      seen.add(src);
+      const diag = classifyError(target, true);
+      if (diag) {
+        aggregate.push(diag);
+        setImageDiagnostics([...aggregate]);
+      }
+    };
+
+    host.addEventListener('error', handleImgError, true);
+    return () => {
+      host.removeEventListener('error', handleImgError, true);
     };
   }, []);
 
@@ -872,6 +920,20 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
 
   return (
     <div className="wysiwyg-editor-pane" aria-label={t('editorAriaLabel')}>
+      {imageDiagnostics.length > 0 && (
+        <div className="wysiwyg-editor-diagnostics" data-testid="wysiwyg-editor-diagnostics">
+          {imageDiagnostics.map((d, i) => (
+            <MediaPlaceholder
+              key={`${d.code}-${d.message}-${i}`}
+              code={d.code}
+              message={d.message}
+              lang={d.language}
+              details={{ ...d, surface: 'editor' }}
+              surface="editor"
+            />
+          ))}
+        </div>
+      )}
       <div ref={hostRef} className="wysiwyg-editor-host" />
     </div>
   );
