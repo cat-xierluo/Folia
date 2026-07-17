@@ -46,7 +46,12 @@ export interface RenderDiagnostic {
     | 'mermaid-timeout'
     | 'math-timeout'
     | 'render-error'
-    | 'generation-superseded';
+    | 'generation-superseded'
+    | 'mermaid-syntax-error'
+    | 'blocked-scheme'
+    | 'decode-failed'
+    | 'not-found'
+    | 'scope-denied';
   message: string;
   blockIndex?: number;
   language?: string;
