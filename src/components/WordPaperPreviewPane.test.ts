@@ -12,6 +12,7 @@ vi.mock('../services/wordPreviewArtifactService', () => ({
   createWordPreviewArtifact: vi.fn().mockResolvedValue({
     source: 'markdown-html',
     html: '<h1 data-height="20">快速 Word 标题</h1><p data-height="20">快速 Word 正文</p>',
+    diagnostics: [],
   }),
 }));
 

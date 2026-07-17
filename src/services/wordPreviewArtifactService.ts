@@ -1,10 +1,10 @@
-import { createRenderCoordinator } from './renderCoordinator';
+import { createRenderCoordinator, type RenderDiagnostic } from './renderCoordinator';
 
 export interface MarkdownHtmlPreviewArtifact {
   source: 'markdown-html';
   html: string;
   /** 渲染诊断信息（abort / timeout / generation-superseded / 错误摘要）。 */
-  diagnostics: Array<{ code: string; message: string }>;
+  diagnostics: RenderDiagnostic[];
 }
 
 export type WordPreviewArtifact = MarkdownHtmlPreviewArtifact;

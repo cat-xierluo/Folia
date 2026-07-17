@@ -18,7 +18,8 @@ import { getHtmlExportPresetDefinition } from '../services/htmlExportPresets';
 import type { HtmlExportPresetId } from '../services/htmlExportPresets';
 import { resolveLocalImages } from '../services/localImageResolver';
 import { prepareMarkdownForVditorPreview } from '../services/markdownSvgPreviewService';
-import { createRenderCoordinator } from '../services/renderCoordinator';
+import { createRenderCoordinator, type RenderDiagnostic } from '../services/renderCoordinator';
+import { MediaPlaceholder } from './MediaPlaceholder';
 
 type WechatPreviewPaneProps = {
   source: string;
@@ -41,6 +42,7 @@ export function WechatPreviewPane({ source, fileName = 'document.md', onClose, f
   const renderIdRef = useRef(0);
   const [previewResult, setPreviewResult] = useState<WechatPreviewResult | null>(null);
   const [actionStatus, setActionStatus] = useState<ActionStatus | null>(null);
+  const [diagnostics, setDiagnostics] = useState<RenderDiagnostic[]>([]);
   const [status, setStatus] = useState<'empty' | 'loading' | 'ready' | 'error'>(
     source.trim() ? 'loading' : 'empty',
   );
@@ -74,6 +76,7 @@ export function WechatPreviewPane({ source, fileName = 'document.md', onClose, f
       if (cancelled || renderIdRef.current !== renderId) return;
       setPreviewResult(null);
       setActionStatus(null);
+      setDiagnostics([]);
       if (!sourceIsEmpty) setStatus('loading');
     });
 
@@ -98,6 +101,11 @@ export function WechatPreviewPane({ source, fileName = 'document.md', onClose, f
       })
       .then(async (artifact) => {
         if (cancelled || renderIdRef.current !== renderId) return;
+        // 过滤掉 aborted（用户主动取消，不应显示占位）与
+        // generation-superseded（已被新 generation 取代，避免闪烁）。
+        const visibleDiagnostics = artifact.diagnostics.filter(
+          (d) => d.code !== 'aborted' && d.code !== 'generation-superseded',
+        );
         if (artifact.diagnostics.some((d) => d.code === 'aborted')) return;
         // 直接把稳定 artifact 写入 DOM 容器；vditor chrome 由 coordinator 内的 transform 剥过
         el.innerHTML = artifact.html;
@@ -109,6 +117,7 @@ export function WechatPreviewPane({ source, fileName = 'document.md', onClose, f
             title: fileName,
           }),
         );
+        setDiagnostics(visibleDiagnostics);
         setStatus('ready');
       })
       .catch((error) => {
@@ -250,10 +259,26 @@ export function WechatPreviewPane({ source, fileName = 'document.md', onClose, f
         ) : effectiveStatus === 'error' ? (
           <div className="wechat-preview-empty">{t('wechatPreviewError')}</div>
         ) : (
-          <div
-            className="wechat-preview-article-shell"
-            dangerouslySetInnerHTML={{ __html: previewResult?.previewHtml ?? '' }}
-          />
+          <>
+            {diagnostics.length > 0 && (
+              <div className="wechat-preview-diagnostics" data-testid="wechat-preview-diagnostics">
+                {diagnostics.map((d, i) => (
+                  <MediaPlaceholder
+                    key={`${d.code}-${d.blockIndex ?? i}`}
+                    code={d.code}
+                    message={d.message}
+                    lang={d.language}
+                    details={{ ...d, surface: 'preview' }}
+                    surface="preview"
+                  />
+                ))}
+              </div>
+            )}
+            <div
+              className="wechat-preview-article-shell"
+              dangerouslySetInnerHTML={{ __html: previewResult?.previewHtml ?? '' }}
+            />
+          </>
         )}
       </div>
       <div ref={renderRef} className="wechat-preview-render-source" aria-hidden="true" />

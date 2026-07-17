@@ -10,6 +10,8 @@ import { createWordPreviewStyle } from '../services/wordPreviewStyle';
 import type { PresetConfig, PresetId } from '../services/word';
 import type { PresetTableFontConfig } from '../services/word/types';
 import { resolveLocalImages } from '../services/localImageResolver';
+import type { RenderDiagnostic } from '../services/renderCoordinator';
+import { MediaPlaceholder } from './MediaPlaceholder';
 
 type WordPaperPreviewPaneProps = {
   source: string;
@@ -410,6 +412,7 @@ export function WordPaperPreviewPane({
   const t = (key: Parameters<typeof translate>[1]) => translate(settings.locale, key);
   const [isPresetPickerOpen, setIsPresetPickerOpen] = useState(false);
   const [activePresetId, setActivePresetId] = useState<PresetId>(settings.exportPresetId);
+  const [diagnostics, setDiagnostics] = useState<RenderDiagnostic[]>([]);
   const debouncedSource = useDebouncedValue(source, 260);
   const deferredSource = useDeferredValue(debouncedSource);
 
@@ -506,9 +509,16 @@ export function WordPaperPreviewPane({
     void createWordPreviewArtifact(deferredSource).then((artifact) => {
       if (cancelled || !measureRef.current || !pagesRef.current) return;
 
+      // 过滤掉 aborted（用户主动取消）与 generation-superseded
+      // （已被新 generation 取代），避免占位闪烁。
+      const visibleDiagnostics = artifact.diagnostics.filter(
+        (d) => d.code !== 'aborted' && d.code !== 'generation-superseded',
+      );
+
       measureRef.current.innerHTML = artifact.html;
       void resolveLocalImages(measureRef.current, filePath);
       applyWordPreviewPresetPostprocess(measureRef.current, preset);
+      setDiagnostics(visibleDiagnostics);
       window.requestAnimationFrame(() => {
         window.requestAnimationFrame(() => {
           if (cancelled || !measureRef.current || !pagesRef.current) return;
@@ -519,6 +529,7 @@ export function WordPaperPreviewPane({
       if (cancelled || !pagesRef.current) return;
       pagesRef.current.replaceChildren();
       makePage(pagesRef.current, 1);
+      setDiagnostics([]);
     });
 
     return () => {
@@ -652,6 +663,20 @@ export function WordPaperPreviewPane({
         </button>
       </div>
       <div className="word-preview-scroll">
+        {diagnostics.length > 0 && (
+          <div className="word-preview-diagnostics" data-testid="word-preview-diagnostics">
+            {diagnostics.map((d, i) => (
+              <MediaPlaceholder
+                key={`${d.code}-${d.blockIndex ?? i}`}
+                code={d.code}
+                message={d.message}
+                lang={d.language}
+                details={{ ...d, surface: 'word' }}
+                surface="word"
+              />
+            ))}
+          </div>
+        )}
         <div className="word-preview-stage" style={style as React.CSSProperties}>
           <div ref={pagesRef} className="word-preview-pages" />
           <div className="word-preview-measure word-paper" aria-hidden="true">
