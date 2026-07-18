@@ -58,5 +58,12 @@ export function sanitizeForVditor(renderedHtml: string): string {
     // 同时启用 html / svg / svgFilters profile：保留 svg 及子元素、滤镜，
     // 同时剥离 script、on* 事件处理器、危险协议与属性。
     USE_PROFILES: { html: true, svg: true, svgFilters: true },
+    // DEC-119 §9.2：mermaid flowchart 默认 htmlLabels:true 把节点文字放在
+    // <foreignObject> 内（含 HTML <div>/<p>/<span>）。DOMPurify 的 svg
+    // profile 默认不保留 foreignObject，会把它整块剥掉，导致 HTML / Word
+    // 预览的 mermaid 出现「有 SVG 框、但节点文字全部丢失」的伪渲染。
+    // 显式 ADD_TAGS 保留 foreignObject；其内部 HTML 仍由 DOMPurify 按
+    // html profile 清洗（script / on* 仍被剥离），不降低安全性。
+    ADD_TAGS: ['foreignObject'],
   });
 }

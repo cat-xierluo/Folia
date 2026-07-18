@@ -106,6 +106,7 @@ jobs:
             e2e/rich-media-cross-surface.spec.ts \
             e2e/rich-media-fixture-matrix.spec.ts \
             e2e/mermaid-ir-renders.spec.ts \
+            e2e/mermaid-fidelity.spec.ts \
             --workers=1 \
             --reporter=list
 

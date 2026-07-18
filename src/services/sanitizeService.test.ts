@@ -66,6 +66,43 @@ describe('sanitizeForVditor', () => {
     expect(sanitized).toContain('<img');
   });
 
+  it('保留 mermaid foreignObject 标签（DEC-119 §9.2，防「有框无字」)', () => {
+    // mermaid flowchart htmlLabels:true 把节点文字放在 <foreignObject> 内。
+    // DOMPurify svg profile 默认不保留 foreignObject，会整块剥掉。
+    // 本用例在 jsdom 下验证 foreignObject 标签被保留；
+    // foreignObject 内的 HTML 节点文字在真实浏览器（Chromium）下保留、
+    // 在 jsdom 下因 namespace 切换限制会被剥——文字保留由
+    // e2e/mermaid-fidelity.spec.ts 在真实浏览器验证。
+    const rendered = [
+      '<svg viewBox="0 0 100 40" xmlns="http://www.w3.org/2000/svg">',
+      '<foreignObject width="100" height="40"><div xmlns="http://www.w3.org/1999/xhtml">',
+      '<span class="nodeLabel">开始</span>',
+      '</div></foreignObject>',
+      '</svg>',
+    ].join('');
+
+    const sanitized = sanitizeForVditor(rendered);
+
+    expect(sanitized.toLowerCase()).toContain('<foreignobject');
+    expect(sanitized.toLowerCase()).toContain('<svg');
+  });
+
+  it('foreignObject 配置下 script / on* 仍被剥离（DEC-119 §9.2 安全不降级）', () => {
+    const rendered = [
+      '<svg viewBox="0 0 100 40" xmlns="http://www.w3.org/2000/svg">',
+      '<foreignObject width="100" height="40"></foreignObject>',
+      '<script>alert(1)</script>',
+      '<rect onclick="alert(2)" />',
+      '</svg>',
+    ].join('');
+
+    const sanitized = sanitizeForVditor(rendered);
+
+    expect(sanitized.toLowerCase()).toContain('<foreignobject');
+    expect(sanitized).not.toContain('<script');
+    expect(sanitized).not.toContain('onclick');
+  });
+
   it('不破坏代码块与 autolink 文本（Lute 已转义 &lt; 不被双重转义）', () => {
     // Vditor/Lute 渲染后，代码块 a < b 已转义为 &lt;，autolink 文本同理
     const rendered = [
