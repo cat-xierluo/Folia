@@ -82,13 +82,13 @@ npm run typecheck    # 类型检查
 
 ## 已知限制
 
-DEC-119 富媒体统一渲染与资源治理当前状态：**🟡 部分落地**（Phase 0–4 前端已合并，Phase 3 后段 + 真实桌面验证仍待办）。当前明确未覆盖的范围：
+DEC-119 富媒体统一渲染与资源治理当前状态：**🟡 大部分落地**（Phase 0–4 前端已合并并接入 3 个 surface；Rust fs 落盘 + 真实桌面验证仍待办）。当前明确未覆盖的范围：
 
-- **Rust 侧资产落盘**：`imageAssetService` 的 pending ↔ persisted state machine 与 object URL 切换已可用，但实际 fs 落盘仍依赖后续 Rust 改动（`protocol-asset` feature + persisted-scope）；当前新粘贴 / 拖入的图片在重启会话后会回到 pending 状态。
+- **Rust 侧资产落盘**：`imageAssetService` 的 pending ↔ persisted state machine 与 object URL 切换已可用，3 个 surface（主编辑器 / HTML 预览 / Word 预览）都通过 MediaPlaceholder 显示失败占位；但实际 fs 落盘仍依赖后续 Rust 改动（`protocol-asset` feature + persisted-scope）；当前新粘贴 / 拖入的图片在重启会话后会回到 pending 状态。
 - **真实桌面端验证**：macOS WKWebView 与 Windows WebView2 的富媒体回归依赖 `release.yml` 的本地打包产物，不在 GitHub Actions 的 Playwright job 内跑。详见下方「桌面端真机 E2E（CDP）」段落。
-- **Vditor toolbar 集成**：受管图片策略的 UI 入口尚未完全接回 Vditor toolbar（图片插入按钮），属于 Phase 3 接入下一 PR；当前用户仍可通过拖入 / 粘贴触发受管资产路径。
+- **Vditor toolbar 图片按钮**：Wave-1 W1 已通过 `ImageAssetStoreProvider` + Toolbar 自定义按钮（`CustomEvent('folia:toolbar-insert-image')`）+ Wave-3 W8 WysiwygEditorPane event delegation 接通，文件选择对话框在非 Tauri 环境直接禁用；完全恢复 Vditor 内置 toolbar 仍属后续 PR。
 
-完整路线图与阶段进度见 [docs/ROADMAP.md](./docs/ROADMAP.md)「进度日志」中 2026-07-16 条目。
+完整路线图与阶段进度见 [docs/ROADMAP.md](./docs/ROADMAP.md)「进度日志」中 2026-07-18 / 2026-07-16 条目。
 
 ## 快捷键
 
