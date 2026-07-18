@@ -64,6 +64,34 @@ export interface RenderOptions {
   signal: AbortSignal;
 }
 
+/**
+ * DEC-119 Phase 1 DiagramAsset 契约（ISS-179）。
+ *
+ * 图表（mermaid / flowchart / plantuml / ...）的统一资产模型，让 HTML
+ * 导出（矢量 SVG）/ Word 预览（矢量 SVG）/ DOCX 导出（PNG，目标）/ 文本
+ * 回退（当前 DOCX）共享同一份渲染产物。
+ *
+ * 状态：类型契约已定义；RenderCoordinator 提取 + SVG→PNG 转换留给独立 PR
+ * （见 docs/dec-119/diagram-asset-design.md，SVG→PNG 的 foreignObject
+ * 难点需方案验证）。
+ */
+export interface DiagramAsset {
+  /** 围栏语言：mermaid / flowchart / plantuml / ... */
+  language: string;
+  /** 原始源码（围栏内容） */
+  source: string;
+  /** 块在文档中的索引 */
+  blockIndex: number;
+  /** 渲染后的 SVG 字符串（矢量；HTML 导出 / Word 预览用） */
+  svg: string;
+  /** 文本回退（PNG 不可用 / DOCX 当前用） */
+  textFallback: string;
+  /** PNG data URL（SVG→canvas→PNG；Phase 1 后段，当前 null） */
+  pngDataUrl: string | null;
+  /** 渲染诊断（超时 / 语法错误 / 转换失败） */
+  diagnostics: RenderDiagnostic[];
+}
+
 export interface RenderArtifact {
   html: string;
   generation: number;
