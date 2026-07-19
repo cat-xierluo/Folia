@@ -23,6 +23,7 @@ fixtures/rich-media/
 
 | 文件 | 场景 | 主要断言点 |
 |------|------|------------|
+| `demo.md` | **综合 smoke 验证文档**（mermaid + SVG + HTTPS / data URI 图片 + KaTeX + 表格） | 真实桌面 §9.8 手动验证入口；一文件覆盖全部跨 surface 场景 |
 | `double-mermaid.md` | 两个 Mermaid 围栏（flowchart + sequence） | 多块同时完成、所有 preview 含 SVG |
 | `illegal-mermaid.md` | 非法 Mermaid 语法 | 显示错误摘要，不静默空白 |
 | `multi-line-svg.md` | 跨多行的内联 SVG | 块级恢复与字体兜底 |
