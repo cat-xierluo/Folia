@@ -10,6 +10,18 @@ export default defineConfig({
   root: projectRoot,
   base: './',
   plugins: [react()],
+  server: {
+    watch: {
+      // .claude/ .codex/ 下 skills 多为指向外部源目录的 symlink（Claude
+      // Code / Codex 安装结构），部分 skill 源目录存在递归 symlink
+      // （如 ultra-research/ultra-research/... 自指）。vite dev 的 chokidar
+      // watcher 跟随 symlink 扫到 ELOOP 会让 dev server 崩溃（npm run
+      // tauri dev 的 beforeDevCommand 非零退出）。followSymlinks:false 根
+      // 治：项目源码不用 symlink，关闭跟随避免任何 skill 安装结构干扰。
+      followSymlinks: false,
+      ignored: ['**/.claude/**', '**/.codex/**', '**/.worktrees/**'],
+    },
+  },
   build: {
     rolldownOptions: {
       output: {
