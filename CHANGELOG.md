@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-20
+
 ### Added
 
 - **DEC-119 / ISS-179 Phase 2/3/4 富媒体治理扩展**：(Phase 2) `WysiwygEditorPane` `input()` 回调在 sanitizeIrDom 完成后立即调 `resolveLocalImages(irParent, filePath)`，让粘贴 / 拖入的相对路径图片无需重开即可显示；新增 `e2e/rich-media-fixture-matrix.spec.ts` 覆盖 relative-png-webp / multi-line-svg / complex-svg-features / missing-image / corrupt-image / illegal-mermaid 6 个 fixture 端到端就绪断言（无 pageerror + 主 IR / 预览面板可见）。(Phase 3) 新增 `src/services/imageAssetService.ts`（DEC-121）受管图片资源骨架：sha-256 hash 去重、`sanitizeFileName` / `resolveAssetFileName` 纯函数、pending↔persisted state machine、object URL 与相对路径切换；14 个 vitest 用例覆盖。Phase 3 后续 Rust asset scope / Vditor toolbar 接入留给独立 PR。(Phase 4) `.github/workflows/ci.yml` 新增 `playwright` job：ubuntu-latest + 安装 Chromium with-deps + 跑 `e2e/rich-media-cross-surface.spec.ts` + `e2e/rich-media-fixture-matrix.spec.ts` + `e2e/mermaid-ir-renders.spec.ts`；failure 上传 test-results / playwright-report 为 7 天 artifact。同时修复 `e2e/mermaid-ir-renders.spec.ts` 使用绝对 URL 绕开 Playwright 1.60.0 baseURL fixture 间歇性 undefined 的问题，让 CI 矩阵 10/10 全绿。修复 `WysiwygEditorPane.tsx` 与 `vditorIrSanitizeService.ts` 中把 DEC-118 误写为 DEC-119 的历史归属混淆。实测：vitest 408 / 408 + Playwright 10 / 10 + typecheck / lint / build 全绿。
