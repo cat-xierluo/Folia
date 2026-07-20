@@ -103,6 +103,7 @@ jobs:
         # 限定到富媒体 + 主 IR 矩阵，不跑全部 e2e（其它 e2e 由本地 / release 验证）。
         run: |
           npx playwright test \
+            --config config/playwright.config.ts \
             e2e/rich-media-cross-surface.spec.ts \
             e2e/rich-media-fixture-matrix.spec.ts \
             e2e/mermaid-ir-renders.spec.ts \
