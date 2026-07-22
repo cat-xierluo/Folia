@@ -6,8 +6,7 @@
  * 1. paste image File → ImageAssetStore 增加 1 个 pending asset、编辑器
  *    收到 markdown 片段含「待落盘」字样；
  * 2. drop image File → 同上；
- * 3. paste 纯文本（非 image）→ 不注册 asset、不调 preventDefault（Vditor 默认行为保留）；
- * 4. Toolbar 自定义事件「插入图片」由活跃 tab 的 WysiwygEditorPane 接收并插入 Vditor。
+ * 3. paste 纯文本（非 image）→ 不注册 asset、不调 preventDefault（Vditor 默认行为保留）。
  *
  * 不在此测试 fs 落盘 / ImageAssetStore.markPersisted —— 那是 Rust 侧 Phase 3 后段
  * 责任；当前测试只验证编辑器 ↔ store 的契约。
@@ -17,7 +16,6 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WysiwygEditorPane } from '../../components/WysiwygEditorPane';
 import { ImageAssetStoreProvider } from '../../context/ImageAssetStoreProvider';
-import { TOOLBAR_INSERT_IMAGE_EVENT } from '../../components/Toolbar';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -287,19 +285,6 @@ describe('WysiwygEditorPane paste/drop · DEC-119 / ISS-179 Phase 3 主编辑器
     // 非 image 内容应让 Vditor 默认行为继续；我们的 handler 不调 preventDefault
     expect(preventDefaultCalled).toBe(false);
     expect(lastInsertedValue).toBe(''); // editor.insertValue 未被调用
-  });
-
-  it('Toolbar 派发 folia:toolbar-insert-image 事件 → 活跃 tab 的 WysiwygEditorPane 把 markdown 插入 Vditor', async () => {
-    await mountPane();
-    await triggerAfter();
-
-    const detail = { markdown: '![alt.png（待落盘）](blob:pending)', fileName: 'alt.png' };
-    await act(async () => {
-      window.dispatchEvent(new CustomEvent(TOOLBAR_INSERT_IMAGE_EVENT, { detail }));
-      await flushMicrotasks();
-    });
-
-    expect(lastInsertedValue).toBe(detail.markdown);
   });
 
   it('paste 多个 image File → markdown 片段用换行分隔', async () => {

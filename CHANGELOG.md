@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **移除 Toolbar「插入图片」按钮**（DEC-122 收口）：v0.5.0 Wave-1 在一级工具栏加的图片插入按钮经真机使用反馈冗余——粘贴 / 拖入图片已由 `MediaInsertionService` + `ImageAssetStore` 完整覆盖（同一套受管资产路径），单独按钮违反「工具退到背景层」设计原则且挤占工具栏。移除按钮及全部接线（`handleInsertImage` / Tauri 文件选择器逻辑 / `TOOLBAR_INSERT_IMAGE_EVENT` CustomEvent / `WysiwygEditorPane` 监听 / `guessMimeFromName` helper / 三语 i18n / Toolbar 事件测试），保留 paste/drop 受管图片路径。Toolbar 回到「打开 / 保存 / 另存 / 源码 / Word 预览 / HTML 预览 / 设置」简洁布局。
+
 ## [0.5.0] - 2026-07-20
 
 ### Added

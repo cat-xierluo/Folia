@@ -762,21 +762,6 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
       }
     });
 
-    // DEC-119 / ISS-179 Phase 3：监听 Toolbar 派发的「插入图片」事件。
-    // 活跃 tab 的 WysiwygEditorPane 实例会收到 markdown 片段，调用
-    // editor.insertValue 插入 Vditor。非活跃 tab 不渲染 WysiwygEditorPane，
-    // 所以不会有多个实例同时响应（AppLayout 控制挂载）。
-    const toolbarInsertHandler = (event: Event) => {
-      const detail = (event as CustomEvent<{ markdown?: string }>).detail;
-      const markdown = detail?.markdown;
-      if (!markdown) return;
-      const editor = editorRef.current;
-      if (!editor) return;
-      editor.insertValue(markdown);
-      emitEditorValueIfChanged(editor);
-    };
-    window.addEventListener('folia:toolbar-insert-image', toolbarInsertHandler);
-
     return () => {
       cancelled = true;
       host.removeEventListener('beforeinput', markUserInteracted, true);
@@ -784,7 +769,6 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
       host.removeEventListener('drop', markUserInteracted, true);
       host.removeEventListener('paste', pasteHandler);
       host.removeEventListener('drop', dropHandler);
-      window.removeEventListener('folia:toolbar-insert-image', toolbarInsertHandler);
       if (collapseTimerRef.current !== null) {
         window.clearTimeout(collapseTimerRef.current);
         collapseTimerRef.current = null;
