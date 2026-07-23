@@ -832,13 +832,18 @@ test('settings modal switches tabs by lazy loading each section on demand (ISS-1
 
   for (const { tab, heading } of sections) {
     await page.getByRole('button', { name: tab, exact: true }).click();
-    await expect(page.getByRole('heading', { heading })).toBeVisible();
+    // ISS-180: 此前写成 getByRole('heading', { heading })——{ heading } 不是
+    // Playwright getByRole 的合法 option 字段，会被忽略并退化为「匹配任意 heading」，
+    // 掩盖了 section 真正未渲染的情况（例如 ExportSection/WechatSection 内的预览样本
+    // <h1>法律服务工作备忘录</h1> 会让断言在真实 <h3>Word 导出预设</h3> 渲染前就假绿）。
+    // 改用 { name: heading } 后，必须等到对应文本的真实 heading 出现才算通过。
+    await expect(page.getByRole('heading', { name: heading })).toBeVisible();
   }
 
-  // The cold open should feel snappy; we set a generous 2.5s budget to absorb
-  // CI jitter while still catching major regressions vs. the original
-  // ~5s+ skeleton experience reported in ISS-152.
-  expect(coldOpenMs).toBeLessThan(2500);
+  // ISS-180: 冷开预算从 2500ms 收紧到 1000ms。实测首开"通用"内容约 303ms 出现，
+  // 1000ms 留约 3 倍余量吸收 CI 抖动，同时能捕获真实退化（此前 2500ms 阈值
+  // 远大于真实耗时，无法守住「不得再出现 300ms 近似白屏」的体验契约）。
+  expect(coldOpenMs).toBeLessThan(1000);
 });
 
 test('Cmd+, opens the settings modal from anywhere (ISS-153)', async ({ page }) => {
@@ -1372,4 +1377,93 @@ test('HTML presentation view keeps at least 480px width on a narrow 800x600 view
      pane's resolved min-width must be at least 480px so the iframe inside
      never gets squeezed below the readable line length. */
   expect(minWidth).toBeGreaterThanOrEqual(480);
+});
+
+// ---------------------------------------------------------------------------
+// ISS-183：最近文件过多时欢迎标题与「打开文件 / 新建」主操作必须始终可见可滚回。
+// 根因是 .recent-page 同时用 overflow:auto + align-items:center，内容高于视口
+// 时居中把顶部推到负坐标，滚不回来。CSS 已改为溢出时顶部对齐；组件层加「默认 6 条
+// + 展开全部」控制列表高度。本测试用真实布局断言守住两条修复。
+// ---------------------------------------------------------------------------
+
+/** 构造含 N 条长路径最近文件 + 空占位标签的 session，使首页（RecentFilesPage）渲染。 */
+function makeRecentFilesSession(count: number): string {
+  const recentFiles = Array.from({ length: count }, (_, i) => ({
+    path: `/Users/maoking/Library/Application Support/maoscripts/folia/案件卷宗/非常长的目录名用于测试省略/${i}-合同纠纷证据材料汇编附件.pdf`,
+    name: `${i}-合同纠纷证据材料汇编附件.pdf`,
+    openedAt: Date.now() - i * 1000,
+  }));
+  return JSON.stringify({
+    version: 1,
+    activeTabId: 'tab-placeholder',
+    recentFiles,
+    tabs: [{
+      id: 'tab-placeholder',
+      editorMode: 'wysiwyg',
+      rightPanelMode: 'none',
+      draftPersisted: true,
+      isPlaceholder: true,
+      file: { path: '', name: '未命名', content: '', dirty: false, lastSavedContent: '', fileType: 'markdown' },
+    }],
+  });
+}
+
+test('最近文件过多时欢迎标题和主操作始终可见，不被顶出且可滚回（ISS-183）', async ({ page }) => {
+  await page.addInitScript((sessionJson) => {
+    localStorage.setItem('folia.session.v1', sessionJson);
+  }, makeRecentFilesSession(20));
+
+  await page.goto('/');
+
+  // 首页（RecentFilesPage）应已渲染
+  await expect(page.locator('.recent-page')).toBeVisible();
+
+  // 标题和主操作按钮必须可见
+  const title = page.locator('.recent-page-title');
+  const primary = page.locator('.recent-page-primary');
+  await expect(title).toBeVisible();
+  await expect(primary).toBeVisible();
+  await expect(primary).toContainText('打开文件');
+
+  // 关键断言：标题的顶部不能位于滚动容器上方（负偏移 / 被裁掉）。
+  // 修复前 scrollTop=0 时 title 的 boundingRect.y 会是负值或被 .recent-page 裁掉。
+  const titleBox = await title.boundingBox();
+  expect(titleBox, '标题 boundingBox 必须可测量').not.toBeNull();
+  expect(titleBox!.y, '标题不得位于滚动区上方').toBeGreaterThanOrEqual(0);
+
+  // 折叠模式：默认只显示 6 条最近文件，且出现「显示全部 20 条」按钮
+  const removeButtons = page.locator('.recent-page-item-remove');
+  await expect(removeButtons).toHaveCount(6);
+  const showAllButton = page.locator('.recent-page-show-all');
+  await expect(showAllButton).toBeVisible();
+  await expect(showAllButton).toContainText('显示全部 20 条');
+
+  // 点击展开后，全部 20 条都应可见
+  await showAllButton.click();
+  await expect(page.locator('.recent-page-item-remove')).toHaveCount(20);
+  await expect(page.locator('.recent-page-show-all')).toHaveCount(0);
+});
+
+test('窄视口（800×600）下最近文件首页标题仍可见（ISS-183 响应式）', async ({ page }) => {
+  await page.setViewportSize({ width: 800, height: 600 });
+
+  await page.addInitScript((sessionJson) => {
+    localStorage.setItem('folia.session.v1', sessionJson);
+  }, makeRecentFilesSession(20));
+
+  await page.goto('/');
+  await expect(page.locator('.recent-page')).toBeVisible();
+
+  // 窄视口 + 20 条长路径是最容易触发溢出裁切的组合。标题必须仍在可视区内。
+  const title = page.locator('.recent-page-title');
+  await expect(title).toBeVisible();
+  const titleBox = await title.boundingBox();
+  expect(titleBox, '标题 boundingBox 必须可测量').not.toBeNull();
+  expect(titleBox!.y, '窄视口下标题不得位于滚动区上方').toBeGreaterThanOrEqual(0);
+
+  // 滚到顶时主操作按钮也应在可视区
+  await page.locator('.recent-page').evaluate((el) => { el.scrollTop = 0; });
+  const primaryBox = await page.locator('.recent-page-primary').boundingBox();
+  expect(primaryBox, '主操作 boundingBox 必须可测量').not.toBeNull();
+  expect(primaryBox!.y, 'scrollTop=0 时主操作必须可见').toBeGreaterThanOrEqual(0);
 });

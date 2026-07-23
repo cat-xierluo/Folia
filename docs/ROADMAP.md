@@ -1,6 +1,6 @@
 # Folia 路线图
 
-> Last updated: 2026-06-15
+> Last updated: 2026-07-23
 > 本文档是 Folia 项目的整体路线图和动态任务清单。
 
 ## 项目愿景
@@ -23,7 +23,7 @@
 | v0.3 编辑体验 | Typora-like 所见即所得 + HTML 阅读优先 + Word / HTML 导出预览 | 🟡 进行中 | 普通 Markdown 默认 WYSIWYG；原生 HTML 表格自动稳定预览；源码 fallback、按需 Word 多页预览与 HTML 预览面板已完成 |
 | v0.4 文档管理 | 最近文件、多文件 | 🟢 已完成 | 多标签页会话 + 最近文件首页 + 标签右键菜单/Cmd+W + 大文件降级 + 标签栏并入工具栏 + i18n 三语 + 大文件降级/失效文件/启动恢复三态提示（ISS-40/ISS-42） |
 | v0.5 桌面发布体验 | 自动更新、发布产物、版本提示 | 🟢 已完成 | Tauri updater + GitHub Releases；Gitee 作为产物镜像 |
-| v0.6 Word 导出与预览 | md2word 集成、docx 导出 + 预览 | 🟢 已完成 | 纯 TS 方案，docx npm + mammoth |
+| v0.6 Word 导出与预览 | md2word 集成、docx 导出 + 预览 | 🟡 优化中 | 核心导出已完成；继续扩展 JSON schema，并按 DEC-123 提升快速 HTML 纸张预览的配置映射与边界说明 |
 | v0.7 法律增强 | 表格编辑、模板 | 🟡 进行中 | 已完成 HTML table 共享模型、源码区块定位服务、法律表格 fixture 基线 |
 | v0.8 预设生态 | 自定义预设槽位、组织共享、内测授权探索 | 🟡 进行中 | 常规版本保留 2 个自定义槽位，输入内测码可使用更多槽位 |
 | v0.9 官网与文档发布 | 官方网站、下载入口、项目展示 | 🟡 进行中 | Astro 静态站 + GitHub Pages |
@@ -76,6 +76,7 @@
 - [x] HTML 演示预览：直接打开受信任 HTML 演示文件，隔离运行其 JS/CSS/本地资源，并支持常见翻页操作
 - [x] Vditor WYSIWYG 一体化（ISS-155 / DEC-085）：所有 Markdown / HTML 文档默认进入 Vditor IR；含 `rowspan/colspan` 的复杂表格在 Vditor 中自动锁定（`contenteditable=false` + `data-folia-locked=”table”`），输入回调对比 `classifyHtmlTableBlocks` 自动恢复被改动的复杂表源码；hover 复杂表格弹出”查看原貌”图标，弹窗渲染 `createHtmlReadingPreviewHtml` 忠实 HTML；删除结构化表格编辑、HTML 阅读预览切换按钮、`html-reading-toolbar` / `markdown-preview-toolbar` 整段
 - [ ] 富媒体统一渲染与资源治理（ISS-179 / DEC-119）：统一 Mermaid / SVG / 图片在主编辑器、HTML 预览 / 复制 / 导出、Word 预览 / DOCX 中的完成契约、终态清洗、资源解析与错误诊断；新插入图片默认写入同目录 `文档名.assets/` 并使用相对路径；以正式 fixture、Chromium CI 和 macOS / Windows 真实 WebView 作为完成门禁
+- [x] 设置页首次打开不得出现短暂白屏或近似空白的低对比骨架（ISS-180，P0）：默认「通用」section 改为静态导入、移出内层 Suspense 消除第二层 chunk 调度延迟；骨架对比度从 14% 提升到 22%；E2E locator `{heading}` 误写修复为 `{name:heading}`、冷开预算从 2.5s 收紧到 1s
 - [ ] 继续提升 WYSIWYG 编辑细节：快捷格式化、表格编辑工具、复杂 HTML 块的编辑提示
 
 ### v0.5 桌面发布体验（已完成）
@@ -92,6 +93,7 @@
 
 - [x] 多标签页会话（sessionStore + useSession + AppLayout 单文档 → 多文档改造）
 - [x] 最近文件首页（无可恢复会话时显示最近文件列表）
+- [x] 修复最近文件过多时欢迎标题和“打开文件 / 新建”被顶出且无法滚回的问题（ISS-183）：修复 `.recent-page` 的 flexbox 居中陷阱（溢出时顶部对齐、少量记录仍居中）、长路径单行省略、默认展示前 6 条 + 「显示全部 N 条」按钮，新增响应式 E2E 守住标题与主操作始终可见
 - [x] 标签右键菜单 + Cmd+W 快捷键
 - [x] 大文件（>256KB）降级 tab 重启从 path 重读
 - [x] 标签栏并入顶部工具栏同一行（ISS-40）
@@ -100,7 +102,7 @@
 - [x] 大文件降级 / 失效文件 / 启动恢复三态提示（ISS-42）：StatusBar 统一展示「草稿过大未自动保存 / 文件已丢失（附「另存为」）/ 重新加载中」三态，`reloading` 由 `activeTab` 派生避免 effect 内 set state
 - [x]（可选增强）TabBar 标签上同步显示「草稿过大未自动保存」琥珀标记（ISS-42）
 
-### v0.6 Word 导出与预览（已完成）
+### v0.6 Word 导出与预览（核心已完成，持续优化）
 
 #### 阶段一：转换引擎
 
@@ -135,6 +137,8 @@
 - [x] Settings 页面添加"导出"部分（预设选择器）
 - [x] Settings / Word 导出支持导入自定义 JSON 预设、复制模板和删除自定义预设
 - [x] Settings / Word 导出支持预设启用/停用、内置预设隐藏、示例 JSON 和可放大的单页纸样式预览
+- [ ] 扩展 Word JSON 预设能力并增加 `schemaVersion`、JSON Schema、未知字段诊断和真实 DOCX XML 回归（ISS-181）
+- [ ] 按 DEC-123 保留“快速 HTML 模拟 + 权威 DOCX 导出”双管线，修正可模拟字段的映射错误并建立预览误差 / 能力矩阵（ISS-182）
 
 ### v0.7 法律增强
 
@@ -172,6 +176,8 @@
 
 ## 进度日志
 
+- **2026-07-23**
+  - 修复两个独立 UI / 性能缺陷，main 直接提交（L1/L2 策略）。(1) **ISS-183 最近文件首页溢出**：`.recent-page` 同时用 `overflow:auto` + `align-items:center` 导致内容高于视口时标题被顶到负坐标、滚不回；改为溢出顶部对齐（`margin-block:auto` 在空间富余时居中）、长路径单行省略、`RecentFilesPage` 默认展示前 6 条 + 「显示全部 N 条」按钮（三语 i18n `recentShowAllLabel`）。新增 4 个单测 + 2 个真实布局 E2E（20 条长路径默认 / 800×600 窄视口断言标题 boundingBox.y >= 0）。(2) **ISS-180 设置页首开白屏**：默认「通用」section 从 `React.lazy` 改静态导入、移出内层 `<Suspense>`，消除实测 ~303ms 的第二层 chunk 调度；骨架 `color-mix(var(--muted) 14%)` → 22% 提升对比度；修复 E2E locator `{heading}` → `{name:heading}`（无效字段退化匹配掩盖 section 未渲染）+ 冷开预算 2500ms → 1000ms。基线 455 → 461 / 461 vitest 全绿；ISS-183 / ISS-180 相关 E2E 全绿；typecheck / lint / build / cargo check 全绿。真实 macOS WKWebView / Windows WebView2 时间测量仍依赖 release.yml + 本地 dev。
 - **2026-07-18**
   - DEC-119 / ISS-179 Phase 4 收口：MediaPlaceholder 接入 3 个 surface（Wave-3）。(1) `WechatPreviewPane` 把 RenderCoordinator diagnostics 渲染在 `.wechat-preview-article-shell` 上方的 diagnostics 区块，过滤 `aborted` 与 `generation-superseded` 避免占位闪烁；(2) `WordPaperPreviewPane` 同源模式，把 diagnostics 渲染在 `.word-preview-scroll` 上方；(3) `WysiwygEditorPane` 用 event delegation 监听主 IR 内 `<img>.error`，按 src 协议分类 blocked-scheme / decode-failed / not-found，在 IR 容器**外**的 banner 显示聚合 diagnostics（caret / focus 风险策略：不插入 IR DOM）；(4) `MarkdownHtmlPreviewArtifact.diagnostics` 类型从 `Array<{ code: string; message: string }>` 收紧为 `RenderDiagnostic[]`，对齐 renderCoordinator 契约；(5) `RenderDiagnostic['code']` 类型 union 扩展到 12 个码（DESIGN.md §13 完整状态矩阵）。基线 455 / 455 vitest 全绿；Playwright rich-media-cross-surface 3/3、dangerous-boundaries 4/4、resource-failure-matrix 5/5 全绿；typecheck / lint / build 全绿。ISS-179 §九.4（任一资源失败都有可见占位和 diagnostics）在三 surface 全部达成；§九.6（危险内容边界策略）由 Phase 2 测试矩阵守门。详见 [DEC-122](DECISIONS.md#dec-122) 与 commit `79ced29` / `2d134a9` / `ac79898`。
 - **2026-07-16**

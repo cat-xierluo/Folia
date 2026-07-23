@@ -85,4 +85,43 @@ describe('RecentFilesPage', () => {
     expect((html.match(/recent-page-item-remove/g) ?? []).length).toBe(2);
     expect(html).toContain('从最近列表移除');
   });
+
+  describe('ISS-183 折叠 / 展开全部', () => {
+    const makeFiles = (n: number): RecentFileEntry[] =>
+      Array.from({ length: n }, (_, i) => ({ path: `/tmp/file-${i}.md`, name: `file-${i}.md`, openedAt: i }));
+
+    it('超过 6 条时默认折叠：只渲染 6 条并出现「显示全部」按钮', () => {
+      const recentFiles = makeFiles(8);
+      const html = render({ ...baseProps, recentFiles });
+      // 默认只渲染前 6 条（每条对应一个移除按钮）
+      expect((html.match(/recent-page-item-remove/g) ?? []).length).toBe(6);
+      // 出现「显示全部 8 条」按钮
+      expect(html).toContain('recent-page-show-all');
+      expect(html).toContain('显示全部 8 条');
+      // 第 7、8 条路径不应在初始折叠态出现
+      expect(html).not.toContain('/tmp/file-6.md');
+      expect(html).not.toContain('/tmp/file-7.md');
+    });
+
+    it('正好 6 条时不出现「显示全部」按钮（边界）', () => {
+      const recentFiles = makeFiles(6);
+      const html = render({ ...baseProps, recentFiles });
+      expect((html.match(/recent-page-item-remove/g) ?? []).length).toBe(6);
+      expect(html).not.toContain('recent-page-show-all');
+    });
+
+    it('少于 6 条时不出现「显示全部」按钮', () => {
+      const recentFiles = makeFiles(3);
+      const html = render({ ...baseProps, recentFiles });
+      expect((html.match(/recent-page-item-remove/g) ?? []).length).toBe(3);
+      expect(html).not.toContain('recent-page-show-all');
+    });
+
+    it('en-US locale 下「显示全部」按钮文案为 Show all N', () => {
+      localStorage.setItem('folia-settings', JSON.stringify({ locale: 'en-US' }));
+      const recentFiles = makeFiles(20);
+      const html = render({ ...baseProps, recentFiles });
+      expect(html).toContain('Show all 20');
+    });
+  });
 });

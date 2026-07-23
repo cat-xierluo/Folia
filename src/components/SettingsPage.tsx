@@ -7,11 +7,11 @@ import {
   preloadAppearanceSection,
   preloadEditorSection,
   preloadExportSection,
-  preloadGeneralSection,
   preloadHtmlExportSection,
   preloadLicenseSection,
   preloadPreviewSection,
 } from './settings/preloadSections';
+import { GeneralSection } from './settings/GeneralSection';
 
 type AvailableUpdate = Extract<UpdateCheckResult, { status: 'available' }>;
 type SettingsSection =
@@ -28,7 +28,13 @@ type SettingsSection =
 // the default tab, and switching tabs pulls in the corresponding chunk on
 // demand. Section preload helpers live in `preloadSections.ts` so this file
 // stays a pure component file (required by react-refresh).
-const GeneralSection = lazy(preloadGeneralSection);
+//
+// ISS-180: GeneralSection 是默认 section，改用静态导入。原本它与其它 section
+// 一样走 lazy，导致默认 tab 要等第二层 chunk 解析（实测 ~303ms）才渲染真实
+// 内容，期间只显示近似白屏的低对比骨架。改为静态导入后，它随 SettingsPage
+// 外壳 chunk 一起解析，消除第二层 Suspense 调度。GeneralSection 仅是纯静态
+// 表单（无远程 I/O），增量体积可忽略；其余较重的 section（Word/HTML 导出等）
+// 仍走 lazy 按需加载。
 const EditorSection = lazy(preloadEditorSection);
 const PreviewSection = lazy(preloadPreviewSection);
 const AppearanceSection = lazy(preloadAppearanceSection);
@@ -105,8 +111,13 @@ export function SettingsPage({ onClose, onUpdateAvailable }: SettingsPageProps) 
           </nav>
         </div>
         <div className="settings-modal-content">
+          {/*
+            ISS-180: GeneralSection（默认 section）静态导入后直接渲染，不走
+            <Suspense>。这消除了首开时第二层 chunk 解析期间的骨架窗口，让"通用"
+            内容随外壳挂载立即可见。其余 section 仍按需 lazy 加载。
+          */}
+          {activeSection === 'general' && <GeneralSection />}
           <Suspense fallback={<SectionFallback />}>
-            {activeSection === 'general' && <GeneralSection />}
             {activeSection === 'editor' && <EditorSection />}
             {activeSection === 'preview' && <PreviewSection />}
             {activeSection === 'appearance' && <AppearanceSection />}

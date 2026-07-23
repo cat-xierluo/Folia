@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **修复最近文件过多时首页欢迎区消失且无法滚回的问题**（ISS-183）：当最近文件记录较多（上限 20 条）且路径较长时，首页的「Folia」标题与「打开文件 / 新建」主操作会被顶出视口且无法滚回，用户找不到入口。根因是 `.recent-page` 同时使用 `overflow:auto` + `align-items:center`，内容高于视口时居中把内部容器顶部推到负坐标，滚动条滚不到负位置。现在溢出时改为顶部对齐（少量记录仍视觉居中）、长路径单行省略（完整路径保留在 hover tooltip），并默认只展示前 6 条、底部提供「显示全部 N 条」按钮控制列表高度。新增响应式 E2E 覆盖 20 条长路径在 800×600 / 默认视口下标题与主操作始终可见。
+- **修复设置页首次打开短暂白屏 / 近似空白骨架的问题**（ISS-180）：用户首次点击设置后约 300ms 内只能看到对比度极低的骨架，近似白屏。根因有二：① 默认「通用」section 与其它 section 一样走 `React.lazy`，形成外层 SettingsPage + 内层 GeneralSection 双层 Suspense，即便预热，点击时仍要等内层 chunk 解析才渲染真实内容；② 骨架背景 `color-mix(var(--muted) 14%, transparent)` 叠在近白底上对比度过低。现在默认 section 改为静态导入、移出内层 Suspense（随外壳同步渲染，消除第二层调度延迟），骨架对比度提升到可明确感知的「正在加载」状态；并修复设置页 E2E 把 locator 误写成 `{ heading }`（无效字段，退化匹配任意 heading，掩盖 section 未渲染）的缺陷、把冷开预算从 2.5s 收紧到 1s。
+
 ### Changed
 
 - **移除 Toolbar「插入图片」按钮**（DEC-122 收口）：v0.5.0 Wave-1 在一级工具栏加的图片插入按钮经真机使用反馈冗余——粘贴 / 拖入图片已由 `MediaInsertionService` + `ImageAssetStore` 完整覆盖（同一套受管资产路径），单独按钮违反「工具退到背景层」设计原则且挤占工具栏。移除按钮及全部接线（`handleInsertImage` / Tauri 文件选择器逻辑 / `TOOLBAR_INSERT_IMAGE_EVENT` CustomEvent / `WysiwygEditorPane` 监听 / `guessMimeFromName` helper / 三语 i18n / Toolbar 事件测试），保留 paste/drop 受管图片路径。Toolbar 回到「打开 / 保存 / 另存 / 源码 / Word 预览 / HTML 预览 / 设置」简洁布局。

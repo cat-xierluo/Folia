@@ -6,7 +6,7 @@ import {
   makeTabFromFile,
 } from './sessionReducer';
 import type { SessionState, Tab } from '../types/session';
-import { MAX_TABS } from '../types/session';
+import { MAX_TABS, MAX_RECENT_FILES } from '../types/session';
 import { createEmptyFile } from '../types/document';
 
 function file(name: string, content = '', dirty = false, path = `/tmp/${name}`) {
@@ -255,6 +255,21 @@ describe('sessionReducer.recordRecentFile', () => {
     const start = bootstrapSession({ tabs: [], activeTabId: '', recentFiles: [] });
     const next = sessionReducer(start, { type: 'recordRecentFile', file: { ...createEmptyFile(), name: 'x' } });
     expect(next.recentFiles).toHaveLength(0);
+  });
+
+  it('超过上限时截断到 MAX_RECENT_FILES（最新的优先保留）', () => {
+    // ISS-183 覆盖空白：验证 reducer 的 .slice(0, MAX_RECENT_FILES) 截断。
+    // 虽然组件层已加折叠，但存储上限本身仍需有测试守住，避免回归。
+    let state = bootstrapSession({ tabs: [], activeTabId: '', recentFiles: [] });
+    // 连续记录 MAX_RECENT_FILES + 1 个不同文件
+    for (let i = 0; i < MAX_RECENT_FILES + 1; i++) {
+      state = sessionReducer(state, { type: 'recordRecentFile', file: file(`doc-${i}.md`) });
+    }
+    expect(state.recentFiles).toHaveLength(MAX_RECENT_FILES);
+    // 最新记录的文件应排在最前（recordRecentFile 把新条目 unshift 到头部）
+    expect(state.recentFiles[0].name).toBe(`doc-${MAX_RECENT_FILES}.md`);
+    // 最早记录的文件应已被挤出（doc-0 不在列表）
+    expect(state.recentFiles.some((r) => r.name === 'doc-0.md')).toBe(false);
   });
 });
 

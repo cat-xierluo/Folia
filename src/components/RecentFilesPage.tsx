@@ -1,6 +1,11 @@
+import { useState } from 'react';
 import { useSettings } from '../hooks/useSettings';
 import { translate } from '../services/i18n';
 import type { RecentFileEntry } from '../types/session';
+
+/** 折叠模式下默认显示的最近文件条数。超出部分通过「显示全部」按钮展开。
+ * 设计意图：保证首页欢迎标题与「打开文件 / 新建」主操作在常见视口下始终可见。 */
+const VISIBLE_RECENT_LIMIT = 6;
 
 export interface RecentFilesPageProps {
   recentFiles: RecentFileEntry[];
@@ -22,6 +27,10 @@ export function RecentFilesPage({
 }: RecentFilesPageProps) {
   const settings = useSettings();
   const t = (key: Parameters<typeof translate>[1]) => translate(settings.locale, key);
+  const [expanded, setExpanded] = useState(false);
+
+  const canCollapse = recentFiles.length > VISIBLE_RECENT_LIMIT;
+  const visibleFiles = expanded || !canCollapse ? recentFiles : recentFiles.slice(0, VISIBLE_RECENT_LIMIT);
 
   const handleClear = () => {
     if (recentFiles.length === 0) return;
@@ -47,7 +56,7 @@ export function RecentFilesPage({
               <button type="button" className="recent-page-clear" onClick={handleClear}>{t('recentClearLabel')}</button>
             </div>
             <ul className="recent-page-list">
-              {recentFiles.map((entry) => (
+              {visibleFiles.map((entry) => (
                 <li key={entry.path} className="recent-page-item-row">
                   <button
                     type="button"
@@ -70,6 +79,15 @@ export function RecentFilesPage({
                 </li>
               ))}
             </ul>
+            {canCollapse && !expanded && (
+              <button
+                type="button"
+                className="recent-page-show-all"
+                onClick={() => setExpanded(true)}
+              >
+                {t('recentShowAllLabel').replace('{count}', String(recentFiles.length))}
+              </button>
+            )}
           </>
         ) : (
           <p className="recent-page-empty">{t('recentEmpty')}</p>
