@@ -207,6 +207,9 @@ const ALLOWED_ATTR = [
   'markerWidth', 'markerwidth', 'markerHeight', 'markerheight',
   'orient', 'offset', 'opacity', 'transform',
   'filter', 'stop-color', 'stop-opacity',
+  // v0.7：表格列隐藏规则（ROADMAP）。布尔属性，存在即隐藏该表格最后一列。
+  // 精确放行单一属性，不开 ALLOW_DATA_ATTR: true 的口子。
+  'data-hide-last-column',
 ];
 
 const ALLOWED_CLASS_NAME = /^(?:hljs(?:-[a-z0-9_-]+)?|language-[a-z0-9_-]+)$/i;
@@ -978,7 +981,27 @@ export function createHtmlExportInlineArticleHtml(
     applyInlineStyleRule(template.content, rule);
   }
 
+  // v0.7：data-hide-last-column 表格列隐藏（ROADMAP）。inline style 规则解析器
+  // （normalizeInlineableSelector）只接受简单文章作用域标签选择器，无法表达
+  // 属性选择器 + :last-child，故在此用 DOM 标记给末列单元格注入 display:none。
+  // 规整表格精确隐藏每行末列；含 colspan 的复杂表为 best-effort。
+  hideLastColumnTableCells(template.content);
+
   return template.innerHTML;
+}
+
+/**
+ * v0.7：对带 `data-hide-last-column` 的表格，给每行末列 th/td 注入 inline
+ * `display:none`（与 htmlReadingPreviewService 同一思路）。
+ */
+function hideLastColumnTableCells(root: ParentNode): void {
+  const tables = root.querySelectorAll<HTMLTableElement>('table[data-hide-last-column]');
+  for (const table of tables) {
+    const cells = table.querySelectorAll<HTMLTableCellElement>('tr > th:last-child, tr > td:last-child');
+    for (const cell of cells) {
+      cell.style.setProperty('display', 'none');
+    }
+  }
 }
 
 export function createWechatInlineArticleHtml(articleHtml: string, customCss = ''): string {

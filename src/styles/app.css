@@ -2003,6 +2003,20 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   text-align: center;
 }
 
+/* v0.7：data-hide-last-column 表格列隐藏（ROADMAP）。Word 预览 / HTML 预览面板
+   走 renderCoordinator → sanitizeForVditor（USE_PROFILES 模式，data-attr 默认
+   保留），故属性已在 DOM 中。规整表格精确隐藏每行末列；含 colspan 的复杂表为
+   best-effort（真实 DOCX 导出由 table-handler.ts 按网格列精确跳过；HTML 导出/
+   复制由 wechatPreviewService 的 hideLastColumnTableCells 注入 inline）。 */
+.word-paper-content table[data-hide-last-column] tr > th:last-child,
+.word-paper-content table[data-hide-last-column] tr > td:last-child,
+.word-paper-content.vditor-reset table[data-hide-last-column] tr > th:last-child,
+.word-paper-content.vditor-reset table[data-hide-last-column] tr > td:last-child,
+.wechat-preview-article-shell table[data-hide-last-column] tr > th:last-child,
+.wechat-preview-article-shell table[data-hide-last-column] tr > td:last-child {
+  display: none !important;
+}
+
 .word-paper-content tbody tr:nth-child(odd) td,
 .word-paper-content.vditor-reset tbody tr:nth-child(odd) td {
   background: var(--word-table-row-odd-bg);

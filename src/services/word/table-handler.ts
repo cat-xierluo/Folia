@@ -83,8 +83,11 @@ export function createHtmlTable(
   const model = parseHtmlTableModel(html);
   if (model.rows.length === 0) return emptyTable(tablePreset);
 
-  const colCount = model.colCount;
-  const colWidths = evenWidths(colCount);
+  // v0.7：data-hide-last-column 表格列隐藏（ROADMAP）。按网格列精确跳过最后一列，
+  // 正确处理 rowspan/colspan（HTML surface 用 CSS :last-child，导出用网格）。
+  const hideLastColumn = isHideLastColumn(model);
+  const effectiveColCount = hideLastColumn ? Math.max(1, model.colCount - 1) : model.colCount;
+  const colWidths = evenWidths(effectiveColCount);
 
   let bodyRowIndex = 0;
   const rows = model.rows.map((row) => {
@@ -92,7 +95,7 @@ export function createHtmlTable(
       ? undefined
       : tableRowBackground(tablePreset, bodyRowIndex++);
     const rowOptions = {
-      children: makeHtmlRowCells(row, model, colWidths, tablePreset, rowBackground),
+      children: makeHtmlRowCells(row, model, colWidths, tablePreset, rowBackground, hideLastColumn),
       height: tableRowHeight(tablePreset),
     };
 
@@ -110,6 +113,15 @@ export function createHtmlTable(
     borders: tableBorders(tablePreset),
     alignment: parseAlignment(tablePreset.table.alignment ?? 'center'),
   });
+}
+
+/**
+ * 判断 table 是否带 `data-hide-last-column` 布尔属性（ROADMAP v0.7）。
+ * HtmlTableModel.attrs 保留了 table 元素的全部属性（见 htmlTableModel.ts 的
+ * attributesToObject），属性名小写化。
+ */
+function isHideLastColumn(model: HtmlTableModel): boolean {
+  return Object.prototype.hasOwnProperty.call(model.attrs, 'data-hide-last-column');
 }
 
 // --- helpers ---
@@ -238,11 +250,12 @@ function makeHtmlCell(
   _widthPct: number,
   config: PresetConfig,
   rowBackground?: string,
+  effectiveColSpan?: number,
 ): TableCell {
   const paragraphs = htmlToParagraphs(cell.html, config, cell.isHeader);
 
   return new TableCell({
-    columnSpan: cell.colSpan,
+    columnSpan: effectiveColSpan ?? cell.colSpan,
     rowSpan: cell.rowSpan,
     verticalAlign: tableVerticalAlign(config),
     shading: tableCellShading(config, cell.isHeader, rowBackground),
@@ -258,10 +271,18 @@ function makeHtmlRowCells(
   colWidths: number[],
   config: PresetConfig,
   rowBackground?: string,
+  hideLastColumn = false,
 ): TableCell[] {
   const cells: TableCell[] = [];
+  const lastCol = model.colCount - 1;
 
   for (let col = 0; col < model.colCount;) {
+    // data-hide-last-column：跳过网格最后一列（被覆盖格 / 空槽 / origin 起点）。
+    if (hideLastColumn && col === lastCol) {
+      col += 1;
+      continue;
+    }
+
     const slot = model.grid[row.rowIndex]?.[col];
 
     if (!slot) {
@@ -275,7 +296,14 @@ function makeHtmlRowCells(
       continue;
     }
 
-    cells.push(makeHtmlCell(slot.cell, colWidths[col] ?? colWidths[0] ?? 100, config, rowBackground));
+    // origin 格子。若其 colSpan 跨越最后一列边界（如 col=1 colSpan=3，
+    // 覆盖 col 1/2/3，隐藏 col=3），缩减为不含最后一列的有效列数。
+    const cellEndCol = col + slot.cell.colSpan - 1;
+    const effectiveColSpan = hideLastColumn && cellEndCol >= lastCol
+      ? Math.max(1, lastCol - col)
+      : undefined;
+
+    cells.push(makeHtmlCell(slot.cell, colWidths[col] ?? colWidths[0] ?? 100, config, rowBackground, effectiveColSpan));
     col += slot.cell.colSpan;
   }
 

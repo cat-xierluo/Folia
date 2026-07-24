@@ -148,7 +148,7 @@
 - [x] HTML table 共享模型：统一 Word 导出、预览增强和后续表格编辑器的 rowspan / colspan / section 语义
 - [x] HTML table block 定位服务：从源码中提取并替换单个 `<table>` 区块，忽略 fenced code
 - [x] 法律 HTML 表格 fixture 基线：证据目录、材料清单、长 URL/长中文、复杂表头、多 `tbody`、空单元格
-- [ ] 表格列隐藏规则可配置（data-hide-last-column 属性）
+- [x] 表格列隐藏规则可配置（data-hide-last-column 属性）
 - [ ] 证据目录模板
 - [ ] 材料清单模板
 - [ ] 时间线模板
@@ -176,6 +176,8 @@
 
 ## 进度日志
 
+- **2026-07-24（续二）**
+  - v0.7 表格列隐藏规则（`data-hide-last-column`，ROADMAP）：用户在 `<table>` 加布尔属性 `data-hide-last-column`，所有阅读 / 预览 / 导出 surface 隐藏该表格最后一列（主编辑器如实显示完整表格）。典型场景：证据目录 / 材料清单末列「内部备注」不希望出现在对外文档中。四 surface 实现：① **HTML 导出 / 复制**（`wechatPreviewService`）—— `ALLOWED_ATTR` 白名单放行属性，`createHtmlExportInlineArticleHtml` sanitize 后用 `querySelectorAll('tr > th:last-child, tr > td:last-child')` 给末列注入 inline `display:none`（inline style 规则解析器的 `normalizeInlineableSelector` 只接受简单文章作用域标签选择器，无法表达属性选择器 + `:last-child`，故用 DOM 标记而非 CSS 规则数组）；② **稳定阅读预览 / 表格查看 overlay**（`htmlReadingPreviewService`）—— 白名单放行 + 同思路 `hideLastColumnTables` JS 标记；③ **Word 预览 / HTML 预览面板**（`app.css`）—— 走 `renderCoordinator` → `sanitizeForVditor`（USE_PROFILES 模式，data-attr 默认保留），CSS `table[data-hide-last-column] tr > th/td:last-child { display:none !important }`；④ **Word / DOCX 导出**（`table-handler.ts`）—— 按 `HtmlTableModel` 网格列精确跳过 `model.colCount - 1`，正确处理 rowspan/colspan（origin 格子 colSpan 跨越末列边界时缩减有效列数）。span 边界：导出精确；HTML surface 用 `:last-child` 对规整表正确、含 colspan 复杂表 best-effort（合并格占据末列整体隐藏）。新增 `fixtures/legal-html-tables/column-hide-demo.md`（规整表 + colspan 跨越末列表）+ 7 个单测（wechat inline 注入、htmlReading 标记、table-handler 规整/colspan/无属性三场景）。基线 484 → 491 / 491 vitest 全绿；typecheck / lint / build / cargo check 全绿。真实 macOS WKWebView 视觉验证仍依赖 release.yml + 本地 dev。
 - **2026-07-24（续）**
   - ISS-182 收尾 + ISS-181 第二期 H5/H6：(1) **ISS-182 分页截断告警**——`paginateRenderedContent` 改返回 `RenderDiagnostic[]`，在「超高顶层段落单独一页仍超高」和「超高表格行组单独一页仍超高」两个截断点 push `content-overflow-truncated` 诊断；`renderCoordinator.ts` 新增该诊断码，`MediaPlaceholder` 补文案/图标/suggestion；effect 把分页诊断合并到 `setDiagnostics`。消除「预览看着完整、实际被 overflow:hidden 截断」的误导。(2) **ISS-181 H5/H6 标题**——此前 `#####`/`######` 在 DOCX 导出被当普通正文（parser 正则 `#{1,4}` 不匹配）；现 `PresetConfig.titles` 加 `level5`/`level6`，parser 正则放宽到 `#{1,6}` + `headingLevelMap` 加 HEADING_5/6，4 个内置预设补默认值，预览补 `--word-heading-5/6-*` 变量 + h5/h6 CSS + 内联映射，模板/markdown_mapping/白名单树/校验同步。新增真实 DOCX XML 回归验证 `<w:pStyle w:val="Heading5/6"/>` + 预设字号。基线 479 → 484 / 484 vitest 全绿；typecheck / lint / build / cargo check 全绿。ISS-181 剩余实体能力（任意页眉页脚文本、分节/横向、列宽、编号体系）仍需配套 DOCX XML 回归，留后续。
 - **2026-07-24**

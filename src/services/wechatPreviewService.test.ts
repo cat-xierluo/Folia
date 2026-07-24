@@ -880,3 +880,34 @@ describe('wechatPreviewService', () => {
     expect(tauriFsMock.writeTextFile).not.toHaveBeenCalled();
   });
 });
+
+describe('data-hide-last-column 表格列隐藏（v0.7）', () => {
+  it('createWechatInlineArticleHtml 给末列单元格注入 inline display:none，属性保留', () => {
+    const articleHtml = wrapWechatArticleHtml(`
+      <table data-hide-last-column>
+        <thead><tr><th>序号</th><th>材料</th><th>备注</th></tr></thead>
+        <tbody><tr><td>1</td><td>起诉状</td><td>已签字</td></tr></tbody>
+      </table>`);
+
+    const inlineHtml = createWechatInlineArticleHtml(articleHtml);
+    const body = getDocumentBody(inlineHtml);
+
+    // 属性被白名单保留
+    expect(body.querySelector('table')?.hasAttribute('data-hide-last-column')).toBe(true);
+    // 末列单元格 display:none
+    const hiddenHeader = body.querySelector('thead th:last-child') as HTMLElement;
+    const hiddenBody = body.querySelector('tbody td:last-child') as HTMLElement;
+    expect(hiddenHeader.style.display).toBe('none');
+    expect(hiddenBody.style.display).toBe('none');
+    // 非末列不受影响
+    expect((body.querySelector('thead th:first-child') as HTMLElement).style.display).toBe('');
+  });
+
+  it('无 data-hide-last-column 的表格不注入隐藏样式', () => {
+    const articleHtml = wrapWechatArticleHtml(`
+      <table><tr><th>A</th><th>B</th></tr></table>`);
+    const inlineHtml = createWechatInlineArticleHtml(articleHtml);
+    const body = getDocumentBody(inlineHtml);
+    expect((body.querySelector('th') as HTMLElement).style.display).toBe('');
+  });
+});

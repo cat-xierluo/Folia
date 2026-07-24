@@ -20,6 +20,8 @@ const ALLOWED_ATTR = [
   'class', 'id',
   'start', 'type', 'reversed',
   'style',
+  // v0.7：表格列隐藏规则（ROADMAP）。布尔属性，精确放行单一属性。
+  'data-hide-last-column',
 ];
 
 const SAFE_STYLE_VALUES: Record<string, RegExp> = {
@@ -39,8 +41,27 @@ export function createHtmlReadingPreviewHtml(source: string): string {
   const template = document.createElement('template');
   template.innerHTML = sanitized;
   sanitizeInlineStyles(template.content);
+  hideLastColumnTables(template.content);
 
   return template.innerHTML.trim();
+}
+
+/**
+ * v0.7 表格列隐藏规则（ROADMAP）：对带 `data-hide-last-column` 的表格，给每行
+ * 末列单元格注入 inline `display:none`（与 sanitizeInlineStyles 同一模板内处理，
+ * 不引入 `<style>` 标签，避免下游再次 sanitize 时被剥除）。
+ *
+ * 规整表格（无 colspan）精确隐藏每行末列；含 colspan 的复杂表为 best-effort
+ * （合并格占据末列时整体隐藏；若末列被 rowspan 覆盖则该行不隐藏，不影响其它行）。
+ */
+function hideLastColumnTables(root: ParentNode): void {
+  const tables = root.querySelectorAll<HTMLTableElement>('table[data-hide-last-column]');
+  for (const table of tables) {
+    const cells = table.querySelectorAll<HTMLTableCellElement>('tr > th:last-child, tr > td:last-child');
+    for (const cell of cells) {
+      cell.style.setProperty('display', 'none');
+    }
+  }
 }
 
 function extractBodyHtml(source: string): string {

@@ -105,6 +105,55 @@ describe('createHtmlTable', () => {
     const [cell] = getDocxRowCells(row);
     expect(cell.options?.children?.filter((child) => child.rootKey === 'w:p')).toHaveLength(2);
   });
+
+  it('data-hide-last-column：规整表格导出不含最后一列的单元格', () => {
+    const table = createHtmlTable(`
+      <table data-hide-last-column>
+        <thead><tr><th>序号</th><th>材料</th><th>备注</th></tr></thead>
+        <tbody><tr><td>1</td><td>起诉状</td><td>已签字</td></tr></tbody>
+      </table>
+    `, getPreset(DEFAULT_PRESET_ID));
+
+    const rows = getDocxRows(table);
+    // 末列「备注」/「已签字」被跳过，每行只剩 2 个单元格
+    expect(getDocxRowCells(rows[0])).toHaveLength(2);
+    expect(getDocxRowCells(rows[1])).toHaveLength(2);
+  });
+
+  it('data-hide-last-column：colspan 跨越末列时缩减列数', () => {
+    const table = createHtmlTable(`
+      <table data-hide-last-column>
+        <thead>
+          <tr><th>序号</th><th colspan="3">立案材料明细</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>1</td><td>起诉状</td><td>P1</td><td>已签字</td></tr>
+        </tbody>
+      </table>
+    `, getPreset(DEFAULT_PRESET_ID));
+
+    const rows = getDocxRows(table);
+    const headerCells = getDocxRowCells(rows[0]);
+    const bodyCells = getDocxRowCells(rows[1]);
+    // 表头：序号(1) + 缩减后的合并格(原 colspan 3 → 2)
+    expect(headerCells).toHaveLength(2);
+    expect(findDocxAttribute(findDocxNode(headerCells[1], 'w:gridSpan'), 'w:val')).toBe(2);
+    // 正文：序号 + 起诉状 + P1（末列「已签字」被跳过）
+    expect(bodyCells).toHaveLength(3);
+  });
+
+  it('无 data-hide-last-column 的表格不受影响', () => {
+    const table = createHtmlTable(`
+      <table>
+        <tr><th>A</th><th>B</th><th>C</th></tr>
+        <tr><td>1</td><td>2</td><td>3</td></tr>
+      </table>
+    `, getPreset(DEFAULT_PRESET_ID));
+
+    const rows = getDocxRows(table);
+    expect(getDocxRowCells(rows[0])).toHaveLength(3);
+    expect(getDocxRowCells(rows[1])).toHaveLength(3);
+  });
 });
 
 describe('createMarkdownTable', () => {

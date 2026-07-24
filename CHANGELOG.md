@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **表格列隐藏规则**（v0.7，ROADMAP）：在 HTML 表格的 `<table>` 标签上加布尔属性 `data-hide-last-column`（如 `<table data-hide-last-column>`），所有阅读 / 预览 / 导出 surface 隐藏该表格的最后一列。典型场景：证据目录、材料清单表格的最后一列是「内部备注」「状态」等不希望出现在对外预览与导出文档中的辅助列，加上该属性即可在预览和导出时统一隐藏，而源码与主编辑器中仍完整保留。Word / DOCX 导出按表格网格列精确跳过最后一列，正确处理 rowspan / colspan（合并单元格跨越末列时缩减列数）；HTML 预览 / 复制 / 导出与稳定阅读预览给末列单元格注入隐藏样式；主编辑器如实显示完整表格（它是编辑源码的入口）。新增 `fixtures/legal-html-tables/column-hide-demo.md` 样例。
+
 - **Word 导出预设 schema 治理基础**（ISS-181 第一期）：为 JSON 预设引入 `schemaVersion` 版本号（当前 `1`，缺失视为旧预设兼容）与**未知字段诊断**。此前导入器对未知字段完全静默放行——用户写了拼写错误或预留字段（如 `sections`、`headers`）会导入成功但完全不生效，造成「导入成功即已支持」的误解。现在导入器维护一份 `PresetConfig` 字段白名单树作为唯一真源，递归检测用户 JSON 的未知字段，收集为 `warning` 诊断（不阻断导入，字段被忽略）；设置页导入后显示「已导入，但有 N 个字段不被识别：…」琥珀色提示。`html_mapping.selectors` 的自由 CSS 选择器键与 `styles` 注册表的自定义样式名被正确豁免。模板自带 `schemaVersion: 1`。声明高于当前版本时给出诊断。新增 `docs/word-preset-capabilities.md` 能力矩阵文档，列出每个字段在 DOCX 导出 / Word 纸张预览两条管线的支持程度（✅准确 / ⚠️近似 / ❌不支持），作为 ISS-181/182 治理与未来字段扩展的真源。实体能力扩展（H5/H6、任意页眉页脚文本、分节/横向页面、固定列宽等）留待第二/三期。
 - **Word 导出支持 H5/H6 标题**（ISS-181 第二期）：此前 Markdown 的 `##### 五级标题` 和 `###### 六级标题` 在导出 Word 时被当作普通正文（parser 正则只到 `#{1,4}`，五六个 `#` 不匹配，整行连同井号原样输出），没有标题层级、无法被 Word 导航窗格识别；而预览侧却能正常渲染成 `<h5>`/`<h6>`，造成预览/导出分裂。现在 `PresetConfig.titles` 新增 `level5`/`level6`，parser 正则放宽到 `#{1,6}` 并映射到 docx 的 `HEADING_5`/`HEADING_6`，4 个内置预设均提供合理默认值（如 report 按 16→15→14pt 递减，legal/academic 沿用正文字号），预览侧补 `--word-heading-5/6-*` 变量与 h5/h6 样式规则，模板与 `markdown_mapping` 增加 `heading5`/`heading6` 示范。新增真实 DOCX XML 回归验证 `<w:pStyle w:val="Heading5/6"/>` 与预设字号。
 

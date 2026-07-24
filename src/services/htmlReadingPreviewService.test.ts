@@ -34,4 +34,30 @@ describe('htmlReadingPreviewService', () => {
     expect(previewHtml).not.toContain('onclick');
     expect(previewHtml).not.toContain('position');
   });
+
+  it('data-hide-last-column：末列单元格注入 inline display:none，属性本身保留', () => {
+    const html = `
+      <table data-hide-last-column>
+        <thead><tr><th>序号</th><th>材料</th><th>备注</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>起诉状</td><td>已签字</td></tr>
+        </tbody>
+      </table>`;
+
+    const previewHtml = createHtmlReadingPreviewHtml(html);
+
+    // 属性本身被白名单保留（否则选择器与下游无从判断）
+    expect(previewHtml).toContain('data-hide-last-column');
+    // 末列「备注」「已签字」隐藏，非末列不受影响
+    expect(previewHtml).toContain('<th style="display: none;">备注</th>');
+    expect(previewHtml).toContain('<td style="display: none;">已签字</td>');
+    expect(previewHtml).not.toContain('style="display: none;">序号');
+    expect(previewHtml).not.toContain('style="display: none;">材料');
+  });
+
+  it('无 data-hide-last-column 的表格不注入隐藏样式', () => {
+    const html = `<table><tr><th>A</th><th>B</th></tr></table>`;
+    const previewHtml = createHtmlReadingPreviewHtml(html);
+    expect(previewHtml).not.toContain('display: none');
+  });
 });
