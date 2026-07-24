@@ -73,7 +73,15 @@ export function createWordPreviewStyle(config: PresetConfig): WordPreviewStyle {
     '--word-paragraph-align': alignToCss(config.paragraph.align),
     '--word-paragraph-indent': `${config.paragraph.first_line_indent}em`,
     '--word-image-max-width': `min(${Math.round(config.image.display_ratio * 100)}%, ${config.image.max_width_cm}cm)`,
+    // ISS-182: 页码预览变量。此前只写了 align，但没有任何节点消费它，纸张上看不到页码，
+    // 而导出的 DOCX 是有页码的——典型的预览误导。补全 font/size/color/position/enabled，
+    // 让 WordPaperPreviewPane 的 makePage 能渲染页脚/页眉页码节点（模拟，真实以 DOCX 为准）。
     '--word-page-number-align': config.page_number.align ?? 'center',
+    '--word-page-number-font': `"${config.page_number.font}", serif`,
+    '--word-page-number-size': `${config.page_number.size}pt`,
+    '--word-page-number-color': optionalColor(config.fonts.default.color),
+    '--word-page-number-position': config.page_number.position,
+    '--word-page-number-enabled': config.page_number.enabled ? '1' : '0',
     '--word-table-header-font-family': fontStack(config.table.header_font.name, config.table.header_font.ascii, 'sans-serif'),
     '--word-table-body-font-family': fontStack(config.table.body_font.name, config.table.body_font.ascii, 'serif'),
     '--word-table-line-height': `${config.table.line_spacing}`,
@@ -84,7 +92,9 @@ export function createWordPreviewStyle(config: PresetConfig): WordPreviewStyle {
     '--word-table-header-color': optionalColor(config.table.header_font.color),
     '--word-table-body-color': optionalColor(config.table.body_font.color),
     '--word-table-border-color': optionalColor(config.table.border_color),
-    '--word-table-border-width': config.table.border_enabled ? '1px' : '0px',
+    // ISS-182: 此前写死 1px，忽略预设的 table.border_width。DOCX 导出侧
+    // (table-handler.ts) 已用 size: config.table.border_width，预览应对齐。
+    '--word-table-border-width': config.table.border_enabled ? `${config.table.border_width}px` : '0px',
     '--word-table-align': config.table.alignment ?? 'center',
     '--word-table-margin-left': margins.left,
     '--word-table-margin-right': margins.right,
@@ -120,6 +130,9 @@ export function createWordPreviewStyle(config: PresetConfig): WordPreviewStyle {
     '--word-heading-1-space-before': `${config.titles.level1.space_before}pt`,
     '--word-heading-1-space-after': `${config.titles.level1.space_after}pt`,
     '--word-heading-1-color': optionalColor(config.titles.level1.color),
+    // ISS-182: 粗体由预设 bold 字段驱动，不再硬编码 700（report 预设 level1/level3
+    // 的 bold:false 才能生效）。DOCX 侧 formatter.ts 已按 bold 判断。
+    '--word-heading-1-weight': config.titles.level1.bold ? '700' : '400',
     '--word-heading-1-indent': `${config.titles.level1.indent ?? 0}em`,
     '--word-heading-1-line-height': `${config.titles.level1.line_spacing ?? config.paragraph.line_spacing}`,
     '--word-heading-2-size': `${config.titles.level2.size}pt`,
@@ -128,6 +141,7 @@ export function createWordPreviewStyle(config: PresetConfig): WordPreviewStyle {
     '--word-heading-2-space-before': `${config.titles.level2.space_before}pt`,
     '--word-heading-2-space-after': `${config.titles.level2.space_after}pt`,
     '--word-heading-2-color': optionalColor(config.titles.level2.color),
+    '--word-heading-2-weight': config.titles.level2.bold ? '700' : '400',
     '--word-heading-2-indent': `${config.titles.level2.indent ?? 0}em`,
     '--word-heading-2-line-height': `${config.titles.level2.line_spacing ?? config.paragraph.line_spacing}`,
     '--word-heading-3-size': `${config.titles.level3.size}pt`,
@@ -136,6 +150,7 @@ export function createWordPreviewStyle(config: PresetConfig): WordPreviewStyle {
     '--word-heading-3-space-before': `${config.titles.level3.space_before}pt`,
     '--word-heading-3-space-after': `${config.titles.level3.space_after}pt`,
     '--word-heading-3-color': optionalColor(config.titles.level3.color),
+    '--word-heading-3-weight': config.titles.level3.bold ? '700' : '400',
     '--word-heading-3-indent': `${config.titles.level3.indent ?? 0}em`,
     '--word-heading-3-line-height': `${config.titles.level3.line_spacing ?? config.paragraph.line_spacing}`,
     '--word-heading-4-size': `${config.titles.level4.size}pt`,
@@ -144,6 +159,7 @@ export function createWordPreviewStyle(config: PresetConfig): WordPreviewStyle {
     '--word-heading-4-space-before': `${config.titles.level4.space_before}pt`,
     '--word-heading-4-space-after': `${config.titles.level4.space_after}pt`,
     '--word-heading-4-color': optionalColor(config.titles.level4.color),
+    '--word-heading-4-weight': config.titles.level4.bold ? '700' : '400',
     '--word-heading-4-indent': `${config.titles.level4.indent ?? 0}em`,
     '--word-heading-4-line-height': `${config.titles.level4.line_spacing ?? config.paragraph.line_spacing}`,
   };

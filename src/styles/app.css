@@ -1725,6 +1725,7 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 }
 
 .word-paper {
+  position: relative;
   width: var(--word-page-width);
   height: var(--word-page-height);
   margin: 0;
@@ -1739,6 +1740,28 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   flex-shrink: 0;
   overflow: hidden;
   box-sizing: border-box;
+}
+
+/* ISS-182: 纸张页边距区域的页码节点（模拟 Word 页脚/页眉）。
+   contentHeightPx 已为它预留高度，避免与正文重叠。绝对定位在 padding 区域内，
+   left/right 受左右页边距约束。页脚贴底边距，页眉贴顶边距。 */
+.word-paper-page-number {
+  position: absolute;
+  left: var(--word-margin-left);
+  right: var(--word-margin-right);
+  font-family: var(--word-page-number-font);
+  font-size: var(--word-page-number-size);
+  color: var(--word-page-number-color);
+  line-height: 1.2;
+  text-align: var(--word-page-number-align);
+  pointer-events: none;
+  user-select: none;
+}
+.word-paper-footer.word-paper-page-number {
+  bottom: calc(var(--word-margin-bottom) - var(--word-page-number-size) - 2px);
+}
+.word-paper-header.word-paper-page-number {
+  top: calc(var(--word-margin-top) - var(--word-page-number-size) - 2px);
 }
 
 .word-paper-content {
@@ -1761,7 +1784,8 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 .word-paper-content h2,
 .word-paper-content h3,
 .word-paper-content h4 {
-  font-weight: 700;
+  /* ISS-182: font-weight 不再共用硬编码 700，下放到各级规则用预设变量，
+     让 report 等预设的 bold:false 生效（见各级 --word-heading-N-weight）。 */
   line-height: var(--word-line-height);
 }
 
@@ -1770,6 +1794,7 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   color: var(--word-heading-1-color);
   font-family: var(--word-heading-1-font-family);
   font-size: var(--word-heading-1-size);
+  font-weight: var(--word-heading-1-weight);
   line-height: var(--word-heading-1-line-height);
   text-align: var(--word-heading-1-align);
   text-indent: var(--word-heading-1-indent);
@@ -1780,6 +1805,7 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   color: var(--word-heading-2-color);
   font-family: var(--word-heading-2-font-family);
   font-size: var(--word-heading-2-size);
+  font-weight: var(--word-heading-2-weight);
   line-height: var(--word-heading-2-line-height);
   text-align: var(--word-heading-2-align);
   text-indent: var(--word-heading-2-indent);
@@ -1790,6 +1816,7 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   color: var(--word-heading-3-color);
   font-family: var(--word-heading-3-font-family);
   font-size: var(--word-heading-3-size);
+  font-weight: var(--word-heading-3-weight);
   line-height: var(--word-heading-3-line-height);
   text-align: var(--word-heading-3-align);
   text-indent: var(--word-heading-3-indent);
@@ -1800,6 +1827,7 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   color: var(--word-heading-4-color);
   font-family: var(--word-heading-4-font-family);
   font-size: var(--word-heading-4-size);
+  font-weight: var(--word-heading-4-weight);
   line-height: var(--word-heading-4-line-height);
   text-align: var(--word-heading-4-align);
   text-indent: var(--word-heading-4-indent);
@@ -1918,6 +1946,11 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   font-family: var(--word-table-body-font-family);
   color: var(--word-table-body-color);
   text-align: left;
+  /* ISS-182: Vditor 的 .vditor-reset table{display:block}（node_modules/vditor/dist/index.css）
+     会把表格变成 block 流，撑大视觉宽度并破坏 table-layout:fixed 的列宽计算。
+     Vditor CSS 运行时动态注入且与这里同特异性，需 !important 压过（与 preview.css
+     的表格 !important 模式一致）。 */
+  display: table !important;
 }
 
 .word-paper-content tr,

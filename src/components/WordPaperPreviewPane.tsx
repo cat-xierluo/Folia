@@ -37,7 +37,35 @@ function useDebouncedValue(value: string, delay: number): string {
   return debounced;
 }
 
-function makePage(container: HTMLDivElement, pageNumber: number): HTMLDivElement {
+/**
+ * 把预设的 page_number.format 渲染为预览页脚/页眉的可见文本。
+ *
+ * ISS-182：预览是 HTML 模拟（DEC-123），无法像 DOCX 那样由 Word 自动填总页数。
+ * 因此 `x`（总页数）和 `1/x` 中的总页数用占位 `—` 表示当前页码，真实页码以导出的
+ * DOCX 为准。`1` 直接显示当前页码。这是有意的模拟简化，避免两遍分页的复杂度。
+ */
+// eslint-disable-next-line react-refresh/only-export-components
+export function formatPageNumberText(
+  format: '1' | 'x' | '1/x',
+  pageNumber: number,
+): string {
+  if (format === 'x') return '—';
+  if (format === '1/x') return `${pageNumber} / —`;
+  return String(pageNumber);
+}
+
+interface MakePageOptions {
+  /** 启用页码时的可见文本；不传或空字符串则不渲染页码节点。 */
+  pageNumberText?: string;
+  /** 页码挂载位置，决定页脚还是页眉。 */
+  pageNumberPosition?: 'footer' | 'header';
+}
+
+function makePage(
+  container: HTMLDivElement,
+  pageNumber: number,
+  options?: MakePageOptions,
+): HTMLDivElement {
   const shell = document.createElement('section');
   shell.className = 'word-page-shell';
   shell.setAttribute('aria-label', `第 ${pageNumber} 页`);
@@ -59,6 +87,19 @@ function makePage(container: HTMLDivElement, pageNumber: number): HTMLDivElement
   content.className = 'vditor-reset word-paper-content';
 
   paper.append(content);
+
+  // ISS-182: 在纸张的页边距区域叠加页码节点（与 word-paper-content 平级，
+  // 绝对定位在 padding 区域）。不占用 contentHeightPx 已为它预留的高度。
+  const pageText = options?.pageNumberText;
+  if (pageText) {
+    const pageNumberNode = document.createElement('div');
+    pageNumberNode.className = options.pageNumberPosition === 'header'
+      ? 'word-paper-header word-paper-page-number'
+      : 'word-paper-footer word-paper-page-number';
+    pageNumberNode.textContent = pageText;
+    paper.append(pageNumberNode);
+  }
+
   frame.append(paper);
   viewport.append(frame);
   shell.append(label, viewport);
@@ -104,7 +145,9 @@ function applyTextStyle(element: HTMLElement, preset: PresetConfig, styleName?: 
     style.font ? `font-family: "${style.font}", "${style.ascii ?? preset.fonts.default.ascii}", serif` : undefined,
     style.size ? `font-size: ${style.size}pt` : undefined,
     style.color ? `color: ${cssColor(style.color)}` : undefined,
-    style.bold ? 'font-weight: 700' : undefined,
+    // ISS-182: 显式区分 bold 的真假。bold:true → 700，bold:false → 400。
+    // 此前只在 bold:true 写 700，bold:false 无法覆盖 CSS 变量轨的默认 700。
+    style.bold === false ? 'font-weight: 400' : style.bold ? 'font-weight: 700' : undefined,
     style.italic ? 'font-style: italic' : undefined,
     style.underline ? 'text-decoration: underline' : undefined,
     style.strikethrough ? 'text-decoration: line-through' : undefined,
@@ -306,20 +349,34 @@ export function paginateRenderedContent(
   measureContent: HTMLDivElement,
   pagesContainer: HTMLDivElement,
   contentHeight: number,
+  /**
+   * 可选：给定页码返回该页应显示的页码文本；返回 undefined/空则该页不渲染页码节点。
+   * ISS-182：由调用方基于 preset.page_number 构造，分页纯函数本身不依赖 PresetConfig。
+   */
+  pageNumberBuilder?: (pageNumber: number) => string | undefined,
+  /** 可选：页码挂载位置（页脚/页眉），对所有页相同。仅当 builder 生效时有意义。 */
+  pageNumberPosition?: 'footer' | 'header',
 ): void {
   pagesContainer.replaceChildren();
 
+  const pageOptionsFor = (n: number): MakePageOptions | undefined => {
+    if (!pageNumberBuilder) return undefined;
+    const text = pageNumberBuilder(n);
+    if (!text) return undefined;
+    return { pageNumberText: text, pageNumberPosition };
+  };
+
   if (measureContent.children.length === 0) {
-    makePage(pagesContainer, 1);
+    makePage(pagesContainer, 1, pageOptionsFor(1));
     return;
   }
 
   let pageNumber = 1;
-  let currentPage = makePage(pagesContainer, pageNumber);
+  let currentPage = makePage(pagesContainer, pageNumber, pageOptionsFor(pageNumber));
 
   const moveToNextPage = () => {
     pageNumber += 1;
-    currentPage = makePage(pagesContainer, pageNumber);
+    currentPage = makePage(pagesContainer, pageNumber, pageOptionsFor(pageNumber));
   };
 
   const appendTopLevelNode = (child: Element) => {
@@ -453,10 +510,16 @@ export function WordPaperPreviewPane({
     [activePresetId, presets, settings.exportPresetId],
   );
   const contentHeightPx = useMemo(
-    () => Math.max(
-      120,
-      (preset.page.height - preset.page.margin_top - preset.page.margin_bottom) * CSS_PX_PER_CM,
-    ),
+    () => {
+      // ISS-182: 启用页码时，为页脚/页眉节点预留高度，避免正文与页码重叠。
+      // 预留 = 页码字号（pt→px）+ 少量上下间距。不启用时不预留，保持原行为。
+      const base = (preset.page.height - preset.page.margin_top - preset.page.margin_bottom) * CSS_PX_PER_CM;
+      if (!preset.page_number.enabled) {
+        return Math.max(120, base);
+      }
+      const pageNumberReserved = preset.page_number.size * (96 / 72) + 6;
+      return Math.max(120, base - pageNumberReserved);
+    },
     [preset],
   );
   const style = useMemo(() => {
@@ -494,17 +557,23 @@ export function WordPaperPreviewPane({
     const pagesEl = pagesRef.current;
     if (!measureEl || !pagesEl) return;
 
+    // ISS-182: 页码 builder。启用时按 format 渲染当前页码文本，否则返回 undefined。
+    const pageNumberConfig = preset.page_number;
+    const buildPageNumberText = pageNumberConfig.enabled
+      ? (n: number) => formatPageNumberText(pageNumberConfig.format, n)
+      : undefined;
+
     if (deferredSource.trim() === '') {
       measureEl.replaceChildren();
       pagesEl.replaceChildren();
-      makePage(pagesEl, 1);
+      makePage(pagesEl, 1, buildPageNumberText ? { pageNumberText: buildPageNumberText(1), pageNumberPosition: pageNumberConfig.position } : undefined);
       return;
     }
 
     let cancelled = false;
     measureEl.replaceChildren();
     pagesEl.replaceChildren();
-    makePage(pagesEl, 1);
+    makePage(pagesEl, 1, buildPageNumberText ? { pageNumberText: buildPageNumberText(1), pageNumberPosition: pageNumberConfig.position } : undefined);
 
     void createWordPreviewArtifact(deferredSource).then((artifact) => {
       if (cancelled || !measureRef.current || !pagesRef.current) return;
@@ -522,13 +591,19 @@ export function WordPaperPreviewPane({
       window.requestAnimationFrame(() => {
         window.requestAnimationFrame(() => {
           if (cancelled || !measureRef.current || !pagesRef.current) return;
-          paginateRenderedContent(measureRef.current, pagesRef.current, contentHeightPx);
+          paginateRenderedContent(
+            measureRef.current,
+            pagesRef.current,
+            contentHeightPx,
+            buildPageNumberText,
+            pageNumberConfig.position,
+          );
         });
       });
     }).catch(() => {
       if (cancelled || !pagesRef.current) return;
       pagesRef.current.replaceChildren();
-      makePage(pagesRef.current, 1);
+      makePage(pagesRef.current, 1, buildPageNumberText ? { pageNumberText: buildPageNumberText(1), pageNumberPosition: pageNumberConfig.position } : undefined);
       setDiagnostics([]);
     });
 

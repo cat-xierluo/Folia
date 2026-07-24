@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getPreset } from '../services/word/config';
 import { createWordPreviewArtifact } from '../services/wordPreviewArtifactService';
-import { applyWordPreviewPresetPostprocess, paginateRenderedContent, WordPaperPreviewPane } from './WordPaperPreviewPane';
+import { applyWordPreviewPresetPostprocess, formatPageNumberText, paginateRenderedContent, WordPaperPreviewPane } from './WordPaperPreviewPane';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -289,5 +289,82 @@ describe('WordPaperPreviewPane', () => {
     });
 
     expect(createWordPreviewArtifact).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('ISS-182 formatPageNumberText', () => {
+  it('format "1" 直接显示当前页码', () => {
+    expect(formatPageNumberText('1', 3)).toBe('3');
+  });
+
+  it('format "x" 用占位符表示总页数（模拟，真实以 DOCX 为准）', () => {
+    expect(formatPageNumberText('x', 3)).toBe('—');
+  });
+
+  it('format "1/x" 显示 当前页码 / 占位', () => {
+    expect(formatPageNumberText('1/x', 3)).toBe('3 / —');
+  });
+});
+
+describe('ISS-182 paginateRenderedContent 页码渲染', () => {
+  beforeEach(() => {
+    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function getScrollHeight() {
+      return measuredHeight(this);
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('传入 pageNumberBuilder 时每页渲染页码文本节点', () => {
+    const measureContent = createMeasureContent(`
+      <p data-height="60">段落 1</p>
+      <p data-height="60">段落 2</p>
+      <p data-height="60">段落 3</p>
+    `);
+    const pagesContainer = document.createElement('div');
+
+    paginateRenderedContent(
+      measureContent,
+      pagesContainer,
+      70,
+      (n) => formatPageNumberText('1', n),
+      'footer',
+    );
+
+    const pageNumberNodes = pagesContainer.querySelectorAll('.word-paper-page-number');
+    expect(pageNumberNodes.length).toBeGreaterThan(0);
+    // 每个页码节点都应是 footer 位置且含页码文本
+    pageNumberNodes.forEach((node, index) => {
+      expect(node.classList.contains('word-paper-footer')).toBe(true);
+      expect(node.textContent).toBe(String(index + 1));
+    });
+  });
+
+  it('不传 pageNumberBuilder 时不渲染页码节点（向后兼容）', () => {
+    const measureContent = createMeasureContent('<p data-height="20">段落</p>');
+    const pagesContainer = document.createElement('div');
+
+    paginateRenderedContent(measureContent, pagesContainer, 70);
+
+    expect(pagesContainer.querySelectorAll('.word-paper-page-number').length).toBe(0);
+  });
+
+  it('pageNumberPosition 为 header 时渲染页眉节点', () => {
+    const measureContent = createMeasureContent('<p data-height="20">段落</p>');
+    const pagesContainer = document.createElement('div');
+
+    paginateRenderedContent(
+      measureContent,
+      pagesContainer,
+      70,
+      () => formatPageNumberText('1', 1),
+      'header',
+    );
+
+    const headerNode = pagesContainer.querySelector('.word-paper-page-number');
+    expect(headerNode?.classList.contains('word-paper-header')).toBe(true);
+    expect(headerNode?.textContent).toBe('1');
   });
 });

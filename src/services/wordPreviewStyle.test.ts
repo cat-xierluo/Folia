@@ -107,4 +107,68 @@ describe('createWordPreviewStyle', () => {
     expect(style['--word-table-row-odd-bg']).toBe('#F5F0ED');
     expect(style['--word-table-row-even-bg']).toBe('#FFFFFF');
   });
+
+  it('ISS-182: 表格边框宽度按 border_width 映射，不再写死 1px', () => {
+    const base = getPreset('legal');
+    const preset: PresetConfig = {
+      ...base,
+      table: { ...base.table, border_enabled: true, border_width: 2 },
+    };
+
+    const style = createWordPreviewStyle(preset);
+
+    expect(style['--word-table-border-width']).toBe('2px');
+  });
+
+  it('ISS-182: 标题粗体由预设 bold 字段驱动（bold:false → 400）', () => {
+    const base = getPreset('legal');
+    // legal 默认各级 bold 为 true，先确认默认是 700
+    const defaultStyle = createWordPreviewStyle(base);
+    expect(defaultStyle['--word-heading-1-weight']).toBe('700');
+    expect(defaultStyle['--word-heading-2-weight']).toBe('700');
+
+    // report 预设的 level1/level3 是 bold:false（方正小标宋一级、楷体三级）
+    const reportStyle = createWordPreviewStyle(getPreset('report'));
+    expect(reportStyle['--word-heading-1-weight']).toBe('400');
+    expect(reportStyle['--word-heading-3-weight']).toBe('400');
+    // level2/level4 仍为粗体
+    expect(reportStyle['--word-heading-2-weight']).toBe('700');
+    expect(reportStyle['--word-heading-4-weight']).toBe('700');
+  });
+
+  it('ISS-182: 页码预览变量按 page_number 配置映射', () => {
+    const base = getPreset('legal');
+    const preset: PresetConfig = {
+      ...base,
+      page_number: {
+        ...base.page_number,
+        enabled: true,
+        format: '1/x',
+        position: 'footer',
+        align: 'center',
+        font: '仿宋_GB2312',
+        size: 9,
+      },
+    };
+
+    const style = createWordPreviewStyle(preset);
+
+    expect(style['--word-page-number-enabled']).toBe('1');
+    expect(style['--word-page-number-position']).toBe('footer');
+    expect(style['--word-page-number-align']).toBe('center');
+    expect(style['--word-page-number-font']).toBe('"仿宋_GB2312", serif');
+    expect(style['--word-page-number-size']).toBe('9pt');
+  });
+
+  it('ISS-182: page_number.enabled:false 时 enabled 变量为 0', () => {
+    const base = getPreset('legal');
+    const preset: PresetConfig = {
+      ...base,
+      page_number: { ...base.page_number, enabled: false },
+    };
+
+    const style = createWordPreviewStyle(preset);
+
+    expect(style['--word-page-number-enabled']).toBe('0');
+  });
 });
