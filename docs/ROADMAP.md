@@ -137,7 +137,7 @@
 - [x] Settings 页面添加"导出"部分（预设选择器）
 - [x] Settings / Word 导出支持导入自定义 JSON 预设、复制模板和删除自定义预设
 - [x] Settings / Word 导出支持预设启用/停用、内置预设隐藏、示例 JSON 和可放大的单页纸样式预览
-- [ ] 扩展 Word JSON 预设能力并增加 `schemaVersion`、JSON Schema、未知字段诊断和真实 DOCX XML 回归（ISS-181）
+- [~] 扩展 Word JSON 预设能力（ISS-181，第一期完成）：已加 `schemaVersion` 版本号、未知字段诊断（警告但放行 + UI 提示）、`docs/word-preset-capabilities.md` 能力矩阵文档；实体能力扩展（H5/H6、任意页眉页脚文本、分节/横向页面、固定列宽等）与配套 DOCX XML 回归留第二/三期
 - [~] 按 DEC-123 保留"快速 HTML 模拟 + 权威 DOCX 导出"双管线，修正可模拟字段的映射错误（ISS-182）：已修正表格边框宽度（按 `border_width` 映射）、H1-H4 粗体（按预设 `bold` 驱动）、Vditor `display:block` 撑大表格、页码节点缺失（按 `page_number` 渲染页脚/页眉）；预览误差 / 能力矩阵的完整文档化与超长段落分页仍待后续
 
 ### v0.7 法律增强
@@ -177,6 +177,7 @@
 ## 进度日志
 
 - **2026-07-24**
+  - ISS-181 Word JSON 预设 schema 治理基础（第一期完成，不动 DOCX 导出）：(1) `ImportablePresetJson` 新增 `schemaVersion`（当前 `1`，缺失兼容，高版本给诊断），`CURRENT_PRESET_SCHEMA_VERSION` 常量，模板自带版本号；(2) 未知字段诊断——新增 `PRESET_CONFIG_SPEC` 字段白名单树（递归描述 PresetConfig 每层合法键，与能力矩阵同源）+ `findUnknownFields` 递归检测 + `PresetImportDiagnostic` 类型（warning，不阻断导入）；`html_mapping.selectors` 自由 CSS 键与 `styles` 注册表自定义名被正确豁免，但样式对象内部未知字段仍检测；(3) `ImportedPreset.diagnostics` 返回值，`ExportSection` 导入后显示琥珀色「N 个字段不被识别」提示；(4) 新增 `docs/word-preset-capabilities.md` 能力矩阵（字段×DOCX/预览 支持 ✅/⚠️/❌）。基线 471 → 479 / 479 vitest 全绿；typecheck / lint / build / cargo check 全绿。实体能力扩展（H5/H6、页眉页脚文本、分节/横向、列宽）留第二/三期（需配套 DOCX XML 回归）。
   - ISS-182 Word 纸张预览配置映射修正（部分完成，DEC-123 双管线，不动 DOCX 导出）：(1) 表格边框宽度从写死 1px 改为按 `table.border_width` 映射；(2) H1-H4 标题粗体从无条件 700 改为由预设 `bold` 字段驱动（`--word-heading-N-weight` 变量 + CSS + 内联轨三分支），`report` 预设方正小标宋一级 / 楷体三级标题不再误显粗体；(3) `.word-paper-content table` 加 `display:table !important` 压过 Vditor `display:block`；(4) 页码节点渲染——补全 `--word-page-number-*` 变量，`makePage` 在纸张页边距区域渲染页脚/页眉页码节点（按 `position`/`format`/`align`），`contentHeightPx` 预留页码高度，`paginateRenderedContent` 新增可选 `pageNumberBuilder`+`pageNumberPosition`（向后兼容），新增 `formatPageNumberText` 纯函数。总页数用占位符 `—`（模拟限制，真实以 DOCX 为准）。基线 461 → 471 / 471 vitest 全绿；typecheck / lint / build / cargo check 全绿。超长段落/超高行组截断告警与能力矩阵文档化留后续。真实桌面视觉验证依赖 release.yml + 本地 dev。
 - **2026-07-23**
   - 修复两个独立 UI / 性能缺陷，main 直接提交（L1/L2 策略）。(1) **ISS-183 最近文件首页溢出**：`.recent-page` 同时用 `overflow:auto` + `align-items:center` 导致内容高于视口时标题被顶到负坐标、滚不回；改为溢出顶部对齐（`margin-block:auto` 在空间富余时居中）、长路径单行省略、`RecentFilesPage` 默认展示前 6 条 + 「显示全部 N 条」按钮（三语 i18n `recentShowAllLabel`）。新增 4 个单测 + 2 个真实布局 E2E（20 条长路径默认 / 800×600 窄视口断言标题 boundingBox.y >= 0）。(2) **ISS-180 设置页首开白屏**：默认「通用」section 从 `React.lazy` 改静态导入、移出内层 `<Suspense>`，消除实测 ~303ms 的第二层 chunk 调度；骨架 `color-mix(var(--muted) 14%)` → 22% 提升对比度；修复 E2E locator `{heading}` → `{name:heading}`（无效字段退化匹配掩盖 section 未渲染）+ 冷开预算 2500ms → 1000ms。基线 455 → 461 / 461 vitest 全绿；ISS-183 / ISS-180 相关 E2E 全绿；typecheck / lint / build / cargo check 全绿。真实 macOS WKWebView / Windows WebView2 时间测量仍依赖 release.yml + 本地 dev。

@@ -2,6 +2,11 @@ import { DEFAULT_PRESET_ID, deepMerge, getPreset, isBuiltInPresetId } from './co
 import type { BuiltInPresetId, CustomPresetId, PresetConfig } from './types';
 
 export interface ImportablePresetJson {
+  /**
+   * 预设 schema 版本号（ISS-181）。当前为 1。缺失时视为旧预设（兼容，按 v1 处理）。
+   * 未来破坏性 schema 变更会递增；导入器据此决定是否需要迁移或拒绝。
+   */
+  schemaVersion?: number;
   id?: string;
   name: string;
   description?: string;
@@ -9,9 +14,21 @@ export interface ImportablePresetJson {
   config: Partial<PresetConfig>;
 }
 
+/** 当前预设 schema 版本号。 */
+export const CURRENT_PRESET_SCHEMA_VERSION = 1;
+
+/** 单条导入诊断（ISS-181）。未知字段当前为 warning，不阻断导入。 */
+export interface PresetImportDiagnostic {
+  path: string;
+  message: string;
+  severity: 'warning';
+}
+
 export interface ImportedPreset {
   id: CustomPresetId;
   config: PresetConfig;
+  /** 导入过程中收集的诊断（如未知字段警告）。空数组或 undefined 表示无诊断。 */
+  diagnostics?: PresetImportDiagnostic[];
 }
 
 export class PresetImportError extends Error {
@@ -22,6 +39,7 @@ export class PresetImportError extends Error {
 }
 
 const TEMPLATE: ImportablePresetJson = {
+  schemaVersion: CURRENT_PRESET_SCHEMA_VERSION,
   id: 'my-legal-preset',
   name: '我的法律文书',
   description: '从 Folia JSON 模板导入的自定义 Word 导出预设',
@@ -290,6 +308,175 @@ const MARKDOWN_MAPPING_KEYS = new Set([
   'list',
 ]);
 const HTML_MAPPING_TAGS = new Set(['table']);
+
+// ---------------------------------------------------------------------------
+// ISS-181：PresetConfig 字段白名单树——未知字段检测的唯一真源。
+// 描述 config 根节点下每个键的合法结构。叶子节点用 Set<string> 表示该层允许的键
+// （值本身不再展开，如 string/number/boolean）；对象节点用 FieldSpec 嵌套描述；
+// 'free-keys' 表示键是自由的（如 styles 注册表的自定义样式名、html_mapping.selectors
+// 的任意 CSS 选择器），但其【值对象】的内部结构仍由对应 spec 校验。
+// 这份树同时是 docs/word-preset-capabilities.md 能力矩阵的知识源（同源维护）。
+// ---------------------------------------------------------------------------
+
+/** 字体配置的合法键（FontConfig）。 */
+const FONT_KEYS = new Set(['name', 'ascii', 'size', 'color']);
+/** 标题配置的合法键（HeadingConfig）。 */
+const HEADING_KEYS = new Set(['size', 'bold', 'align', 'space_before', 'space_after', 'indent', 'color', 'line_spacing', 'font', 'ascii']);
+/** 单元格四边距的合法键（TableCellMarginsConfig）。 */
+const CELL_MARGINS_KEYS = new Set(['top', 'bottom', 'left', 'right']);
+/** 可复用文字样式的合法键（PresetTextStyleConfig）。 */
+const REUSABLE_TEXT_KEYS = new Set([
+  'font', 'ascii', 'size', 'color', 'bold', 'italic', 'underline', 'strikethrough',
+  'background_color', 'align', 'line_spacing', 'first_line_indent', 'left_indent',
+  'space_before', 'space_after',
+]);
+/** 可复用表格样式的合法键（PresetTableStyleConfig）。 */
+const REUSABLE_TABLE_KEYS = new Set([
+  'border_enabled', 'border_color', 'border_width', 'line_spacing', 'row_height',
+  'cell_margin', 'cell_margins', 'alignment', 'vertical_align',
+  'header_font', 'body_font', 'header_background_color',
+  'row_odd_background_color', 'row_even_background_color',
+]);
+
+/** 列表子配置的合法键。 */
+const BULLET_KEYS = new Set(['marker', 'indent']);
+const NUMBERED_KEYS = new Set(['indent', 'preserve_format']);
+const TASK_KEYS = new Set(['checked', 'unchecked']);
+
+/**
+ * 字段结构规格。值含义：
+ * - `Set<string>`：当前对象层的合法键，键对应的值是叶子（不再展开）。
+ * - `{ nested }`：当前对象层的每个键都映射到一个子 FieldSpec（键名固定，如 level1）。
+ * - `{ freeKeys }`：当前对象层的键名自由（如注册表），每个值对象按 `freeValueSpec` 校验。
+ * - `'leaf'`：当前值是叶子（不展开），用于嵌套 spec 的终止。
+ */
+type FieldSpec =
+  | Set<string>
+  | { nested: Record<string, FieldSpec> }
+  | { freeKeys: true; freeValueSpec: FieldSpec }
+  | 'leaf';
+
+/** PresetConfig 根节点的字段规格树。 */
+const PRESET_CONFIG_SPEC: FieldSpec = {
+  nested: {
+    name: 'leaf',
+    description: 'leaf',
+    page: new Set(['width', 'height', 'margin_top', 'margin_bottom', 'margin_left', 'margin_right']),
+    fonts: { nested: { default: FONT_KEYS } },
+    titles: { nested: { level1: HEADING_KEYS, level2: HEADING_KEYS, level3: HEADING_KEYS, level4: HEADING_KEYS } },
+    paragraph: new Set(['line_spacing', 'first_line_indent', 'align']),
+    page_number: new Set(['enabled', 'format', 'font', 'size', 'position', 'align']),
+    quotes: new Set(['convert_to_chinese']),
+    table: {
+      nested: {
+        border_enabled: 'leaf',
+        border_color: 'leaf',
+        border_width: 'leaf',
+        line_spacing: 'leaf',
+        row_height: 'leaf',
+        cell_margin: 'leaf',
+        cell_margins: CELL_MARGINS_KEYS,
+        alignment: 'leaf',
+        vertical_align: 'leaf',
+        header_font: FONT_KEYS,
+        body_font: FONT_KEYS,
+        header_background_color: 'leaf',
+        row_odd_background_color: 'leaf',
+        row_even_background_color: 'leaf',
+      },
+    },
+    code_block: { nested: { label_font: FONT_KEYS, content_font: FONT_KEYS, left_indent: 'leaf', line_spacing: 'leaf' } },
+    inline_code: new Set(['font', 'size', 'color']),
+    quote: new Set(['background_color', 'left_indent', 'font_size', 'line_spacing']),
+    math: new Set(['font', 'size', 'italic', 'color']),
+    image: new Set(['display_ratio', 'max_width_cm', 'target_dpi', 'show_caption']),
+    horizontal_rule: new Set(['character', 'repeat_count', 'font', 'size', 'color', 'alignment']),
+    lists: {
+      nested: {
+        bullet: BULLET_KEYS,
+        numbered: NUMBERED_KEYS,
+        task: TASK_KEYS,
+      },
+    },
+    colors: new Set(['primary', 'secondary', 'background', 'table_header_bg', 'table_header_fg', 'table_alt_row_bg']),
+    // styles 注册表：键名自由（用户自定义样式名），值对象按 PresetStyleConfig 校验。
+    styles: {
+      freeKeys: true,
+      freeValueSpec: {
+        nested: {
+          ...Object.fromEntries(Array.from(REUSABLE_TEXT_KEYS, (k) => [k, 'leaf'])),
+          table: REUSABLE_TABLE_KEYS,
+        },
+      },
+    },
+    markdown_mapping: MARKDOWN_MAPPING_KEYS,
+    html_mapping: {
+      nested: {
+        tags: HTML_MAPPING_TAGS,
+        // selectors 的键是任意合法 CSS 选择器（自由），值为样式名（叶子）。
+        selectors: { freeKeys: true, freeValueSpec: 'leaf' },
+      },
+    },
+  },
+};
+
+/**
+ * 递归检测用户 config 中的未知字段，返回 diagnostics（warning）。
+ * 不修改输入，不抛错——只收集信息。`html_mapping.selectors` 与 `styles` 的
+ * 自由键名被正确豁免，但其内部结构仍按 spec 校验。
+ */
+function findUnknownFields(
+  value: unknown,
+  basePath: string,
+  spec: FieldSpec,
+): PresetImportDiagnostic[] {
+  if (spec === 'leaf') return [];
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
+
+  const obj = value as Record<string, unknown>;
+
+  // Set<string>：当前层键必须命中集合。
+  if (spec instanceof Set) {
+    const diagnostics: PresetImportDiagnostic[] = [];
+    for (const key of Object.keys(obj)) {
+      if (!spec.has(key)) {
+        diagnostics.push({
+          path: basePath ? `${basePath}.${key}` : key,
+          message: `字段「${basePath ? `${basePath}.${key}` : key}」不被识别，将被忽略。请检查拼写或升级 Folia 以支持该能力。`,
+          severity: 'warning',
+        });
+      }
+    }
+    return diagnostics;
+  }
+
+  // freeKeys：键名自由，值对象按 freeValueSpec 递归。
+  if ('freeKeys' in spec) {
+    const diagnostics: PresetImportDiagnostic[] = [];
+    for (const key of Object.keys(obj)) {
+      const childPath = basePath ? `${basePath}.${key}` : key;
+      diagnostics.push(...findUnknownFields(obj[key], childPath, spec.freeValueSpec));
+    }
+    return diagnostics;
+  }
+
+  // nested：每个键对应固定子 spec。
+  const diagnostics: PresetImportDiagnostic[] = [];
+  for (const key of Object.keys(obj)) {
+    const childSpec = spec.nested[key];
+    const childPath = basePath ? `${basePath}.${key}` : key;
+    if (childSpec === undefined) {
+      diagnostics.push({
+        path: childPath,
+        message: `字段「${childPath}」不被识别，将被忽略。请检查拼写或升级 Folia 以支持该能力。`,
+        severity: 'warning',
+      });
+      continue;
+    }
+    diagnostics.push(...findUnknownFields(obj[key], childPath, childSpec));
+  }
+  return diagnostics;
+}
 
 function readObject(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -734,7 +921,24 @@ export function importPresetFromJson(text: string): ImportedPreset {
   }
 
   const input = readObject(parsed);
+  // ISS-181：schemaVersion 校验。当前只支持 v1（或缺失=旧预设兼容）。
+  // 未来引入 v2 时在此分支做迁移；本期对未知版本给出诊断但不阻断。
+  const schemaVersion = typeof input.schemaVersion === 'number' ? input.schemaVersion : undefined;
+  const schemaDiagnostics: PresetImportDiagnostic[] = [];
+  if (schemaVersion !== undefined && schemaVersion > CURRENT_PRESET_SCHEMA_VERSION) {
+    schemaDiagnostics.push({
+      path: 'schemaVersion',
+      message: `预设声明 schemaVersion=${schemaVersion}，当前 Folia 支持版本为 ${CURRENT_PRESET_SCHEMA_VERSION}，部分字段可能不被识别或按当前版本处理。`,
+      severity: 'warning',
+    });
+  }
+
   const directConfig = normalizeImportConfig(input.config ? readObject(input.config) : input);
+
+  // ISS-181：检测用户 config 的未知字段（警告，不阻断）。必须在 merge 前、
+  // 对用户原始输入检测——merge 后的 config 含 base 的全部合法字段，检测无意义。
+  const unknownDiagnostics = findUnknownFields(directConfig, '', PRESET_CONFIG_SPEC);
+
   const name = requireString(input.name ?? directConfig.name, 'name');
   const description = optionalString(input.description ?? directConfig.description) || '自定义 Word 导出预设';
   const baseId = readBasePresetId(input.base);
@@ -746,8 +950,11 @@ export function importPresetFromJson(text: string): ImportedPreset {
 
   validatePresetConfig(config);
 
+  const diagnostics = [...schemaDiagnostics, ...unknownDiagnostics];
+
   return {
     id: toCustomPresetId(optionalString(input.id), name),
     config,
+    diagnostics: diagnostics.length > 0 ? diagnostics : undefined,
   };
 }

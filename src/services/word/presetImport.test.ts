@@ -251,4 +251,114 @@ describe('presetImport', () => {
       config: { page_number: { format: 'page-of-total' } },
     }))).toThrow(PresetImportError);
   });
+
+  describe('ISS-181 schemaVersion 与未知字段诊断', () => {
+    it('模板带 schemaVersion:1', () => {
+      const template = JSON.parse(createPresetTemplateText()) as { schemaVersion?: number };
+      expect(template.schemaVersion).toBe(1);
+    });
+
+    it('无 schemaVersion 的旧预设正常导入且不报诊断', () => {
+      const imported = importPresetFromJson(JSON.stringify({
+        name: '旧预设',
+        config: { page: { margin_left: 2.5 } },
+      }));
+      expect(imported.diagnostics ?? []).toHaveLength(0);
+    });
+
+    it('检测到未知顶层字段时返回 warning 诊断，但导入仍成功', () => {
+      const imported = importPresetFromJson(JSON.stringify({
+        name: '含未知字段',
+        config: {
+          page: { margin_left: 2.5 },
+          // ISS-181 第二/三期才会支持的占位字段，当前应为未知
+          sections: [{ orientation: 'landscape' }],
+          headers: { default: { text: '机密' } },
+        },
+      }));
+
+      // 导入成功
+      expect(imported.config.page.margin_left).toBe(2.5);
+      // 诊断命中两个未知顶层字段
+      const paths = (imported.diagnostics ?? []).map((d) => d.path);
+      expect(paths).toContain('sections');
+      expect(paths).toContain('headers');
+      expect(imported.diagnostics?.every((d) => d.severity === 'warning')).toBe(true);
+    });
+
+    it('检测到未知嵌套字段（table.col_widths）', () => {
+      const imported = importPresetFromJson(JSON.stringify({
+        name: '含未知嵌套字段',
+        config: {
+          table: { border_width: 2, col_widths: [100, 200] },
+        },
+      }));
+
+      const paths = (imported.diagnostics ?? []).map((d) => d.path);
+      expect(paths).toContain('table.col_widths');
+    });
+
+    it('html_mapping.selectors 的自由 CSS 选择器键不报未知', () => {
+      const imported = importPresetFromJson(JSON.stringify({
+        name: '自由选择器',
+        config: {
+          styles: { evidenceTable: { font: '黑体' } },
+          html_mapping: {
+            selectors: {
+              'table.evidence-table': 'evidenceTable',
+              'tr.highlight-row:nth-child(2n)': 'evidenceTable',
+            },
+          },
+        },
+      }));
+
+      // selectors 的键是任意 CSS 选择器，不应被当作未知字段
+      const selectorWarnings = (imported.diagnostics ?? []).filter((d) =>
+        d.path.startsWith('html_mapping.selectors.'),
+      );
+      expect(selectorWarnings).toHaveLength(0);
+    });
+
+    it('styles 注册表的自定义样式名键不报未知，但样式对象内未知字段会报', () => {
+      const imported = importPresetFromJson(JSON.stringify({
+        name: '自定义样式',
+        config: {
+          styles: {
+            myStyle: {
+              font: '黑体',
+              size: 12,
+              // 未知字段
+              unsupportedProp: true,
+            },
+          },
+          markdown_mapping: { heading1: 'myStyle' },
+        },
+      }));
+
+      // myStyle 样式名本身不报（自由键）
+      const styleNameWarnings = (imported.diagnostics ?? []).filter((d) =>
+        d.path === 'styles.myStyle',
+      );
+      expect(styleNameWarnings).toHaveLength(0);
+      // 但 unsupportedProp 应报
+      const paths = (imported.diagnostics ?? []).map((d) => d.path);
+      expect(paths).toContain('styles.myStyle.unsupportedProp');
+    });
+
+    it('合法字段不产生诊断（回归：确保白名单不误报）', () => {
+      const imported = importPresetFromJson(createPresetTemplateText());
+      expect(imported.diagnostics ?? []).toHaveLength(0);
+    });
+
+    it('声明高于当前的 schemaVersion 产生版本诊断', () => {
+      const imported = importPresetFromJson(JSON.stringify({
+        schemaVersion: 99,
+        name: '未来版本',
+        config: { page: { margin_left: 2.5 } },
+      }));
+      const versionDiag = (imported.diagnostics ?? []).find((d) => d.path === 'schemaVersion');
+      expect(versionDiag).toBeDefined();
+      expect(versionDiag?.message).toContain('99');
+    });
+  });
 });

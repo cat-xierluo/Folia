@@ -2531,6 +2531,11 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   color: var(--danger);
 }
 
+/* ISS-181：导入预设含未知字段时的警告提示。琥珀色，与 StatusBar 的 status-notice--warn 同色。 */
+.settings-message.warning {
+  color: oklch(52% 0.12 75);
+}
+
 .settings-preset-list {
   display: flex;
   flex-direction: column;

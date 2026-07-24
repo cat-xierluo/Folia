@@ -73,7 +73,7 @@ interface ExportSectionProps {
 export function ExportSection({ onOpenLicense }: ExportSectionProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const settings = useSettings();
-  const [message, setMessage] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
+  const [message, setMessage] = useState<{ tone: 'ok' | 'error' | 'warning'; text: string } | null>(null);
   const [previewExpanded, setPreviewExpanded] = useState(false);
   const [activePage, setActivePage] = useState<ExportPresetPage>('library');
   const presets = listPresets(settings.customExportPresets);
@@ -122,7 +122,16 @@ export function ExportSection({ onOpenLicense }: ExportSectionProps) {
       }
 
       addCustomExportPreset(imported.id, imported.config);
-      setMessage({ tone: 'ok', text: `已导入「${imported.config.name}」` });
+      // ISS-181：导入成功后，若存在未知字段诊断，显示 warning 提示用户哪些字段被忽略。
+      if (imported.diagnostics && imported.diagnostics.length > 0) {
+        const paths = imported.diagnostics.map((d) => d.path);
+        setMessage({
+          tone: 'warning',
+          text: `已导入「${imported.config.name}」，但有 ${imported.diagnostics.length} 个字段不被识别将被忽略：${paths.join('、')}`,
+        });
+      } else {
+        setMessage({ tone: 'ok', text: `已导入「${imported.config.name}」` });
+      }
     } catch (error) {
       const text = error instanceof PresetImportError || error instanceof CustomExportPresetLimitError
         ? error.message
