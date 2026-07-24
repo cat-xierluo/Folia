@@ -1833,6 +1833,29 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   text-indent: var(--word-heading-4-indent);
 }
 
+/* ISS-181 第二期：H5/H6 预览样式（与 h1-h4 同结构，由预设变量驱动）。 */
+.word-paper-content h5 {
+  margin: var(--word-heading-5-space-before) 0 var(--word-heading-5-space-after);
+  color: var(--word-heading-5-color);
+  font-family: var(--word-heading-5-font-family);
+  font-size: var(--word-heading-5-size);
+  font-weight: var(--word-heading-5-weight);
+  line-height: var(--word-heading-5-line-height);
+  text-align: var(--word-heading-5-align);
+  text-indent: var(--word-heading-5-indent);
+}
+
+.word-paper-content h6 {
+  margin: var(--word-heading-6-space-before) 0 var(--word-heading-6-space-after);
+  color: var(--word-heading-6-color);
+  font-family: var(--word-heading-6-font-family);
+  font-size: var(--word-heading-6-size);
+  font-weight: var(--word-heading-6-weight);
+  line-height: var(--word-heading-6-line-height);
+  text-align: var(--word-heading-6-align);
+  text-indent: var(--word-heading-6-indent);
+}
+
 .word-paper-content p {
   margin: 0;
   text-align: var(--word-paragraph-align);

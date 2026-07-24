@@ -287,4 +287,33 @@ describe('markdownToDocx XML output', () => {
     ]));
     expect(allXmlAttrs(documentXml, 'w:top', 'w:w')).toEqual(expect.arrayContaining(['40']));
   });
+
+  it('ISS-181: H5/H6 标题生成对应的 HeadingLevel（不再被当普通文本）', async () => {
+    const documentXml = await readDocumentXml([
+      '# 一级标题',
+      '## 二级标题',
+      '### 三级标题',
+      '#### 四级标题',
+      '##### 五级标题',
+      '###### 六级标题',
+      '普通段落',
+    ].join('\n'));
+
+    // docx 库用 <w:pStyle w:val="HeadingN"/> 表示标题样式。
+    const headingStyles = allXmlAttrs(documentXml, 'w:pStyle', 'w:val');
+    expect(headingStyles).toContain('Heading1');
+    expect(headingStyles).toContain('Heading5');
+    expect(headingStyles).toContain('Heading6');
+    // 普通段落不应误判为标题
+    expect(countXmlNodes(documentXml, 'w:p')).toBeGreaterThanOrEqual(7);
+  });
+
+  it('ISS-181: H5/H6 标题字号由预设 titles.level5/level6 驱动', async () => {
+    // report 预设 level5 size=15, level6 size=14
+    const documentXml = await readDocumentXml('##### 五级\n###### 六级', getPreset('report'));
+    const halfPointSizes = allXmlAttrs(documentXml, 'w:sz', 'w:val');
+    // docx 用半磅：15pt → 30, 14pt → 28
+    expect(halfPointSizes).toContain('30');
+    expect(halfPointSizes).toContain('28');
+  });
 });

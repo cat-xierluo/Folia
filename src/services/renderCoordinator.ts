@@ -51,7 +51,11 @@ export interface RenderDiagnostic {
     | 'blocked-scheme'
     | 'decode-failed'
     | 'not-found'
-    | 'scope-denied';
+    | 'scope-denied'
+    // ISS-182：Word 纸张预览分页时，单个超高块（超长段落 / 超高表格行组）
+    // 超过一页可用高度，会被纸张 overflow:hidden 静默截断。此码用于向用户
+    // 明示「预览看到的内容不完整，真实 DOCX 不受影响」（DEC-123 模拟限制）。
+    | 'content-overflow-truncated';
   message: string;
   blockIndex?: number;
   language?: string;

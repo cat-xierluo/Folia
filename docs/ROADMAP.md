@@ -137,8 +137,8 @@
 - [x] Settings 页面添加"导出"部分（预设选择器）
 - [x] Settings / Word 导出支持导入自定义 JSON 预设、复制模板和删除自定义预设
 - [x] Settings / Word 导出支持预设启用/停用、内置预设隐藏、示例 JSON 和可放大的单页纸样式预览
-- [~] 扩展 Word JSON 预设能力（ISS-181，第一期完成）：已加 `schemaVersion` 版本号、未知字段诊断（警告但放行 + UI 提示）、`docs/word-preset-capabilities.md` 能力矩阵文档；实体能力扩展（H5/H6、任意页眉页脚文本、分节/横向页面、固定列宽等）与配套 DOCX XML 回归留第二/三期
-- [~] 按 DEC-123 保留"快速 HTML 模拟 + 权威 DOCX 导出"双管线，修正可模拟字段的映射错误（ISS-182）：已修正表格边框宽度（按 `border_width` 映射）、H1-H4 粗体（按预设 `bold` 驱动）、Vditor `display:block` 撑大表格、页码节点缺失（按 `page_number` 渲染页脚/页眉）；预览误差 / 能力矩阵的完整文档化与超长段落分页仍待后续
+- [~] 扩展 Word JSON 预设能力（ISS-181，第一/二期完成）：第一期加 `schemaVersion` 版本号、未知字段诊断（警告但放行 + UI 提示）、`docs/word-preset-capabilities.md` 能力矩阵文档；第二期加 H5/H6 标题支持（parser 正则放宽到 `#{1,6}` + docx HEADING_5/6 + 4 预设默认值 + 预览映射 + DOCX XML 回归）；剩余实体能力（任意页眉页脚文本、分节/横向页面、固定列宽、复杂编号）留第三期
+- [x] 按 DEC-123 保留"快速 HTML 模拟 + 权威 DOCX 导出"双管线，修正可模拟字段的映射错误并治理预览误差边界（ISS-182）：已修正表格边框宽度（按 `border_width` 映射）、H1-H4 粗体（按预设 `bold` 驱动）、Vditor `display:block` 撑大表格、页码节点缺失（按 `page_number` 渲染页脚/页眉）、超高内容块静默截断（新增 `content-overflow-truncated` 诊断告警）；能力矩阵见 `docs/word-preset-capabilities.md`
 
 ### v0.7 法律增强
 
@@ -176,6 +176,8 @@
 
 ## 进度日志
 
+- **2026-07-24（续）**
+  - ISS-182 收尾 + ISS-181 第二期 H5/H6：(1) **ISS-182 分页截断告警**——`paginateRenderedContent` 改返回 `RenderDiagnostic[]`，在「超高顶层段落单独一页仍超高」和「超高表格行组单独一页仍超高」两个截断点 push `content-overflow-truncated` 诊断；`renderCoordinator.ts` 新增该诊断码，`MediaPlaceholder` 补文案/图标/suggestion；effect 把分页诊断合并到 `setDiagnostics`。消除「预览看着完整、实际被 overflow:hidden 截断」的误导。(2) **ISS-181 H5/H6 标题**——此前 `#####`/`######` 在 DOCX 导出被当普通正文（parser 正则 `#{1,4}` 不匹配）；现 `PresetConfig.titles` 加 `level5`/`level6`，parser 正则放宽到 `#{1,6}` + `headingLevelMap` 加 HEADING_5/6，4 个内置预设补默认值，预览补 `--word-heading-5/6-*` 变量 + h5/h6 CSS + 内联映射，模板/markdown_mapping/白名单树/校验同步。新增真实 DOCX XML 回归验证 `<w:pStyle w:val="Heading5/6"/>` + 预设字号。基线 479 → 484 / 484 vitest 全绿；typecheck / lint / build / cargo check 全绿。ISS-181 剩余实体能力（任意页眉页脚文本、分节/横向、列宽、编号体系）仍需配套 DOCX XML 回归，留后续。
 - **2026-07-24**
   - ISS-181 Word JSON 预设 schema 治理基础（第一期完成，不动 DOCX 导出）：(1) `ImportablePresetJson` 新增 `schemaVersion`（当前 `1`，缺失兼容，高版本给诊断），`CURRENT_PRESET_SCHEMA_VERSION` 常量，模板自带版本号；(2) 未知字段诊断——新增 `PRESET_CONFIG_SPEC` 字段白名单树（递归描述 PresetConfig 每层合法键，与能力矩阵同源）+ `findUnknownFields` 递归检测 + `PresetImportDiagnostic` 类型（warning，不阻断导入）；`html_mapping.selectors` 自由 CSS 键与 `styles` 注册表自定义名被正确豁免，但样式对象内部未知字段仍检测；(3) `ImportedPreset.diagnostics` 返回值，`ExportSection` 导入后显示琥珀色「N 个字段不被识别」提示；(4) 新增 `docs/word-preset-capabilities.md` 能力矩阵（字段×DOCX/预览 支持 ✅/⚠️/❌）。基线 471 → 479 / 479 vitest 全绿；typecheck / lint / build / cargo check 全绿。实体能力扩展（H5/H6、页眉页脚文本、分节/横向、列宽）留第二/三期（需配套 DOCX XML 回归）。
   - ISS-182 Word 纸张预览配置映射修正（部分完成，DEC-123 双管线，不动 DOCX 导出）：(1) 表格边框宽度从写死 1px 改为按 `table.border_width` 映射；(2) H1-H4 标题粗体从无条件 700 改为由预设 `bold` 字段驱动（`--word-heading-N-weight` 变量 + CSS + 内联轨三分支），`report` 预设方正小标宋一级 / 楷体三级标题不再误显粗体；(3) `.word-paper-content table` 加 `display:table !important` 压过 Vditor `display:block`；(4) 页码节点渲染——补全 `--word-page-number-*` 变量，`makePage` 在纸张页边距区域渲染页脚/页眉页码节点（按 `position`/`format`/`align`），`contentHeightPx` 预留页码高度，`paginateRenderedContent` 新增可选 `pageNumberBuilder`+`pageNumberPosition`（向后兼容），新增 `formatPageNumberText` 纯函数。总页数用占位符 `—`（模拟限制，真实以 DOCX 为准）。基线 461 → 471 / 471 vitest 全绿；typecheck / lint / build / cargo check 全绿。超长段落/超高行组截断告警与能力矩阵文档化留后续。真实桌面视觉验证依赖 release.yml + 本地 dev。

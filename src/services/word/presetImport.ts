@@ -105,6 +105,31 @@ const TEMPLATE: ImportablePresetJson = {
         line_spacing: 1.5,
         color: '000000',
       },
+      // ISS-181 第二期：H5/H6 标题配置示范。
+      level5: {
+        font: '仿宋_GB2312',
+        ascii: 'Times New Roman',
+        size: 12,
+        bold: true,
+        align: 'left',
+        space_before: 6,
+        space_after: 3,
+        indent: 0,
+        line_spacing: 1.5,
+        color: '000000',
+      },
+      level6: {
+        font: '仿宋_GB2312',
+        ascii: 'Times New Roman',
+        size: 12,
+        bold: false,
+        align: 'left',
+        space_before: 3,
+        space_after: 3,
+        indent: 0,
+        line_spacing: 1.5,
+        color: '000000',
+      },
     },
     paragraph: { line_spacing: 1.5, first_line_indent: 2, align: 'justify' },
     page_number: {
@@ -202,6 +227,29 @@ const TEMPLATE: ImportablePresetJson = {
         space_after: 3,
         line_spacing: 1.5,
       },
+      // ISS-181 第二期：H5/H6 可复用样式示范。
+      heading5: {
+        font: '仿宋_GB2312',
+        ascii: 'Times New Roman',
+        size: 12,
+        bold: true,
+        align: 'left',
+        color: '000000',
+        space_before: 6,
+        space_after: 3,
+        line_spacing: 1.5,
+      },
+      heading6: {
+        font: '仿宋_GB2312',
+        ascii: 'Times New Roman',
+        size: 12,
+        bold: false,
+        align: 'left',
+        color: '000000',
+        space_before: 3,
+        space_after: 3,
+        line_spacing: 1.5,
+      },
       quoteBlock: {
         background_color: 'EAEAEA',
         color: '000000',
@@ -273,6 +321,8 @@ const TEMPLATE: ImportablePresetJson = {
       heading2: 'heading2',
       heading3: 'heading3',
       heading4: 'heading4',
+      heading5: 'heading5',
+      heading6: 'heading6',
       blockquote: 'quoteBlock',
       code_block: 'codeBlock',
       inline_code: 'inlineCode',
@@ -298,6 +348,8 @@ const MARKDOWN_MAPPING_KEYS = new Set([
   'heading2',
   'heading3',
   'heading4',
+  'heading5',
+  'heading6',
   'blockquote',
   'quote',
   'code_block',
@@ -363,7 +415,7 @@ const PRESET_CONFIG_SPEC: FieldSpec = {
     description: 'leaf',
     page: new Set(['width', 'height', 'margin_top', 'margin_bottom', 'margin_left', 'margin_right']),
     fonts: { nested: { default: FONT_KEYS } },
-    titles: { nested: { level1: HEADING_KEYS, level2: HEADING_KEYS, level3: HEADING_KEYS, level4: HEADING_KEYS } },
+    titles: { nested: { level1: HEADING_KEYS, level2: HEADING_KEYS, level3: HEADING_KEYS, level4: HEADING_KEYS, level5: HEADING_KEYS, level6: HEADING_KEYS } },
     paragraph: new Set(['line_spacing', 'first_line_indent', 'align']),
     page_number: new Set(['enabled', 'format', 'font', 'size', 'position', 'align']),
     quotes: new Set(['convert_to_chinese']),
@@ -655,7 +707,7 @@ function normalizeImportConfig(rawConfig: Record<string, unknown>): Record<strin
       setPath(config, 'paragraph.first_line_indent', ptToCharacterIndent(paragraphIndent, defaultFontSize));
     }
 
-    (['level1', 'level2', 'level3', 'level4'] as const).forEach((level) => {
+    (['level1', 'level2', 'level3', 'level4', 'level5', 'level6'] as const).forEach((level) => {
       const title = getPath(config, `titles.${level}`);
       if (!isRecord(title)) return;
       const fontAlt = asciiFontAlias(title.ascii, title.font_alt, title.name_alt);
@@ -826,6 +878,8 @@ function validatePresetConfig(config: PresetConfig): void {
     'titles.level2.size',
     'titles.level3.size',
     'titles.level4.size',
+    'titles.level5.size',
+    'titles.level6.size',
     'paragraph.line_spacing',
     'table.line_spacing',
     'table.cell_margin',
@@ -862,6 +916,8 @@ function validatePresetConfig(config: PresetConfig): void {
     'titles.level2.color',
     'titles.level3.color',
     'titles.level4.color',
+    'titles.level5.color',
+    'titles.level6.color',
     'table.border_color',
     'table.header_font.color',
     'table.body_font.color',

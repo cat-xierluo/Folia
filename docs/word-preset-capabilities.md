@@ -28,7 +28,7 @@
 | 字段路径 | DOCX 导出 | Word 预览 | 备注 |
 |---|:---:|:---:|---|
 | `titles.level1-4.{size,bold,align,space_before,space_after,indent,color,line_spacing,font,ascii}` | ✅ | ✅ | bold 由预设驱动（ISS-182 后预览不再硬编码粗体） |
-| `titles.level5` / `titles.level6` | ❌ | ❌ | schema 未定义；DOCX 的 HeadingLevel 只到 4（parser 硬编码）。**ISS-181 第二期** |
+| `titles.level5` / `titles.level6` | ✅ | ✅ | ISS-181 第二期起支持。docx 库 HEADING_5/HEADING_6，parser 正则 `#{1,6}`，4 个内置预设均有默认值；预览 CSS 变量 `--word-heading-5/6-*` |
 
 ### 段落
 

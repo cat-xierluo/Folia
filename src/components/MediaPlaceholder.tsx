@@ -45,6 +45,7 @@ const DEFAULT_MESSAGE: Record<PlaceholderCode, string> = {
   'scope-denied': '路径不在授权范围',
   'render-error': '渲染错误',
   'generation-superseded': '已切换到最新内容',
+  'content-overflow-truncated': '预览内容被截断',
 };
 
 const DEFAULT_SUGGESTION: Partial<Record<PlaceholderCode, string>> = {
@@ -53,6 +54,7 @@ const DEFAULT_SUGGESTION: Partial<Record<PlaceholderCode, string>> = {
   'not-found': '检查文件路径是否正确',
   'scope-denied': '在 Settings 中授权该目录',
   'mermaid-syntax-error': '语法错误，请参考官方示例',
+  'content-overflow-truncated': '该块超过一页高度，预览仅显示部分；导出的 Word 不受影响',
 };
 
 function pickMinHeight(code: PlaceholderCode): number {
@@ -76,6 +78,7 @@ const ICON_MAP: Record<PlaceholderCode, string> = {
   'scope-denied': '⊘',
   'render-error': '✕',
   'generation-superseded': '↻',
+  'content-overflow-truncated': '✂',
 };
 
 function pickIcon(code: PlaceholderCode): string {

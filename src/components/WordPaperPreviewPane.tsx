@@ -239,6 +239,9 @@ function applyMappedPreviewStyles(root: HTMLElement, preset: PresetConfig): void
     if (tag === 'h2') applyTextStyle(child, preset, getMarkdownStyleName(preset, 'heading2'));
     if (tag === 'h3') applyTextStyle(child, preset, getMarkdownStyleName(preset, 'heading3'));
     if (tag === 'h4') applyTextStyle(child, preset, getMarkdownStyleName(preset, 'heading4'));
+    // ISS-181 第二期：H5/H6 内联映射。
+    if (tag === 'h5') applyTextStyle(child, preset, getMarkdownStyleName(preset, 'heading5'));
+    if (tag === 'h6') applyTextStyle(child, preset, getMarkdownStyleName(preset, 'heading6'));
     if (tag === 'p' && !child.classList.contains('word-image-caption')) {
       applyTextStyle(child, preset, getMarkdownStyleName(preset, 'paragraph'));
     }
@@ -356,8 +359,12 @@ export function paginateRenderedContent(
   pageNumberBuilder?: (pageNumber: number) => string | undefined,
   /** 可选：页码挂载位置（页脚/页眉），对所有页相同。仅当 builder 生效时有意义。 */
   pageNumberPosition?: 'footer' | 'header',
-): void {
+): RenderDiagnostic[] {
   pagesContainer.replaceChildren();
+  // ISS-182：收集分页过程中检测到的「超高块被截断」诊断。当前页只有单个子节点
+  // 且仍超高时，该块无法再分页，会被纸张 overflow:hidden 裁掉——记录告警让用户知道
+  // 「预览不完整，真实 DOCX 不受影响」（DEC-123 模拟限制）。
+  const diagnostics: RenderDiagnostic[] = [];
 
   const pageOptionsFor = (n: number): MakePageOptions | undefined => {
     if (!pageNumberBuilder) return undefined;
@@ -368,7 +375,7 @@ export function paginateRenderedContent(
 
   if (measureContent.children.length === 0) {
     makePage(pagesContainer, 1, pageOptionsFor(1));
-    return;
+    return diagnostics;
   }
 
   let pageNumber = 1;
@@ -383,10 +390,19 @@ export function paginateRenderedContent(
     const clone = child.cloneNode(true);
     currentPage.append(clone);
 
-    if (currentPage.children.length > 1 && currentPage.scrollHeight > contentHeight) {
-      clone.parentNode?.removeChild(clone);
-      moveToNextPage();
-      currentPage.append(clone);
+    if (currentPage.scrollHeight > contentHeight) {
+      if (currentPage.children.length > 1) {
+        // 当前页还有其他内容，把这块挪到下一页。
+        clone.parentNode?.removeChild(clone);
+        moveToNextPage();
+        currentPage.append(clone);
+      } else {
+        // ISS-182：当前页只有这一个块且仍超高——无法再分页，会被截断。
+        diagnostics.push({
+          code: 'content-overflow-truncated',
+          message: `第 ${pageNumber} 页的「${describeNode(child)}」超过一页可用高度，预览仅显示顶部部分；导出的 Word 会完整保留。`,
+        });
+      }
     }
   };
 
@@ -425,7 +441,12 @@ export function paginateRenderedContent(
       const hasOtherContentOnPage = Array.from(currentPage.children).some((child) => child !== activeTable);
 
       if (!hasRowsBeforeGroup && !hasOtherContentOnPage) {
+        // ISS-182：该行组单独一页仍超高——无法再分页，会被截断。
         clonedRows.forEach((row) => activeBody.append(row));
+        diagnostics.push({
+          code: 'content-overflow-truncated',
+          message: `第 ${pageNumber} 页的表格行组超过一页可用高度，预览仅显示顶部部分；导出的 Word 会完整保留。`,
+        });
         return;
       }
 
@@ -450,6 +471,19 @@ export function paginateRenderedContent(
 
     appendTopLevelNode(child);
   });
+
+  return diagnostics;
+}
+
+/**
+ * ISS-182：为分页诊断生成一个简短、可读的节点描述（标签名 + 首段文本片段），
+ * 帮助用户定位是哪个块被截断。
+ */
+function describeNode(node: Element): string {
+  const tag = node.tagName.toLowerCase();
+  // 取首个文本片段作为标识，截断到 20 字符避免诊断过长。
+  const text = (node.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 20);
+  return text ? `<${tag}> “${text}”` : `<${tag}>`;
 }
 
 export function WordPaperPreviewPane({
@@ -591,13 +625,17 @@ export function WordPaperPreviewPane({
       window.requestAnimationFrame(() => {
         window.requestAnimationFrame(() => {
           if (cancelled || !measureRef.current || !pagesRef.current) return;
-          paginateRenderedContent(
+          // ISS-182：分页纯函数现在返回「超高块被截断」诊断；与富媒体诊断合并后显示。
+          const paginationDiagnostics = paginateRenderedContent(
             measureRef.current,
             pagesRef.current,
             contentHeightPx,
             buildPageNumberText,
             pageNumberConfig.position,
           );
+          if (paginationDiagnostics.length > 0) {
+            setDiagnostics([...visibleDiagnostics, ...paginationDiagnostics]);
+          }
         });
       });
     }).catch(() => {

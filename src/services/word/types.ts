@@ -146,6 +146,9 @@ export interface MarkdownStyleMappingConfig {
   heading2?: string;
   heading3?: string;
   heading4?: string;
+  // ISS-181 第二期：H5/H6 映射键。
+  heading5?: string;
+  heading6?: string;
   blockquote?: string;
   quote?: string;
   code_block?: string;
@@ -241,6 +244,9 @@ export interface PresetConfig {
     level2: HeadingConfig;
     level3: HeadingConfig;
     level4: HeadingConfig;
+    // ISS-181 第二期：H5/H6 标题支持（docx 库原生支持 HEADING_5/HEADING_6）。
+    level5: HeadingConfig;
+    level6: HeadingConfig;
   };
 
   paragraph: {

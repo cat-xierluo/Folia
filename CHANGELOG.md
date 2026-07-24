@@ -7,12 +7,14 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - **Word 导出预设 schema 治理基础**（ISS-181 第一期）：为 JSON 预设引入 `schemaVersion` 版本号（当前 `1`，缺失视为旧预设兼容）与**未知字段诊断**。此前导入器对未知字段完全静默放行——用户写了拼写错误或预留字段（如 `sections`、`headers`）会导入成功但完全不生效，造成「导入成功即已支持」的误解。现在导入器维护一份 `PresetConfig` 字段白名单树作为唯一真源，递归检测用户 JSON 的未知字段，收集为 `warning` 诊断（不阻断导入，字段被忽略）；设置页导入后显示「已导入，但有 N 个字段不被识别：…」琥珀色提示。`html_mapping.selectors` 的自由 CSS 选择器键与 `styles` 注册表的自定义样式名被正确豁免。模板自带 `schemaVersion: 1`。声明高于当前版本时给出诊断。新增 `docs/word-preset-capabilities.md` 能力矩阵文档，列出每个字段在 DOCX 导出 / Word 纸张预览两条管线的支持程度（✅准确 / ⚠️近似 / ❌不支持），作为 ISS-181/182 治理与未来字段扩展的真源。实体能力扩展（H5/H6、任意页眉页脚文本、分节/横向页面、固定列宽等）留待第二/三期。
+- **Word 导出支持 H5/H6 标题**（ISS-181 第二期）：此前 Markdown 的 `##### 五级标题` 和 `###### 六级标题` 在导出 Word 时被当作普通正文（parser 正则只到 `#{1,4}`，五六个 `#` 不匹配，整行连同井号原样输出），没有标题层级、无法被 Word 导航窗格识别；而预览侧却能正常渲染成 `<h5>`/`<h6>`，造成预览/导出分裂。现在 `PresetConfig.titles` 新增 `level5`/`level6`，parser 正则放宽到 `#{1,6}` 并映射到 docx 的 `HEADING_5`/`HEADING_6`，4 个内置预设均提供合理默认值（如 report 按 16→15→14pt 递减，legal/academic 沿用正文字号），预览侧补 `--word-heading-5/6-*` 变量与 h5/h6 样式规则，模板与 `markdown_mapping` 增加 `heading5`/`heading6` 示范。新增真实 DOCX XML 回归验证 `<w:pStyle w:val="Heading5/6"/>` 与预设字号。
 
 ### Fixed
 
 - **修复最近文件过多时首页欢迎区消失且无法滚回的问题**（ISS-183）：当最近文件记录较多（上限 20 条）且路径较长时，首页的「Folia」标题与「打开文件 / 新建」主操作会被顶出视口且无法滚回，用户找不到入口。根因是 `.recent-page` 同时使用 `overflow:auto` + `align-items:center`，内容高于视口时居中把内部容器顶部推到负坐标，滚动条滚不到负位置。现在溢出时改为顶部对齐（少量记录仍视觉居中）、长路径单行省略（完整路径保留在 hover tooltip），并默认只展示前 6 条、底部提供「显示全部 N 条」按钮控制列表高度。新增响应式 E2E 覆盖 20 条长路径在 800×600 / 默认视口下标题与主操作始终可见。
 - **修复设置页首次打开短暂白屏 / 近似空白骨架的问题**（ISS-180）：用户首次点击设置后约 300ms 内只能看到对比度极低的骨架，近似白屏。根因有二：① 默认「通用」section 与其它 section 一样走 `React.lazy`，形成外层 SettingsPage + 内层 GeneralSection 双层 Suspense，即便预热，点击时仍要等内层 chunk 解析才渲染真实内容；② 骨架背景 `color-mix(var(--muted) 14%, transparent)` 叠在近白底上对比度过低。现在默认 section 改为静态导入、移出内层 Suspense（随外壳同步渲染，消除第二层调度延迟），骨架对比度提升到可明确感知的「正在加载」状态；并修复设置页 E2E 把 locator 误写成 `{ heading }`（无效字段，退化匹配任意 heading，掩盖 section 未渲染）的缺陷、把冷开预算从 2.5s 收紧到 1s。
 - **改进 Word 纸张预览的配置映射，消除会误导用户的预览/导出差异**（ISS-182，DEC-123 双管线）：按「快速 HTML 模拟 + 权威 DOCX 导出」定位，修正 4 处「可模拟但当前映射错误」的差异，不动 DOCX 导出管线。① **表格边框宽度**：此前写死 1px，忽略预设 `table.border_width`，现按预设值映射（与 DOCX 侧一致）。② **标题粗体**：此前 H1–H4 无条件硬编码粗体，覆盖了预设的 `bold:false`；现由预设 `bold` 字段驱动，`report` 预设的方正小标宋一级标题、楷体三级标题不再误显粗体。③ **表格被撑大**：Vditor 的 `.vditor-reset table{display:block}` 会破坏表格布局，现用 `display:table !important` 压过。④ **页码缺失**：4 个内置预设默认启用页码、DOCX 导出有页码，但纸张预览此前完全不渲染页码节点（用户预览看不到、导出却有，是明确误导）；现按 `page_number` 配置在纸张页边距区域渲染页脚/页眉页码节点，并为它预留正文高度避免重叠。页码总页数因模拟限制用占位符表示，真实以导出 DOCX 为准。新增单测覆盖表格边框、标题粗体、页码格式化与节点渲染。
+- **Word 纸张预览对超高内容块不再静默截断**（ISS-182）：此前单个超长段落、超高表格行或 rowspan 行组超过一页可用高度时，会被纸张 `overflow:hidden` 静默裁掉，用户毫无察觉地看到不完整预览。现在分页逻辑检测到「该块单独一页仍超高」时，产生 `content-overflow-truncated` 诊断并在预览顶部显示明确告警（「第 N 页的某块超过一页高度，预览仅显示顶部部分；导出的 Word 会完整保留」），消除「预览看着完整、实际被截」的误导。新增 `content-overflow-truncated` 诊断码与对应 MediaPlaceholder 文案。
 
 ### Changed
 

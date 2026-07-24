@@ -144,6 +144,53 @@ describe('paginateRenderedContent', () => {
     expect(pages).toHaveLength(1);
     expect(pages[0].textContent).toContain('合计');
   });
+
+  it('ISS-182: 超高顶层段落（单独一页仍超高）产生 content-overflow-truncated 诊断', () => {
+    // contentHeight=70，但单个段落 data-height=200，远超一页高度。
+    const measureContent = createMeasureContent('<p data-height="200">这是一个超长段落，高度远超一页。</p>');
+    const pagesContainer = document.createElement('div');
+
+    const diagnostics = paginateRenderedContent(measureContent, pagesContainer, 70);
+
+    expect(diagnostics).toHaveLength(1);
+    expect(diagnostics[0].code).toBe('content-overflow-truncated');
+    expect(diagnostics[0].message).toContain('第 1 页');
+    expect(diagnostics[0].message).toContain('超过一页');
+  });
+
+  it('ISS-182: 多个普通段落不产生截断诊断', () => {
+    // 3 个段落各 30px，contentHeight=70，会分 2 页，但都不超高。
+    const measureContent = createMeasureContent(`
+      <p data-height="30">段落 1</p>
+      <p data-height="30">段落 2</p>
+      <p data-height="30">段落 3</p>
+    `);
+    const pagesContainer = document.createElement('div');
+
+    const diagnostics = paginateRenderedContent(measureContent, pagesContainer, 70);
+
+    expect(diagnostics).toHaveLength(0);
+    expect(pageContents(pagesContainer)).toHaveLength(2);
+  });
+
+  it('ISS-182: 超高表格行组（单独一页仍超高）产生截断诊断', () => {
+    // 单个行组高度 200 > contentHeight 70，且无其他内容。
+    const measureContent = createMeasureContent(`
+      <table>
+        <thead><tr data-height="10"><th>标题</th></tr></thead>
+        <tbody>
+          <tr data-height="200"><td>超高单元格</td></tr>
+        </tbody>
+      </table>
+    `);
+    const pagesContainer = document.createElement('div');
+
+    const diagnostics = paginateRenderedContent(measureContent, pagesContainer, 70);
+
+    expect(diagnostics).toHaveLength(1);
+    expect(diagnostics[0].code).toBe('content-overflow-truncated');
+    expect(diagnostics[0].message).toContain('表格行组');
+  });
 });
 
 describe('applyWordPreviewPresetPostprocess', () => {

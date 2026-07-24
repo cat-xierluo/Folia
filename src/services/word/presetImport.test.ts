@@ -30,6 +30,12 @@ describe('presetImport', () => {
     expect(imported.config.styles?.body.font).toBe('仿宋_GB2312');
     expect(imported.config.markdown_mapping?.heading1).toBe('heading1');
     expect(imported.config.markdown_mapping?.heading4).toBe('heading4');
+    // ISS-181 第二期：模板含 H5/H6 配置与映射
+    expect(imported.config.markdown_mapping?.heading5).toBe('heading5');
+    expect(imported.config.markdown_mapping?.heading6).toBe('heading6');
+    expect(imported.config.titles.level5.size).toBe(12);
+    expect(imported.config.titles.level6.bold).toBe(false);
+    expect(imported.config.styles?.heading5.font).toBe('仿宋_GB2312');
     expect(imported.config.styles?.heading4.align).toBe('left');
     expect(imported.config.html_mapping?.selectors?.['table.evidence-table']).toBe('evidenceTable');
     expect(imported.config.table.cell_margins?.left).toBeCloseTo(0.1);

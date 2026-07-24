@@ -19,6 +19,10 @@ const legal = {
     level2: { size: 12, bold: true, align: 'left', space_before: 12, space_after: 6 },
     level3: { size: 12, bold: true, align: 'left', space_before: 6, space_after: 6 },
     level4: { size: 12, bold: true, align: 'left', space_before: 6, space_after: 3 },
+    // ISS-181 第二期：H5/H6。legal 正文字号 12pt，层级已到底，H5/H6 沿用 level4
+    // 的字号与加粗，仅收紧 spacing 区分层级。
+    level5: { size: 12, bold: true, align: 'left', space_before: 6, space_after: 3 },
+    level6: { size: 12, bold: true, align: 'left', space_before: 3, space_after: 3 },
   },
   paragraph: { line_spacing: 1.5, first_line_indent: 2, align: 'justify' },
   page_number: {
@@ -117,6 +121,27 @@ const academic = {
       space_after: 3,
       line_spacing: 1.5,
     },
+    // ISS-181 第二期：H5/H6。academic 正文 10.5pt，层级已到底，沿用 level4。
+    level5: {
+      font: '宋体',
+      ascii: 'Times New Roman',
+      size: 10.5,
+      bold: true,
+      align: 'left',
+      space_before: 3,
+      space_after: 3,
+      line_spacing: 1.5,
+    },
+    level6: {
+      font: '宋体',
+      ascii: 'Times New Roman',
+      size: 10.5,
+      bold: false,
+      align: 'left',
+      space_before: 3,
+      space_after: 3,
+      line_spacing: 1.5,
+    },
   },
   paragraph: { line_spacing: 1.5, first_line_indent: 2, align: 'justify' },
   page_number: {
@@ -207,6 +232,27 @@ const report = {
       bold: true,
       align: 'left',
       space_before: 6,
+      space_after: 3,
+      line_spacing: 1.75,
+    },
+    // ISS-181 第二期：H5/H6。report 层级靠字号递减（仿宋 16→15→14）。
+    level5: {
+      font: '仿宋_GB2312',
+      ascii: 'Times New Roman',
+      size: 15,
+      bold: true,
+      align: 'left',
+      space_before: 6,
+      space_after: 3,
+      line_spacing: 1.75,
+    },
+    level6: {
+      font: '仿宋_GB2312',
+      ascii: 'Times New Roman',
+      size: 14,
+      bold: true,
+      align: 'left',
+      space_before: 3,
       space_after: 3,
       line_spacing: 1.75,
     },

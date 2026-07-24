@@ -269,11 +269,11 @@ async function parseMarkdownLines(content: string, config: PresetConfig): Promis
       continue;
     }
 
-    // 8. 标题
-    const headingMatch = line.match(/^(#{1,4})\s+(.+)$/);
+    // 8. 标题（ISS-181 第二期：支持 H1-H6，此前正则只到 4，##### / ###### 被当普通文本）
+    const headingMatch = line.match(/^(#{1,6})\s+(.+)$/);
     if (headingMatch) {
       flushTable();
-      const level = Math.min(headingMatch[1].length, 4) as 1 | 2 | 3 | 4;
+      const level = Math.min(headingMatch[1].length, 6) as 1 | 2 | 3 | 4 | 5 | 6;
       paragraphs.push(addHeading(headingMatch[2].trim(), level, config));
       continue;
     }
@@ -502,7 +502,7 @@ function calculateImageSize(
 
 function addHeading(
   text: string,
-  level: 1 | 2 | 3 | 4,
+  level: 1 | 2 | 3 | 4 | 5 | 6,
   config: PresetConfig,
 ): Paragraph {
   const headingKey = `level${level}` as keyof typeof config.titles;
@@ -513,6 +513,8 @@ function addHeading(
     2: HeadingLevel.HEADING_2,
     3: HeadingLevel.HEADING_3,
     4: HeadingLevel.HEADING_4,
+    5: HeadingLevel.HEADING_5,
+    6: HeadingLevel.HEADING_6,
   };
 
   const headingIndent =
