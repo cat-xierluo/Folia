@@ -3445,6 +3445,52 @@ a.about-info-value:hover {
   line-height: 1;
 }
 
+/* v0.7 法律模板下拉菜单 */
+.toolbar-template-wrapper {
+  position: relative;
+  display: inline-flex;
+}
+
+.toolbar-template-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+}
+
+.toolbar-template-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  z-index: 1000;
+  min-width: 160px;
+  padding: 4px;
+  list-style: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px var(--shadow-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.toolbar-template-item {
+  padding: 6px 12px;
+  border: none;
+  background: transparent;
+  color: var(--fg);
+  font-size: 13px;
+  font-family: var(--font-body);
+  text-align: left;
+  cursor: pointer;
+  border-radius: 4px;
+  width: 100%;
+}
+
+.toolbar-template-item:hover { background: var(--control-hover-bg); }
+.toolbar-template-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
 /* ===== Dark Theme Guardrails ===== */
 
 html[data-theme='dark'] .vditor,

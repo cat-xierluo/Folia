@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **法律文档模板**（v0.7，ROADMAP）：工具栏新增「插入模板」按钮，可一键在光标处插入证据目录、诉讼材料清单、案件时间线三类法律文档骨架。模板使用 Markdown 管道表格与列表（可编辑、可增删行列），而非会被锁定为只读的复杂 HTML 合并表；内容是精简骨架（表头 + 占位空行），供用户填充而非删除。三语界面文案同步。
 - **表格列隐藏规则**（v0.7，ROADMAP）：在 HTML 表格的 `<table>` 标签上加布尔属性 `data-hide-last-column`（如 `<table data-hide-last-column>`），所有阅读 / 预览 / 导出 surface 隐藏该表格的最后一列。典型场景：证据目录、材料清单表格的最后一列是「内部备注」「状态」等不希望出现在对外预览与导出文档中的辅助列，加上该属性即可在预览和导出时统一隐藏，而源码与主编辑器中仍完整保留。Word / DOCX 导出按表格网格列精确跳过最后一列，正确处理 rowspan / colspan（合并单元格跨越末列时缩减列数）；HTML 预览 / 复制 / 导出与稳定阅读预览给末列单元格注入隐藏样式；主编辑器如实显示完整表格（它是编辑源码的入口）。新增 `fixtures/legal-html-tables/column-hide-demo.md` 样例。
 
 - **Word 导出预设 schema 治理基础**（ISS-181 第一期）：为 JSON 预设引入 `schemaVersion` 版本号（当前 `1`，缺失视为旧预设兼容）与**未知字段诊断**。此前导入器对未知字段完全静默放行——用户写了拼写错误或预留字段（如 `sections`、`headers`）会导入成功但完全不生效，造成「导入成功即已支持」的误解。现在导入器维护一份 `PresetConfig` 字段白名单树作为唯一真源，递归检测用户 JSON 的未知字段，收集为 `warning` 诊断（不阻断导入，字段被忽略）；设置页导入后显示「已导入，但有 N 个字段不被识别：…」琥珀色提示。`html_mapping.selectors` 的自由 CSS 选择器键与 `styles` 注册表的自定义样式名被正确豁免。模板自带 `schemaVersion: 1`。声明高于当前版本时给出诊断。新增 `docs/word-preset-capabilities.md` 能力矩阵文档，列出每个字段在 DOCX 导出 / Word 纸张预览两条管线的支持程度（✅准确 / ⚠️近似 / ❌不支持），作为 ISS-181/182 治理与未来字段扩展的真源。实体能力扩展（H5/H6、任意页眉页脚文本、分节/横向页面、固定列宽等）留待第二/三期。

@@ -149,9 +149,9 @@
 - [x] HTML table block 定位服务：从源码中提取并替换单个 `<table>` 区块，忽略 fenced code
 - [x] 法律 HTML 表格 fixture 基线：证据目录、材料清单、长 URL/长中文、复杂表头、多 `tbody`、空单元格
 - [x] 表格列隐藏规则可配置（data-hide-last-column 属性）
-- [ ] 证据目录模板
-- [ ] 材料清单模板
-- [ ] 时间线模板
+- [x] 证据目录模板
+- [x] 材料清单模板
+- [x] 时间线模板
 - [x] 导出为独立 HTML：已并入 HTML 导出体系，支持右侧 HTML 预览、内置 / 自定义预设、HTML 文件导出，并保留“复制到公众号编辑器”使用场景
 
 ### v0.8 预设生态与内测授权探索
@@ -176,6 +176,8 @@
 
 ## 进度日志
 
+- **2026-07-24（续四）**
+  - v0.7 法律文档模板（ROADMAP：证据目录 / 材料清单 / 时间线）：新增 `src/services/legalTemplates.ts`（`LEGAL_TEMPLATES` 纯数据：Markdown 管道表格骨架 + 列表，可编辑优先——复杂 HTML 合并表会被 `lockComplexTables` 锁定为不可编辑，故模板用 Markdown 管道表而非 HTML rowspan/colspan；内容是精简骨架非完整样例，供用户填充）。入口：Toolbar view-actions 组加「插入模板」下拉按钮（`ClipboardList` 图标 + useState 控制开关 + backdrop 点外关闭），点击模板项 dispatch `folia:toolbar-insert-template` CustomEvent（复用已验证的 `743cd1e^` 范式）。接收：`WysiwygEditorPane` 监听该事件 → `editor.insertValue(markdown)` + `emitEditorValueIfChanged`，cleanup 移除监听。i18n 三语新增 `toolbarInsertTemplate*` + 三个模板标题键。CSS 复用 tab-context-menu 浮层样式模式。typecheck / lint / test（502）全绿。
 - **2026-07-24（续三）**
   - ISS-179 Phase 3 最小落盘（修复粘贴图片保存后丢失）：核查发现此前粘贴/拖入图片在 Markdown 中写入临时 `blob:` object URL，保存时原样写进文件，重启后 `blob:` 失效、图片永久丢失（数据损坏级，但任务文档此前记为「Phase 3 待实现」语气偏淡）。本次实现最小闭环：(1) Rust 新增 `write_managed_asset(document_path, asset_relative_path, bytes)` 命令——文档父目录 + 资源相对路径解析目标，拒绝非绝对路径 / denied-root 黑名单 / `..` 遍历，canonicalize 父目录后 `starts_with` 双重保险防符号链接逃逸，`create_dir_all` 创建 `<doc>.assets/` 后写字节；5 个单测（正常落盘+自动建目录 / `..` 遍历拒绝 / denied-root 拒绝 / 相对路径拒绝 / 覆盖更新）。(2) 前端 `imageAssetPersistenceService.ts`——`persistPendingImageAssets` 遍历 pending assets 调 Rust 落盘 + `markPersisted` + 返回 blob→相对路径替换映射；`deriveDocBaseName` / `replaceBlobUrlsWithRelativePaths` 纯函数；单个资源失败收集到 failures 不阻断其余。(3) `AppLayout` handleSave/handleSaveAs 在写文本前落盘 + 替换 content；另存为在新路径落盘后重写文本。基线 491 → 501 vitest 全绿；cargo test 29 → 34 全绿；typecheck / lint / build 全绿。ISS-179 整体仍 `[ ]`（CSP 收紧 / asset scope 治理 / 真实桌面验证剩余），但「保存丢图」这个数据风险已消除。
 - **2026-07-24（续二）**
