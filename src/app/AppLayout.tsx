@@ -22,6 +22,11 @@ import { scheduleDelayedAutoUpdateCheck } from '../services/autoUpdateScheduler'
 import { translate } from '../services/i18n';
 import type { HtmlTableBlock } from '../services/htmlTableBlockService';
 import { ImageAssetStoreProvider } from '../context/ImageAssetStoreProvider';
+import { ImageAssetStore } from '../services/imageAssetService';
+import {
+  persistPendingImageAssets,
+  replaceBlobUrlsWithRelativePaths,
+} from '../services/imageAssetPersistenceService';
 import { Toolbar } from '../components/Toolbar';
 import { StatusBar } from '../components/StatusBar';
 import { FloatingToc } from '../components/FloatingToc';
@@ -174,6 +179,11 @@ export function AppLayout() {
     [],
   );
 
+  // DEC-119 决策 7 / ISS-179 Phase 3：共享图片资产 store。
+  // 在 AppLayout 内创建并注入 Provider，使 handleSave 也能访问（Provider 是
+  // 本组件渲染的子树，useContext 在本层拿不到）。pending 图片在保存时落盘。
+  const imageAssetStore = useMemo(() => new ImageAssetStore(), []);
+
   // ISS-164：从其他窗口拖到本窗口 tab bar 的 merge-back 请求。
   // 本窗口作为目标，emit tab:drop-requested 信号回源；源窗口 useSession 监听后
   // 会主动调用 mergeBackTab（携带完整 tab 数据），目标再 receiveTab。
@@ -276,10 +286,24 @@ export function AppLayout() {
   const handleSave = useCallback(async () => {
     if (file.fileType === 'docx') return;
     const { saveFile } = await import('../services/fileService');
-    const updated = await saveFile(file);
+    // DEC-119 决策 7 / ISS-179 Phase 3：保存前把 pending 图片落盘到
+    // <doc>.assets/ 并把 content 里的 blob: 替换为相对路径，否则重启后
+    // blob: 失效、图片永久丢失。无 pending 或非 Tauri 时为快路径（空操作）。
+    let fileToSave = file;
+    if (file.path) {
+      const { replacements, failures } = await persistPendingImageAssets(imageAssetStore, file.path);
+      if (failures.length > 0) {
+        console.error('[Folia] 部分图片落盘失败:', failures);
+      }
+      if (replacements.length > 0) {
+        const nextContent = replaceBlobUrlsWithRelativePaths(file.content, replacements);
+        fileToSave = { ...file, content: nextContent };
+      }
+    }
+    const updated = await saveFile(fileToSave);
     updateActiveFile(() => updated);
     if (updated.path) setLastOpenedPath(updated.path);
-  }, [file, updateActiveFile]);
+  }, [file, updateActiveFile, imageAssetStore]);
 
   const handleSaveAs = useCallback(async () => {
     if (file.fileType === 'docx') return;
@@ -287,7 +311,23 @@ export function AppLayout() {
     const updated = await saveFileAs(file);
     updateActiveFile(() => updated);
     if (updated.path) setLastOpenedPath(updated.path);
-  }, [file, updateActiveFile]);
+    // DEC-119 决策 7：另存为到新路径后，把 pending 图片落盘到新路径的
+    // <doc>.assets/ 并更新 content。saveFileAs 已写入旧 content，这里
+    // 落盘后再写一次（含相对路径的 content）。
+    if (updated.path) {
+      const { replacements, failures } = await persistPendingImageAssets(imageAssetStore, updated.path);
+      if (failures.length > 0) {
+        console.error('[Folia] 部分图片落盘失败:', failures);
+      }
+      if (replacements.length > 0) {
+        const nextContent = replaceBlobUrlsWithRelativePaths(updated.content, replacements);
+        const { writeTextFile } = await import('@tauri-apps/plugin-fs');
+        await writeTextFile(updated.path, nextContent);
+        const rewritten = { ...updated, content: nextContent, lastSavedContent: nextContent };
+        updateActiveFile(() => rewritten);
+      }
+    }
+  }, [file, updateActiveFile, imageAssetStore]);
 
   const handleExportWord = useCallback(async () => {
     if (!file.path || file.fileType === 'docx') return;
@@ -780,7 +820,7 @@ export function AppLayout() {
   } as CSSProperties;
 
   return (
-    <ImageAssetStoreProvider>
+    <ImageAssetStoreProvider store={imageAssetStore}>
     <div className="app-layout" data-theme={settings.theme} style={appStyle}>
       <Toolbar
         dirty={file.dirty}

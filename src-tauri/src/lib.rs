@@ -113,6 +113,85 @@ fn write_opened_document(path: String, content: String) -> Result<(), String> {
   std::fs::write(&path, content).map_err(|error| format!("failed to write document: {error}"))
 }
 
+/// 将粘贴 / 拖入的图片字节原子落盘到文档同目录的 `<doc>.assets/` 子目录
+/// （DEC-119 决策 6/7，ISS-179 Phase 3 最小落盘）。
+///
+/// 路径解析：`documentPath` 的父目录 + `assetRelativePath` → 目标绝对路径。
+/// 例如 `/work/案件.md` + `案件.assets/img.png` → `/work/案件.assets/img.png`。
+///
+/// 安全校验（与 read/write/watch 共享 denied-root 黑名单）：
+/// 1. 文档路径必须是绝对路径；
+/// 2. 文档与解析后的资源路径均不得命中 denied-root 黑名单；
+/// 3. 解析后的资源路径必须落在文档父目录之下（防 `../` 遍历逃逸到任意位置）。
+///
+/// 字节由前端以 `Vec<u8>`（JSON 数字数组）传入。图片资源通常在数 MB 内，
+/// 序列化开销可接受；大文件读取侧的 raw-bytes 优化（ISS-159）不适用于此路径。
+#[tauri::command]
+fn write_managed_asset(
+  document_path: String,
+  asset_relative_path: String,
+  bytes: Vec<u8>,
+) -> Result<(), String> {
+  let doc_path = PathBuf::from(&document_path);
+  if !is_absolute_path(&doc_path) {
+    return Err(format!("document path must be absolute: {document_path}"));
+  }
+  if is_denied_root(&doc_path) {
+    return Err(format!(
+      "document path is on the denied roots list: {document_path}"
+    ));
+  }
+
+  // 文档父目录（落盘根）。无父目录说明 document_path 本身是文件名，拒绝。
+  let parent = doc_path.parent().ok_or_else(|| {
+    format!("cannot resolve parent directory of document: {document_path}")
+  })?;
+
+  // 拒绝资源相对路径里的 `..` 段（资源必须落在 `<doc>.assets/` 之下，
+  // 不允许逃逸到文档目录之外）。跨平台分隔符统一为 `/` 后按段检查。
+  let normalized_rel = asset_relative_path.replace('\\', "/");
+  for segment in normalized_rel.split('/') {
+    if segment == ".." {
+      return Err(format!(
+        "asset relative path must not contain parent references (..): {asset_relative_path}"
+      ));
+    }
+  }
+  if normalized_rel.is_empty() || normalized_rel.ends_with('/') {
+    return Err(format!("asset relative path must target a file: {asset_relative_path}"));
+  }
+
+  let target = parent.join(&normalized_rel);
+  if is_denied_root(&target) {
+    return Err(format!(
+      "resolved asset path is on the denied roots list: {}",
+      target.display()
+    ));
+  }
+
+  // canonicalize 父目录后比对，确认解析结果确实落在文档目录之下（双重保险，
+  // 防止符号链接等让 join 结果逃逸）。父目录不存在（未保存的新文档）在此步拦截。
+  let canonical_parent = std::fs::canonicalize(parent).map_err(|error| {
+    format!("failed to canonicalize document directory: {error}")
+  })?;
+  let canonical_target = canonical_parent.join(&normalized_rel);
+  if !canonical_target.starts_with(&canonical_parent) {
+    return Err(format!(
+      "resolved asset path escapes document directory: {}",
+      canonical_target.display()
+    ));
+  }
+
+  // 确保目标目录存在（`<doc>.assets/` 可能尚未创建）。
+  if let Some(dir) = canonical_target.parent() {
+    std::fs::create_dir_all(dir)
+      .map_err(|error| format!("failed to create asset directory: {error}"))?;
+  }
+
+  std::fs::write(&canonical_target, &bytes)
+    .map_err(|error| format!("failed to write asset: {error}"))
+}
+
 /// 监听系统根或敏感目录黑名单前缀（ISS-162，借鉴 horseMD chokidar 防御）。
 ///
 /// 大小写不敏感比较：macOS HFS+/APFS 默认大小写不敏感（区分大小写是可选），Windows NTFS
@@ -477,6 +556,7 @@ pub fn run() {
       pending_opened_paths,
       read_opened_document,
       write_opened_document,
+      write_managed_asset,
       watch_path,
       unwatch_path,
       create_tab_window,
@@ -1060,5 +1140,92 @@ mod tests {
       url,
       "index.html?mode=tab-window&label=tab-window-1&tabIds=tab-a,tab-b"
     );
+  }
+
+  /// write_managed_asset：正常落盘到 <doc>.assets/ 并自动创建目录。
+  #[test]
+  fn write_managed_asset_writes_bytes_into_assets_subdir() {
+    let dir = temp_path("asset-normal");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let doc = dir.join("案件.md");
+    std::fs::write(&doc, b"# doc").unwrap();
+
+    let asset_rel = "案件.assets/pasted-1.png";
+    write_managed_asset(
+      doc.to_string_lossy().to_string(),
+      asset_rel.into(),
+      b"\x89PNG\r\n".to_vec(),
+    )
+    .unwrap();
+
+    let written = std::fs::read(dir.join(asset_rel)).unwrap();
+    assert_eq!(written, b"\x89PNG\r\n");
+    let _ = std::fs::remove_dir_all(&dir);
+  }
+
+  /// write_managed_asset：拒绝资源相对路径里的 `..` 段（路径遍历防护）。
+  #[test]
+  fn write_managed_asset_rejects_parent_traversal() {
+    let dir = temp_path("asset-traversal");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let doc = dir.join("doc.md");
+    std::fs::write(&doc, b"").unwrap();
+
+    let err = write_managed_asset(
+      doc.to_string_lossy().to_string(),
+      "../evil.md".into(),
+      b"x".to_vec(),
+    )
+    .unwrap_err();
+    assert!(err.contains("parent references"), "got: {err}");
+
+    // 目标文件不应被创建
+    assert!(!dir.join("../evil.md").exists());
+    let _ = std::fs::remove_dir_all(&dir);
+  }
+
+  /// write_managed_asset：拒绝命中 denied-root 黑名单的文档路径。
+  #[test]
+  fn write_managed_asset_rejects_denied_root_document() {
+    let err = write_managed_asset(
+      "/etc/passwd".into(),
+      "x.assets/y.png".into(),
+      b"x".to_vec(),
+    )
+    .unwrap_err();
+    assert!(err.contains("denied roots"), "got: {err}");
+  }
+
+  /// write_managed_asset：拒绝非绝对路径。
+  #[test]
+  fn write_managed_asset_rejects_relative_document_path() {
+    let err = write_managed_asset(
+      "relative.md".into(),
+      "x.assets/y.png".into(),
+      b"x".to_vec(),
+    )
+    .unwrap_err();
+    assert!(err.contains("must be absolute"), "got: {err}");
+  }
+
+  /// write_managed_asset：同名字节重复写入（覆盖更新）仍正常。
+  #[test]
+  fn write_managed_asset_overwrites_existing_file() {
+    let dir = temp_path("asset-overwrite");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let doc = dir.join("doc.md");
+    std::fs::write(&doc, b"").unwrap();
+
+    let asset_rel = "doc.assets/img.png";
+    write_managed_asset(doc.to_string_lossy().to_string(), asset_rel.into(), b"v1".to_vec())
+      .unwrap();
+    write_managed_asset(doc.to_string_lossy().to_string(), asset_rel.into(), b"v2".to_vec())
+      .unwrap();
+
+    assert_eq!(std::fs::read(dir.join(asset_rel)).unwrap(), b"v2");
+    let _ = std::fs::remove_dir_all(&dir);
   }
 }
