@@ -455,8 +455,9 @@ export function AppLayout() {
       }
       if (e.key === ',' && !e.shiftKey && !e.altKey) {
         e.preventDefault();
-        void preloadSettingsPage();
-        setSettingsVisible(true);
+        // ISS-180 续修：先 await chunk 加载完成再显示设置，避免打开瞬间的
+        // 骨架闪烁（Suspense fallback）。Toolbar 按钮路径同样问题，一并修复。
+        void preloadSettingsPage().then(() => setSettingsVisible(true));
       }
     };
     window.addEventListener('keydown', handler);
@@ -849,8 +850,8 @@ export function AppLayout() {
         onSave={handleSave}
         onSaveAs={handleSaveAs}
         onOpenSettings={() => {
-          void preloadSettingsPage();
-          setSettingsVisible(true);
+          // ISS-180 续修：与 Cmd+, 路径一致，await chunk 后再显示，避免骨架闪烁
+          void preloadSettingsPage().then(() => setSettingsVisible(true));
         }}
         onPreloadSettings={preloadSettingsPageInBackground}
         updateStatus={updateToolbarStatus}
