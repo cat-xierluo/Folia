@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **修复长文章点击侧边 TOC 后跳到错误标题或长时间停在中间位置的问题**（ISS-186 / DEC-128）：TOC、源码模式和 WYSIWYG 跳转改为共用 `tocService` 标题模型；解析器按行识别 Markdown ATX 标题并排除 fenced code 中的 `#` 示例，DOM 绑定只选择 Vditor 的真实 Markdown 标题、排除 HTML / 图表预览标题，并为重复标题按顺序绑定独立 `toc-N` 锚点。超过约 1.5 个编辑器视口的跳转改为即时定位，近距离仍保留短平滑、同时尊重“减少动态效果”。新增单元测试与 30 节长文逐像素 E2E，覆盖反引号 / 波浪线围栏、HTML heading、重复标题、源码位置和远距离跳转。
 - **修复设置页栏目切换时内容区闪一下的问题**（ISS-185 / DEC-127）：非默认栏目继续按需加载，但点击后不再立即卸载当前内容、显示 `SectionFallback`；左侧选中态立即响应，右侧通过 deferred section 保留上一栏目，目标 chunk 就绪后一次性提交新内容。鼠标移入、键盘聚焦和点击栏目时会主动预热对应 chunk，不增加应用首屏静态包。新增延迟 EditorSection chunk 的逐帧 E2E，断言加载期间旧「通用」内容始终可见、`.settings-section-loading` 全程 0 帧，随后只切换为真实「编辑器」内容。
 
 ## [0.6.1] - 2026-07-28

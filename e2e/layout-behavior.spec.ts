@@ -1,8 +1,15 @@
 import { expect, type Page, test } from '@playwright/test';
 
 async function openEditor(page: Page): Promise<void> {
-  await page.getByRole('button', { name: '源码模式' }).click();
-  await expect(page.locator('.cm-editor')).toBeVisible();
+  if (await page.locator('.recent-page').isVisible()) {
+    await page.getByRole('button', { name: '新建文件' }).click();
+  }
+  const sourceEditor = page.locator('.cm-editor');
+  await expect(page.locator('.cm-editor, .wysiwyg-editor-pane').first()).toBeVisible();
+  if (!(await sourceEditor.isVisible())) {
+    await page.getByRole('button', { name: '源码模式' }).click();
+    await expect(sourceEditor).toBeVisible();
+  }
   await page.locator('.cm-content').click();
 }
 
@@ -1122,6 +1129,61 @@ test('floating toc tracks WYSIWYG scroll after the editor mounts', async ({ page
   });
 
   await expect(page.locator('.floating-toc-item.active')).toContainText('第 10 节');
+});
+
+test('floating toc keeps long-document targets aligned across fenced examples and HTML headings (ISS-186)', async ({ page }) => {
+  await page.goto('/');
+  await openEditor(page);
+
+  const sections = Array.from({ length: 30 }, (_, index) => {
+    const section = index + 1;
+    const extras = section === 6
+      ? ['```markdown', '# 代码示例一级标题', '## 代码示例二级标题', '```']
+      : section === 8
+        ? ['<section><h2>HTML 预览标题</h2><p>HTML 示例正文</p></section>']
+        : [];
+    return [
+      `## 章节 ${String(section).padStart(2, '0')}`,
+      ...Array.from({ length: 4 }, (_unused, paragraph) => (
+        `第 ${section} 节长文段落 ${paragraph + 1}。${'用于拉开大纲跳转距离的正文。'.repeat(18)}`
+      )),
+      ...extras,
+    ].join('\n\n');
+  });
+  await page.keyboard.insertText(['# 长文跳转回归', ...sections].join('\n\n'));
+  await page.getByRole('button', { name: '源码模式' }).click();
+  await expect(liveEditor(page)).toBeVisible();
+
+  await page.locator('.floating-toc-rail').hover();
+  await page.getByRole('button', { name: '固定大纲' }).click();
+  await expect(page.getByRole('button', { name: '代码示例一级标题' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '代码示例二级标题' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'HTML 预览标题' })).toHaveCount(0);
+
+  const scroller = liveEditorContent(page);
+  await scroller.evaluate((element) => {
+    element.scrollTop = 0;
+    element.dispatchEvent(new Event('scroll'));
+  });
+  await page.getByRole('button', { name: '章节 28', exact: true }).click();
+  await page.waitForTimeout(150);
+
+  const jump = await page.evaluate(() => {
+    const ir = Array.from(document.querySelectorAll<HTMLElement>('.vditor-ir'))
+      .find((element) => element.getBoundingClientRect().height > 0);
+    const scrollerElement = ir?.querySelector<HTMLElement>(':scope > .vditor-reset');
+    const target = Array.from(ir?.querySelectorAll<HTMLElement>('h2') ?? [])
+      .find((heading) => heading.textContent?.includes('章节 28'));
+    if (!scrollerElement || !target) return null;
+    return {
+      offset: Math.round(target.getBoundingClientRect().top - scrollerElement.getBoundingClientRect().top),
+      id: target.id,
+    };
+  });
+  expect(jump).not.toBeNull();
+  expect(Math.abs(jump!.offset)).toBeLessThanOrEqual(24);
+  expect(jump!.id).toBe('toc-28');
+  await expect(page.locator('.floating-toc-item.active')).toContainText('章节 28');
 });
 
 test('floating toc jumps to headings in source mode', async ({ page }) => {

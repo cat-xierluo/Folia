@@ -73,6 +73,7 @@
 - [x] 参考 Funes 接入自动更新：启动后延迟检查、Settings / 关于手动检查、后台下载、下载完成后顶部重启更新
 - [x] 验证复杂 HTML table 默认走稳定阅读预览，不被 WYSIWYG 压窄或破坏结构；Markdown 文档可手动退出 HTML 阅读预览回到普通 Markdown 预览；Word 纸张预览继续不横向撑破纸张
 - [x] TOC 改为默认浮动大纲：弱刻度显示，hover / click / focus 展开，面板按钮固定 / 关闭，固定态支持”总是固定大纲”偏好，点击条目跳转
+- [x] 长文章 TOC 使用统一标题模型与稳定锚点准确跳转（ISS-186 / DEC-128，2026-07-28 闭合）：排除 fenced code 伪标题与 HTML / 图表预览标题，重复标题按序绑定独立锚点；超远距离即时定位，30 节长文逐像素 E2E 覆盖。
 - [x] HTML 演示预览：直接打开受信任 HTML 演示文件，隔离运行其 JS/CSS/本地资源，并支持常见翻页操作
 - [x] Vditor WYSIWYG 一体化（ISS-155 / DEC-085）：所有 Markdown / HTML 文档默认进入 Vditor IR；含 `rowspan/colspan` 的复杂表格在 Vditor 中自动锁定（`contenteditable=false` + `data-folia-locked=”table”`），输入回调对比 `classifyHtmlTableBlocks` 自动恢复被改动的复杂表源码；hover 复杂表格弹出”查看原貌”图标，弹窗渲染 `createHtmlReadingPreviewHtml` 忠实 HTML；删除结构化表格编辑、HTML 阅读预览切换按钮、`html-reading-toolbar` / `markdown-preview-toolbar` 整段
 - [ ] 富媒体统一渲染与资源治理（ISS-179 / DEC-119）：统一 Mermaid / SVG / 图片在主编辑器、HTML 预览 / 复制 / 导出、Word 预览 / DOCX 中的完成契约、终态清洗、资源解析与错误诊断；新插入图片默认写入同目录 `文档名.assets/` 并使用相对路径（**最小落盘已完成 2026-07-24**：保存时 pending 图片字节经 Rust `write_managed_asset` 写入 `<doc>.assets/`，blob: 替换为相对路径，消除重启丢图）；剩余 CSP 收紧 / asset scope 治理 / 桌面验证仍待后续；以正式 fixture、Chromium CI 和 macOS / Windows 真实 WebView 作为完成门禁

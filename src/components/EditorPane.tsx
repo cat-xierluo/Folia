@@ -4,6 +4,7 @@ import { markdown } from '@codemirror/lang-markdown';
 import { EditorState } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { useSettings } from '../hooks/useSettings';
+import { findMarkdownHeadingPosition } from '../services/tocService';
 
 export type SourceHeadingScrollRequest = {
   index: number;
@@ -15,19 +16,6 @@ type EditorPaneProps = {
   onChange: (value: string) => void;
   headingScrollRequest?: SourceHeadingScrollRequest;
 };
-
-function findHeadingPosition(source: string, targetIndex: number): number | null {
-  const headingRegex = /^(#{1,6})\s+(.+)$/gm;
-  let match: RegExpExecArray | null;
-  let index = 0;
-
-  while ((match = headingRegex.exec(source)) !== null) {
-    if (index === targetIndex) return match.index;
-    index += 1;
-  }
-
-  return null;
-}
 
 export function EditorPane({ source, onChange, headingScrollRequest }: EditorPaneProps) {
   const settings = useSettings();
@@ -70,7 +58,7 @@ export function EditorPane({ source, onChange, headingScrollRequest }: EditorPan
     if (!editorView || !headingScrollRequest) return;
     if (handledHeadingScrollRequestRef.current === headingScrollRequest.requestId) return;
 
-    const position = findHeadingPosition(source, headingScrollRequest.index);
+    const position = findMarkdownHeadingPosition(source, headingScrollRequest.index);
     if (position === null) return;
 
     handledHeadingScrollRequestRef.current = headingScrollRequest.requestId;

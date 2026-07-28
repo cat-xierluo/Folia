@@ -146,6 +146,7 @@ word/table-handler.ts 输出 docx Table；Markdown 管道表格使用专用 pars
 | `wordPreviewArtifactService.ts` | 按需加载 Vditor，将当前 Markdown 渲染为 Word 纸张预览使用的快速 HTML（DEC-119 / DEC-120 之后已迁移到 RenderCoordinator，本文件保留其作为对外稳定 API，内部实现走 coordinator） |
 | `renderCoordinator.ts` | DEC-120 富媒体统一渲染协调器：`createRenderCoordinator()` 工厂 + `renderMarkdownArtifact(source, options)` 契约；generation 单调递增，旧 generation 完成被丢弃；AbortSignal 让当前 generation resolve 为 aborted artifact；MutationObserver 等待 `.language-mermaid` SVG / `.language-math` KaTeX 终态而非依赖 `after()` / `data-render="1"`；5s 软超时返回 timeout diagnostics。统一接管 `wordPreviewArtifactService` / `WechatPreviewPane` / `WordPaperPreviewPane` 的静态 HTML 链路。Phase 0 / 1 红测试 4 vitest + 3 Playwright 全部转绿 |
 | `imageAssetService.ts` | DEC-121 受管图片资源服务：sha-256 hash 去重（jsdom 降级 FNV-1a 兜底）+ `sanitizeFileName` / `resolveAssetFileName` 纯函数；`ImageAssetStore` pending↔persisted state machine；object URL 与相对路径切换。Phase 3 后续由 Rust 侧 `protocol-asset` feature + persisted-scope 完成实际落盘 |
+| `tocService.ts` | ISS-186 / DEC-128 统一标题模型：按行解析 Markdown ATX 标题并排除 fenced code；为源码模式提供字符位置；把 TOC 顺序绑定到 Vditor 的真实 Markdown 标题 DOM，排除 HTML / 图表 preview heading；按距离选择即时或短平滑滚动 |
 | `wordExportService.ts` | 按需加载 Word 导出转换链路并写入 .docx 文件 |
 
 ### components/
@@ -167,7 +168,7 @@ word/table-handler.ts 输出 docx Table；Markdown 管道表格使用专用 pars
 
 | 文件 | 职责 |
 |------|------|
-| `AppLayout.tsx` | 主布局，管理文件状态、系统文件打开事件、TOC 提取与浮动大纲临时 / 持久固定状态、源码模式 TOC 跳转请求、拖拽打开、快捷键、WYSIWYG/稳定 HTML 预览/源码切换、Markdown 文档手动退出或返回 HTML 阅读预览、Word 预览面板和后台更新下载状态 |
+| `AppLayout.tsx` | 主布局，管理文件状态、系统文件打开事件、调用 `tocService` 维护统一 TOC / DOM 锚点与浮动大纲临时 / 持久固定状态、源码模式 TOC 跳转请求、拖拽打开、快捷键、WYSIWYG/稳定 HTML 预览/源码切换、Markdown 文档手动退出或返回 HTML 阅读预览、Word 预览面板和后台更新下载状态 |
 | `App.tsx` | 入口组件 |
 
 ## 启动性能策略
@@ -213,7 +214,7 @@ word/table-handler.ts 输出 docx Table；Markdown 管道表格使用专用 pars
 
 - `npm test`：Vitest 单元测试，覆盖设置迁移、HTML 清洗、Markdown 渲染特征探测。
 - `npm run test:e2e`：Playwright 端到端回归测试，启动 Vite 后验证冷启动、编辑切换、稳定 HTML 阅读预览、Word 预览和 HTML 表格渲染。
-- E2E 重点覆盖：普通 Markdown 默认显示即时渲染编辑器、源码编辑器按需加载且长文档可滚动、源码模式 TOC 点击跳转、原生 HTML table 自动进入稳定阅读预览、Markdown table 文档可手动退出并返回 HTML 阅读预览、结构化编辑器只替换目标 table block、Word 预览按需加载、右侧面板拖拽、Settings 固定尺寸、Floating TOC hover/固定/滚动高亮和复杂 HTML table 不横向溢出。
+- E2E 重点覆盖：普通 Markdown 默认显示即时渲染编辑器、源码编辑器按需加载且长文档可滚动、源码模式 TOC 点击跳转、长文 fenced code / HTML heading 不污染 TOC 且远距离定位准确、原生 HTML table 自动进入稳定阅读预览、Markdown table 文档可手动退出并返回 HTML 阅读预览、结构化编辑器只替换目标 table block、Word 预览按需加载、右侧面板拖拽、Settings 固定尺寸、Floating TOC hover/固定/滚动高亮和复杂 HTML table 不横向溢出。
 
 ## Tauri 配置
 
@@ -354,4 +355,3 @@ RenderCoordinator 暴露的 diagnostics 是 Phase 2 / 3 / 4 跨 surface 错误�
 - `e2e/rich-media-fixture-matrix.spec.ts`：6 个 fixture 的端到端可用性
 - `e2e/mermaid-ir-renders.spec.ts`：DEC-118 主 IR mermaid 回归
 failure 时自动上传 `test-results/` 与 `playwright-report/` 为 7 天 artifact。macOS WKWebView / Windows WebView2 真实桌面验证仍由 release.yml 负责，不在本 CI 矩阵内。
-

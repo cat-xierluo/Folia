@@ -3,6 +3,11 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { createEmptyFile, type TocItem } from '../types/document';
 import {
+  bindRenderedTocHeadings,
+  extractMarkdownToc,
+  scrollTocHeadingIntoView,
+} from '../services/tocService';
+import {
   getExportPresetConfig,
   getLastOpenedPath,
   resolvePreviewFontFamily,
@@ -112,23 +117,9 @@ type UpdateInstallState =
 // `<Suspense fallback>`。SettingsPage 内部 7 个非默认 section 的 `<Suspense>`
 // 仍保留，负责按需显示单个 tab 的"正在加载"过渡，避免切换 tab 短暂空白。
 
-// TOC 提取是对全文的正则扫描；编辑超长文档时每键都跑会卡顿，
+// TOC 提取需要按行扫描全文并维护 code fence 状态；编辑超长文档时每键都跑会卡顿，
 // 故把 TOC 刷新防抖到输入停顿后执行（ISS-159）。文件内容本身仍每键同步落盘/保存。
 const TOC_REFRESH_DEBOUNCE_MS = 150;
-
-function extractToc(content: string): TocItem[] {
-  const headings: TocItem[] = [];
-  const regex = /^(#{1,6})\s+(.+)$/gm;
-  let match: RegExpExecArray | null;
-  let idx = 0;
-  while ((match = regex.exec(content)) !== null) {
-    const level = match[1].length;
-    const text = match[2].trim();
-    const id = `toc-${idx++}`;
-    headings.push({ level, text, id });
-  }
-  return headings;
-}
 
 function toUpdateErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -199,7 +190,7 @@ export function AppLayout() {
   // openPath 才能填上）。render-time 同步重置逻辑见下方 if 分支（ISS-163）。
   const [toc, setToc] = useState<TocItem[]>(() => {
     const initial = activeTab;
-    return initial?.file.fileType === 'docx' ? [] : extractToc(initial?.file.content ?? '');
+    return initial?.file.fileType === 'docx' ? [] : extractMarkdownToc(initial?.file.content ?? '');
   });
   // 跟踪最近一次已为其生成 TOC 的 activeTabId；切换 tab 时与当前 activeTabId 不一致
   // 就在 render 阶段同步重置 toc 与挂起的防抖刷新（ISS-163）。详见下方 if 分支。
@@ -225,7 +216,7 @@ export function AppLayout() {
   // 不会造成级联渲染。
   if (lastTocTabId !== activeTabId) {
     setLastTocTabId(activeTabId);
-    setToc(activeTab?.file.fileType === 'docx' ? [] : extractToc(activeTab?.file.content ?? ''));
+    setToc(activeTab?.file.fileType === 'docx' ? [] : extractMarkdownToc(activeTab?.file.content ?? ''));
   }
 
   useEffect(() => {
@@ -259,7 +250,7 @@ export function AppLayout() {
     if (opened) {
       openInNewTab(opened);
       cancelPendingTocRefresh();
-      setToc(extractToc(opened.content));
+      setToc(extractMarkdownToc(opened.content));
       if (opened.path) setLastOpenedPath(opened.path);
       setHtmlPresentationVisible(false);
     }
@@ -270,7 +261,7 @@ export function AppLayout() {
     const opened = await openPath(path, settings.defaultEncoding);
     openInNewTab(opened);
     cancelPendingTocRefresh();
-    setToc(opened.fileType === 'docx' ? [] : extractToc(opened.content));
+    setToc(opened.fileType === 'docx' ? [] : extractMarkdownToc(opened.content));
     setLastOpenedPath(path);
     setHtmlPresentationVisible(false);
   }, [settings.defaultEncoding, cancelPendingTocRefresh, openInNewTab]);
@@ -337,13 +328,13 @@ export function AppLayout() {
       content: value,
       dirty: value !== prev.lastSavedContent,
     }));
-    // extractToc 是全文正则扫描，超长文档每键都跑会卡顿；防抖到输入停顿后刷新（ISS-159）。
+    // extractMarkdownToc 会扫描全文，超长文档每键都跑会卡顿；防抖到输入停顿后刷新（ISS-159）。
     if (tocRefreshTimerRef.current !== null) {
       window.clearTimeout(tocRefreshTimerRef.current);
     }
     tocRefreshTimerRef.current = window.setTimeout(() => {
       tocRefreshTimerRef.current = null;
-      setToc(extractToc(value));
+      setToc(extractMarkdownToc(value));
     }, TOC_REFRESH_DEBOUNCE_MS);
   }, [updateActiveFile]);
 
@@ -654,20 +645,12 @@ export function AppLayout() {
     resizing ? 'is-resizing' : '',
   ].filter(Boolean).join(' ');
 
-  const resolveTocHeading = useCallback((item: TocItem, index: number): HTMLElement | null => {
-    const byId = document.getElementById(item.id);
-    if (byId instanceof HTMLElement) return byId;
-
+  const resolveTocHeadings = useCallback((): HTMLElement[] => {
     const root = mainContentRef.current;
-    if (!root) return null;
+    return root ? bindRenderedTocHeadings(root, toc) : [];
+  }, [toc]);
 
-    const headings = root.querySelectorAll<HTMLElement>(
-      '.vditor-ir h1, .vditor-ir h2, .vditor-ir h3, .vditor-ir h4, .vditor-ir h5, .vditor-ir h6, .vditor-wysiwyg h1, .vditor-wysiwyg h2, .vditor-wysiwyg h3, .vditor-wysiwyg h4, .vditor-wysiwyg h5, .vditor-wysiwyg h6',
-    );
-    return headings[index] ?? null;
-  }, []);
-
-  const handleTocNavigate = useCallback((item: TocItem, index: number) => {
+  const handleTocNavigate = useCallback((_item: TocItem, index: number) => {
     if (editorMode === 'source') {
       setSourceHeadingScrollRequest((current) => ({
         index,
@@ -677,10 +660,11 @@ export function AppLayout() {
       return;
     }
 
-    const target = resolveTocHeading(item, index);
-    target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const target = resolveTocHeadings()[index];
+    if (!target) return;
+    scrollTocHeadingIntoView(target);
     setActiveTocIndex(index);
-  }, [editorMode, resolveTocHeading]);
+  }, [editorMode, resolveTocHeadings]);
 
   const handleTocPinnedChange = useCallback((nextPinned: boolean) => {
     setTocSessionPinned(nextPinned);
@@ -711,10 +695,11 @@ export function AppLayout() {
     const updateActiveHeading = () => {
       const rootRect = mainContentRef.current?.getBoundingClientRect();
       const anchorTop = (rootRect?.top ?? 0) + 96;
+      const headings = resolveTocHeadings();
       let nextActive = 0;
 
-      toc.forEach((item, index) => {
-        const heading = resolveTocHeading(item, index);
+      toc.forEach((_item, index) => {
+        const heading = headings[index];
         if (!heading) return;
         if (heading.getBoundingClientRect().top <= anchorTop) {
           nextActive = index;
@@ -750,7 +735,7 @@ export function AppLayout() {
     };
     // 故意不含 file.content：内容变化通过上面的 MutationObserver 实时感知，
     // 不应每键都 disconnect + 重新 observe 整棵 DOM（ISS-159）。toc 变化时重建即可。
-  }, [editorMode, resolveTocHeading, toc, rightPanelMode]);
+  }, [editorMode, resolveTocHeadings, toc, rightPanelMode]);
 
   const editorPane = isDocx ? (
     <div className="editor-pane readonly-pane">
