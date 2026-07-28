@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useDeferredValue, useEffect, useState } from 'react';
 import type { UpdateCheckResult } from '../services/updateService';
 import { useSettings } from '../hooks/useSettings';
 import { translate } from '../services/i18n';
@@ -59,6 +59,16 @@ const NAV_ITEMS: { id: SettingsSection; labelKey: Parameters<typeof translate>[1
   { id: 'about', labelKey: 'navAbout' },
 ];
 
+const SECTION_PRELOADERS: Partial<Record<SettingsSection, () => Promise<unknown>>> = {
+  editor: preloadEditorSection,
+  preview: preloadPreviewSection,
+  appearance: preloadAppearanceSection,
+  export: preloadExportSection,
+  htmlExport: preloadHtmlExportSection,
+  license: preloadLicenseSection,
+  about: preloadAboutSection,
+};
+
 function SectionFallback() {
   return (
     <div className="settings-section settings-section-loading" aria-hidden="true">
@@ -71,9 +81,20 @@ function SectionFallback() {
 }
 
 export function SettingsPage({ onClose, onUpdateAvailable }: SettingsPageProps) {
-  const [activeSection, setActiveSection] = useState<SettingsSection>('general');
+  const [selectedSection, setSelectedSection] = useState<SettingsSection>('general');
+  const activeSection = useDeferredValue(selectedSection);
+  const isSectionPending = selectedSection !== activeSection;
   const settings = useSettings();
   const t = (key: Parameters<typeof translate>[1]) => translate(settings.locale, key);
+
+  const preloadSection = (section: SettingsSection) => {
+    void SECTION_PRELOADERS[section]?.();
+  };
+
+  const handleSectionSelect = (section: SettingsSection) => {
+    preloadSection(section);
+    setSelectedSection(section);
+  };
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (e.key === 'Escape') {
@@ -102,27 +123,30 @@ export function SettingsPage({ onClose, onUpdateAvailable }: SettingsPageProps) 
             {NAV_ITEMS.map((item) => (
               <button
                 key={item.id}
-                className={`settings-nav-item ${activeSection === item.id ? 'active' : ''}`}
-                onClick={() => setActiveSection(item.id)}
+                className={`settings-nav-item ${selectedSection === item.id ? 'active' : ''}`}
+                onPointerEnter={() => preloadSection(item.id)}
+                onFocus={() => preloadSection(item.id)}
+                onClick={() => handleSectionSelect(item.id)}
               >
                 {t(item.labelKey)}
               </button>
             ))}
           </nav>
         </div>
-        <div className="settings-modal-content">
+        <div className="settings-modal-content" aria-busy={isSectionPending}>
           {/*
             ISS-180: GeneralSection（默认 section）静态导入后直接渲染，不走
-            <Suspense>。这消除了首开时第二层 chunk 解析期间的骨架窗口，让"通用"
-            内容随外壳挂载立即可见。其余 section 仍按需 lazy 加载。
+            lazy。ISS-185: 整个内容区放在同一个 Suspense boundary 中，并以
+            useDeferredValue 保留上一栏目，目标 chunk 就绪后再一次性提交；这样
+            首开仍同步显示"通用"，栏目切换也不会用 fallback 替换已显示内容。
           */}
-          {activeSection === 'general' && <GeneralSection />}
           <Suspense fallback={<SectionFallback />}>
+            {activeSection === 'general' && <GeneralSection />}
             {activeSection === 'editor' && <EditorSection />}
             {activeSection === 'preview' && <PreviewSection />}
             {activeSection === 'appearance' && <AppearanceSection />}
-            {activeSection === 'export' && <ExportSection onOpenLicense={() => setActiveSection('license')} />}
-            {activeSection === 'htmlExport' && <HtmlExportSection onOpenLicense={() => setActiveSection('license')} />}
+            {activeSection === 'export' && <ExportSection onOpenLicense={() => handleSectionSelect('license')} />}
+            {activeSection === 'htmlExport' && <HtmlExportSection onOpenLicense={() => handleSectionSelect('license')} />}
             {activeSection === 'license' && <LicenseSection />}
             {activeSection === 'about' && <AboutSection onUpdateAvailable={onUpdateAvailable} />}
           </Suspense>

@@ -855,6 +855,53 @@ test('settings modal switches tabs by lazy loading each section on demand (ISS-1
   expect(coldOpenMs).toBeLessThan(1000);
 });
 
+test('settings tab switch keeps the current section visible until the lazy section is ready (ISS-185)', async ({ page }) => {
+  let releaseEditorChunk: (() => void) | undefined;
+  const editorChunkReleased = new Promise<void>((resolve) => {
+    releaseEditorChunk = resolve;
+  });
+  let markEditorChunkRequested: (() => void) | undefined;
+  const editorChunkRequested = new Promise<void>((resolve) => {
+    markEditorChunkRequested = resolve;
+  });
+
+  await page.route('**/src/components/settings/EditorSection.tsx*', async (route) => {
+    markEditorChunkRequested?.();
+    await editorChunkReleased;
+    await route.continue();
+  });
+
+  await page.goto('/');
+  await page.getByRole('button', { name: '设置' }).click();
+  await expect(page.getByRole('heading', { name: '通用' })).toBeVisible();
+
+  await page.evaluate(() => {
+    const probe = { fallbackFrames: 0 };
+    Object.assign(window, { __settingsSectionSwitchProbe: probe });
+    const sample = () => {
+      if (document.querySelector('.settings-section-loading')) probe.fallbackFrames += 1;
+      requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+  });
+
+  await page.getByRole('button', { name: '编辑器', exact: true }).click();
+  await editorChunkRequested;
+  await page.waitForTimeout(150);
+
+  await expect(page.getByRole('button', { name: '编辑器', exact: true })).toHaveClass(/active/);
+  await expect(page.getByRole('heading', { name: '通用' })).toBeVisible();
+  const fallbackFrames = await page.evaluate(() => (
+    (window as typeof window & { __settingsSectionSwitchProbe?: { fallbackFrames: number } })
+      .__settingsSectionSwitchProbe?.fallbackFrames ?? -1
+  ));
+  expect(fallbackFrames).toBe(0);
+
+  releaseEditorChunk?.();
+  await expect(page.getByRole('heading', { name: /编辑器/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '通用' })).toHaveCount(0);
+});
+
 test('Cmd+, opens the settings modal from anywhere (ISS-153)', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('.settings-modal')).toHaveCount(0);
