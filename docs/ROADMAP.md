@@ -12,7 +12,7 @@
 - **v0.1 MVP 已完成**：基础的 Markdown + HTML 分屏阅读编辑器，支持 TOC 大纲、拖拽打开、文件保存。
 - **v0.2 渲染引擎升级已完成**：用 Vditor.preview() 替换 markdown-it + DOMPurify，支持 Mermaid/KaTeX/代码高亮等。
 - 项目已推送到 GitHub: https://github.com/cat-xierluo/Folia
-- 官方网站建设进行中：独立 Astro 静态站将发布到 https://cat-xierluo.github.io/Folia/
+- 官方网站：https://cat-xierluo.github.io/folia/
 
 ## 阶段状态速览
 

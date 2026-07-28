@@ -16,7 +16,7 @@
 
 ## 官方网站
 
-- 官网：[https://cat-xierluo.github.io/personal-site/folia/](https://cat-xierluo.github.io/personal-site/folia/)
+- 官网：[https://cat-xierluo.github.io/folia/](https://cat-xierluo.github.io/folia/)
 - 源码：[https://github.com/cat-xierluo/Folia](https://github.com/cat-xierluo/Folia)
 
 ## 下载与安装

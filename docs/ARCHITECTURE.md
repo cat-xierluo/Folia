@@ -17,7 +17,7 @@
 
 根目录只保留包管理文件、前端入口和桌面工程入口；ESLint、Playwright、Vite 与 TypeScript 配置集中放在 `config/`。日常开发统一通过 npm scripts 间接调用这些配置，避免开发者记忆具体配置路径。
 
-官方网站（产品详情页）由 [cat-xierluo/personal-site](https://github.com/cat-xierluo/personal-site) 仓统一管理，使用 Astro 静态构建并部署到 GitHub Pages（Folio 部分位于 `https://cat-xierluo.github.io/personal-site/folia/`）。Folia 仓不再自建官网子目录；保持桌面应用代码仓库的单一职责。
+官方网站（产品详情页）由 [cat-xierluo/personal-site](https://github.com/cat-xierluo/personal-site) 仓统一管理，使用 Astro 静态构建并部署到 GitHub Pages（Folio 部分位于 `https://cat-xierluo.github.io/folia/`）。Folia 仓不再自建官网子目录；保持桌面应用代码仓库的单一职责。
 
 ## 系统架构
 
@@ -206,7 +206,7 @@ word/table-handler.ts 输出 docx Table；Markdown 管道表格使用专用 pars
 ## 官方网站发布
 
 - 官网已迁出到 [cat-xierluo/personal-site](https://github.com/cat-xierluo/personal-site) 仓统一管理（`personal-site/src/pages/folia.astro` + `personal-site/src/assets/folia-icon.png`）
-- 默认地址：`https://cat-xierluo.github.io/personal-site/folia/`
+- 默认地址：`https://cat-xierluo.github.io/folia/`
 - 本仓不再维护官网子目录；Astro 配置文件已删除，npm scripts 中 `website:*` 已移除（保留 `npm run build` / `npm run preview` 用于桌面应用 Vite 构建）
 - 跨仓协调：Folio 仓 README §"官方网站" 指向 personal-site；personal-site 仓 Folia 详情页数据来源同步（`products.folia` 元数据与 Folia 仓 README §"功能" 对齐）
 
