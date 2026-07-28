@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **移除工具栏「插入法律文档模板」按钮**（DEC-126）：v0.6.0 在「显示源文件」左侧新增的「插入模板」按钮（ClipboardList 图标）经真机使用反馈冗余——法律文档模板入口对日常 Markdown 阅读场景非必需，且首页未打开文件时以禁用态占位，被感知为「多出来的按钮」。现移除该按钮及其下拉菜单、CustomEvent 接线（Toolbar 派发 + WysiwygEditorPane 监听）、`.toolbar-template-*` CSS 与三语 `toolbarInsertTemplate*` i18n key；模板源数据 `src/services/legalTemplates.ts` 保留备用，未来需要时可重新接回。工具栏回到「打开 / 保存 / 另存 / 源码 / Word 预览 / HTML 预览 / 设置」简洁布局。
+
 ## [0.6.1] - 2026-07-28
 
 ### Fixed

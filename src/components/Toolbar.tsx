@@ -1,8 +1,7 @@
-import { useState, type ReactNode } from 'react';
+import { type ReactNode } from 'react';
 import {
   BookOpenText,
   Braces,
-  ClipboardList,
   FolderOpen,
   Newspaper,
   RefreshCw,
@@ -15,7 +14,6 @@ import { useSettings } from '../hooks/useSettings';
 import { translate } from '../services/i18n';
 import { handleTitlebarMouseDown } from '../services/titlebarDrag';
 import type { EditorMode } from '../types/session';
-import { LEGAL_TEMPLATES, TOOLBAR_INSERT_TEMPLATE_EVENT } from '../services/legalTemplates';
 
 type UpdateToolbarStatus = {
   phase: 'ready' | 'installing';
@@ -53,12 +51,6 @@ export function Toolbar({
   const hasOpenedFile = fileName !== '未命名';
   const iconSize = 18;
   const strokeWidth = 1.6;
-  const [templateMenuOpen, setTemplateMenuOpen] = useState(false);
-
-  const handleInsertTemplate = (markdown: string) => {
-    setTemplateMenuOpen(false);
-    window.dispatchEvent(new CustomEvent(TOOLBAR_INSERT_TEMPLATE_EVENT, { detail: { markdown } }));
-  };
 
   const handleMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
     if (!('__TAURI_INTERNALS__' in window)) return;
@@ -129,37 +121,6 @@ export function Toolbar({
               </span>
             </button>
           )}
-          <div className="toolbar-template-wrapper">
-            <button
-              onClick={() => setTemplateMenuOpen((open) => !open)}
-              disabled={editingDisabled}
-              data-no-window-drag="true"
-              title={t('toolbarInsertTemplateTitle')}
-              aria-label={t('toolbarInsertTemplateLabel')}
-              aria-expanded={templateMenuOpen}
-            >
-              <ClipboardList size={iconSize} strokeWidth={strokeWidth} />
-            </button>
-            {templateMenuOpen && (
-              <>
-                <div className="toolbar-template-backdrop" onClick={() => setTemplateMenuOpen(false)} />
-                <ul className="toolbar-template-menu" role="menu">
-                  {LEGAL_TEMPLATES.map((template) => (
-                    <li key={template.id}>
-                      <button
-                        type="button"
-                        role="menuitem"
-                        className="toolbar-template-item"
-                        onClick={() => handleInsertTemplate(template.markdown)}
-                      >
-                        {t(template.titleI18nKey as Parameters<typeof translate>[1])}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </>
-            )}
-          </div>
           <button
             className={editorMode === 'source' ? 'active' : ''}
             onClick={onToggleEditorMode}

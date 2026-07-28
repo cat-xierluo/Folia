@@ -17,7 +17,6 @@ import {
   pickImageFiles,
   registerImageAssetFromFile,
 } from '../services/mediaInsertionService';
-import { TOOLBAR_INSERT_TEMPLATE_EVENT } from '../services/legalTemplates';
 
 type WysiwygEditorPaneProps = {
   source: string;
@@ -525,20 +524,6 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
     host.addEventListener('paste', pasteHandler);
     host.addEventListener('drop', dropHandler);
 
-    // v0.7 法律模板：工具栏「插入模板」按钮通过 CustomEvent 广播 markdown，
-    // 活跃 tab 的 WysiwygEditorPane 监听并在光标处 insertValue。非活跃 tab
-    // 不渲染本组件，故无多实例竞态（与旧 folia:toolbar-insert-image 同范式）。
-    const toolbarTemplateHandler = (event: Event) => {
-      const detail = (event as CustomEvent<{ markdown?: string }>).detail;
-      const markdown = detail?.markdown;
-      if (!markdown) return;
-      const editor = editorRef.current;
-      if (!editor) return;
-      editor.insertValue(markdown);
-      emitEditorValueIfChanged(editor);
-    };
-    window.addEventListener(TOOLBAR_INSERT_TEMPLATE_EVENT, toolbarTemplateHandler);
-
     void Promise.all([
       import('vditor/dist/index.css'),
       import('vditor'),
@@ -784,7 +769,6 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
       host.removeEventListener('drop', markUserInteracted, true);
       host.removeEventListener('paste', pasteHandler);
       host.removeEventListener('drop', dropHandler);
-      window.removeEventListener(TOOLBAR_INSERT_TEMPLATE_EVENT, toolbarTemplateHandler);
       if (collapseTimerRef.current !== null) {
         window.clearTimeout(collapseTimerRef.current);
         collapseTimerRef.current = null;
