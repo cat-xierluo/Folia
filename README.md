@@ -8,6 +8,12 @@
 
 稳定预览包含 HTML 表格的 Markdown 文档，并支持 Word 纸张预览与导出。
 
+## 命名由来
+
+**Folia** 是拉丁语 *folium*（叶子）的复数形式，借取了「一片叶子 = 一页文档」的意象——做一款轻量、随手展开的 Markdown 阅读器时，这个名字既直观又克制。
+
+另一层隐喻来自同名音乐术语 *folia*：巴洛克时期古老的 d 小调变格进行，后世作曲家不断在它之上即兴变奏、衍生出不同形态（Folia 主题与变奏）。Folia 的产品形态也类似——同一份 Markdown 源文档，在主编辑器、HTML 预览、Word 纸张预览、`.docx` 导出等不同 surface 之间反复呈现，每一种形态都从同一份内容「变奏」而来。
+
 ## 官方网站
 
 - 官网：[https://cat-xierluo.github.io/personal-site/folia/](https://cat-xierluo.github.io/personal-site/folia/)
