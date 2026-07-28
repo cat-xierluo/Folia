@@ -1,4 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { createEmptyFile, type TocItem } from '../types/document';
 import {
@@ -34,6 +35,7 @@ import { TabBar } from '../components/TabBar';
 import type { TabDragPayload } from '../components/tabDragPayload';
 import { RecentFilesPage } from '../components/RecentFilesPage';
 import { ContextMenu } from '../components/ContextMenu';
+import { SettingsPage } from '../components/SettingsPage';
 import type { SourceHeadingScrollRequest } from '../components/EditorPane';
 import { useSession } from '../hooks/useSession';
 import { detectCurrentWindowLabel } from '../services/tabWindowService';
@@ -46,28 +48,37 @@ const WysiwygEditorPane = lazy(() =>
   import('../components/WysiwygEditorPane').then((module) => ({ default: module.WysiwygEditorPane })),
 );
 
-const loadSettingsPage = () =>
-  import('../components/SettingsPage').then(async (module) => {
-    // Warm the default section chunk alongside the settings page so the
-    // first tab is interactive as soon as the modal mounts.
-    const { preloadGeneralSection } = await import('../components/settings/preloadSections');
-    void preloadGeneralSection();
-    return { default: module.SettingsPage };
-  });
+// ISS-180 闭合（DEC-124 决策 3）：SettingsPage 外壳改为静态导入。仅 7 个非默认
+// section 仍走按需 lazy，确保从 `AppLayout` 顶层抛出 React 树时，外层 SettingsPage
+// 已经同帧就位——不再有外层 `<Suspense fallback>` 把低对比骨架以"首帧"形态提交给
+// 用户。GeneralSection 已在 SettingsPage 内部静态导入（v0.6.0 续修），无须再预热。
+//
+// 直接静态 import 7 个 helper——`preloadSections.ts` 已经被 SettingsPage 静态
+// 引入，AppLayout 也静态引入不会引入额外 chunk；helper 函数体内部仍有
+// `import('./EditorSection')` 等动态 import（chunk 拆分由 section 自身决定），
+// 这里只是 fire-and-forget 提前并行抓取它们。
+import {
+  preloadAppearanceSection,
+  preloadEditorSection,
+  preloadExportSection,
+  preloadHtmlExportSection,
+  preloadLicenseSection,
+  preloadPreviewSection,
+  preloadAboutSection,
+} from '../components/settings/preloadSections';
 
-let settingsPagePreload: ReturnType<typeof loadSettingsPage> | undefined;
-
-function preloadSettingsPage() {
-  settingsPagePreload ??= loadSettingsPage();
-  return settingsPagePreload;
-}
-
-function preloadSettingsPageInBackground() {
+function preloadNonDefaultSettingsSections() {
   if (import.meta.env.MODE === 'test') return;
-  void preloadSettingsPage();
+  void Promise.all([
+    preloadEditorSection(),
+    preloadPreviewSection(),
+    preloadAppearanceSection(),
+    preloadExportSection(),
+    preloadHtmlExportSection(),
+    preloadLicenseSection(),
+    preloadAboutSection(),
+  ]);
 }
-
-const SettingsPage = lazy(preloadSettingsPage);
 
 const DocxPreviewPane = lazy(() =>
   import('../components/DocxPreviewPane').then((module) => ({ default: module.DocxPreviewPane })),
@@ -97,28 +108,9 @@ type UpdateInstallState =
   | { phase: 'installing'; source: UpdateSource; update: AvailableUpdate }
   | { phase: 'error'; source: UpdateSource; update?: AvailableUpdate; message: string };
 
-function SettingsPageFallback() {
-  return (
-    <div className="settings-overlay settings-overlay--loading" aria-hidden="true">
-      <div className="settings-modal settings-modal-skeleton">
-        <div className="settings-modal-sidebar settings-skeleton-sidebar">
-          <div className="settings-skeleton-title" />
-          <div className="settings-skeleton-nav">
-            {Array.from({ length: 8 }, (_, index) => (
-              <div key={index} className="settings-skeleton-line" />
-            ))}
-          </div>
-        </div>
-        <div className="settings-modal-content settings-skeleton-content">
-          <div className="settings-skeleton-heading" />
-          <div className="settings-skeleton-row" />
-          <div className="settings-skeleton-row" />
-          <div className="settings-skeleton-row short" />
-        </div>
-      </div>
-    </div>
-  );
-}
+// SettingsPageFallback 已删除（ISS-180 闭合）：外壳静态化后，外层不再需要
+// `<Suspense fallback>`。SettingsPage 内部 7 个非默认 section 的 `<Suspense>`
+// 仍保留，负责按需显示单个 tab 的"正在加载"过渡，避免切换 tab 短暂空白。
 
 // TOC 提取是对全文的正则扫描；编辑超长文档时每键都跑会卡顿，
 // 故把 TOC 刷新防抖到输入停顿后执行（ISS-159）。文件内容本身仍每键同步落盘/保存。
@@ -255,10 +247,10 @@ export function AppLayout() {
   }, [activeTabId, cancelPendingTocRefresh]);
 
   useEffect(() => {
-    /* Kick off the settings chunk immediately on mount so the modal is fully
-       loaded by the time the user first opens it. The dynamic import is small
-       (≈10KB after ISS-126) and runs in parallel with the initial render. */
-    void preloadSettingsPage();
+    /* ISS-180 闭合：SettingsPage 外壳已静态导入。挂载时仅预热 7 个非默认
+       section chunk，让用户点开设置后再切换 tab 不再需要等待 JS 解析。
+       GeneralSection 已随外壳同步渲染，无需预热。 */
+    preloadNonDefaultSettingsSections();
   }, []);
 
   const handleOpen = useCallback(async () => {
@@ -455,9 +447,10 @@ export function AppLayout() {
       }
       if (e.key === ',' && !e.shiftKey && !e.altKey) {
         e.preventDefault();
-        // ISS-180 续修：先 await chunk 加载完成再显示设置，避免打开瞬间的
-        // 骨架闪烁（Suspense fallback）。Toolbar 按钮路径同样问题，一并修复。
-        void preloadSettingsPage().then(() => setSettingsVisible(true));
+        // ISS-180 闭合：SettingsPage 外壳已静态导入，可直接打开。同时
+        // 预热 7 个非默认 section chunk，让后续切换 tab 零等待。
+        setSettingsVisible(true);
+        preloadNonDefaultSettingsSections();
       }
     };
     window.addEventListener('keydown', handler);
@@ -850,10 +843,11 @@ export function AppLayout() {
         onSave={handleSave}
         onSaveAs={handleSaveAs}
         onOpenSettings={() => {
-          // ISS-180 续修：与 Cmd+, 路径一致，await chunk 后再显示，避免骨架闪烁
-          void preloadSettingsPage().then(() => setSettingsVisible(true));
+          // ISS-180 闭合：外壳已静态化，直接打开；预热 7 个非默认 section 并行抓 chunk。
+          setSettingsVisible(true);
+          preloadNonDefaultSettingsSections();
         }}
-        onPreloadSettings={preloadSettingsPageInBackground}
+        onPreloadSettings={preloadNonDefaultSettingsSections}
         updateStatus={updateToolbarStatus}
         onRestartUpdate={handleRestartUpdate}
       />
@@ -922,12 +916,13 @@ export function AppLayout() {
         />
       )}
       {settingsVisible && (
-        <Suspense fallback={<SettingsPageFallback />}>
-          <SettingsPage
-            onClose={() => setSettingsVisible(false)}
-            onUpdateAvailable={(update) => startBackgroundUpdateDownload('manual', update)}
-          />
-        </Suspense>
+        // ISS-180 闭合：SettingsPage 外壳已静态导入，无需外层 <Suspense fallback>。
+        // SettingsPage 内部仍保留 7 个非默认 section 的 <Suspense>，负责切换 tab
+        // 时的"正在加载"过渡。
+        <SettingsPage
+          onClose={() => setSettingsVisible(false)}
+          onUpdateAvailable={(update) => startBackgroundUpdateDownload('manual', update)}
+        />
       )}
       {htmlTableViewer && (
         <Suspense fallback={null}>

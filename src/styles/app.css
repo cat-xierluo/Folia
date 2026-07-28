@@ -2333,10 +2333,15 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 }
 
 .settings-overlay--loading {
+  /* ISS-180 闭合（DEC-124）：保留此选择器作为兜底，正常流程不再渲染。
+     SettingsPage 外壳已静态导入（src/app/AppLayout.tsx），外层不再有
+     `<Suspense fallback>`；如未来回归外层 lazy，可恢复 SettingsPageFallback
+     继续使用此样式。 */
   pointer-events: none;
 }
 
 .settings-modal-skeleton {
+  /* 同上：保留兜底，正常不再被 React 渲染。 */
   box-shadow: 0 6px 32px var(--shadow-soft);
 }
 

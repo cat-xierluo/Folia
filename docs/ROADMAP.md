@@ -76,7 +76,7 @@
 - [x] HTML 演示预览：直接打开受信任 HTML 演示文件，隔离运行其 JS/CSS/本地资源，并支持常见翻页操作
 - [x] Vditor WYSIWYG 一体化（ISS-155 / DEC-085）：所有 Markdown / HTML 文档默认进入 Vditor IR；含 `rowspan/colspan` 的复杂表格在 Vditor 中自动锁定（`contenteditable=false` + `data-folia-locked=”table”`），输入回调对比 `classifyHtmlTableBlocks` 自动恢复被改动的复杂表源码；hover 复杂表格弹出”查看原貌”图标，弹窗渲染 `createHtmlReadingPreviewHtml` 忠实 HTML；删除结构化表格编辑、HTML 阅读预览切换按钮、`html-reading-toolbar` / `markdown-preview-toolbar` 整段
 - [ ] 富媒体统一渲染与资源治理（ISS-179 / DEC-119）：统一 Mermaid / SVG / 图片在主编辑器、HTML 预览 / 复制 / 导出、Word 预览 / DOCX 中的完成契约、终态清洗、资源解析与错误诊断；新插入图片默认写入同目录 `文档名.assets/` 并使用相对路径（**最小落盘已完成 2026-07-24**：保存时 pending 图片字节经 Rust `write_managed_asset` 写入 `<doc>.assets/`，blob: 替换为相对路径，消除重启丢图）；剩余 CSP 收紧 / asset scope 治理 / 桌面验证仍待后续；以正式 fixture、Chromium CI 和 macOS / Windows 真实 WebView 作为完成门禁
-- [x] 设置页首次打开不得出现短暂白屏或近似空白的低对比骨架（ISS-180，P0）：默认「通用」section 改为静态导入、移出内层 Suspense 消除第二层 chunk 调度延迟；骨架对比度从 14% 提升到 22%；E2E locator `{heading}` 误写修复为 `{name:heading}`、冷开预算从 2.5s 收紧到 1s
+- [x] 设置页首次打开不得出现短暂白屏或近似空白的低对比骨架（ISS-180，2026-07-28 闭合）：**外壳静态化**——`SettingsPage` 从外层 `React.lazy` 改为静态导入，剥掉外层 `<Suspense fallback>`；`GeneralSection` 保留静态导入，7 个非默认 section 仍按需 lazy。E2E 按 DEC-124 决策 4 重写为首帧非 fallback 契约：MutationObserver 截 `.settings-overlay` 首次出现那一帧，断言 `.settings-modal-skeleton` 0 帧、真实「设置 / 通用 / 4 行控件」同帧齐备。
 - [ ] 继续提升 WYSIWYG 编辑细节：快捷格式化、表格编辑工具、复杂 HTML 块的编辑提示
 
 ### v0.5 桌面发布体验（已完成）

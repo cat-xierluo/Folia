@@ -817,6 +817,15 @@ test('settings modal switches tabs by lazy loading each section on demand (ISS-1
   await expect(page.getByRole('heading', { name: '通用' })).toBeVisible();
   const coldOpenMs = Date.now() - start;
 
+  // ISS-180 闭合（DEC-124 决策 4 补强）：SettingsPage 外壳静态化后，骨架
+  // 不再被 React 渲染。等待 modal 出现时整张 modal 都不应带 skeleton 类。
+  const skeletonDuringColdOpen = await page.evaluate(() => ({
+    skeletonCount: document.querySelectorAll('.settings-modal-skeleton').length,
+    loadingOverlayCount: document.querySelectorAll('.settings-overlay--loading').length,
+  }));
+  expect(skeletonDuringColdOpen.skeletonCount).toBe(0);
+  expect(skeletonDuringColdOpen.loadingOverlayCount).toBe(0);
+
   // Each tab should resolve its own section chunk on demand. We assert only
   // that switching to every non-default tab eventually surfaces its heading
   // — the lazy chunks must be loaded after the initial render.
@@ -850,10 +859,9 @@ test('Cmd+, opens the settings modal from anywhere (ISS-153)', async ({ page }) 
   await page.goto('/');
   await expect(page.locator('.settings-modal')).toHaveCount(0);
   await page.keyboard.press('Meta+,');
-  // The skeleton renders immediately, but the real SettingsPage (which
-  // registers the Escape handler) only mounts after the lazy chunk resolves.
-  // Wait for the skeleton to disappear before exercising the shortcut.
-  await expect(page.locator('.settings-modal-skeleton')).toHaveCount(0);
+  // ISS-180 闭合：SettingsPage 外壳已静态导入，外层不再有 <Suspense fallback>。
+  // 这里保持形状一致性，过去曾经用 `settings-modal-skeleton` 等待 lazy chunk
+  // 完成——现在骨架不再出现，直接断言真实 modal 可见即可。
   await expect(page.locator('.settings-modal')).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(page.locator('.settings-modal')).toHaveCount(0);
@@ -1160,80 +1168,142 @@ test('appearance settings switch the app into dark theme', async ({ page }) => {
 });
 
 test('settings modal first frame is non-blank on cold start (no preload window)', async ({ page }) => {
-  /* Cold start: navigate to the page, dismiss any preload window by NOT
-     hovering the settings button first, then click immediately. The first
-     frame after clicking must already be non-blank — the entrance animation
-     must NOT start from opacity 0. */
+  /* ISS-180 闭合（DEC-124 决策 4 新契约）：
+     - 不再要求点击后立刻就有 overlay——允许你点设置后等一会儿让模块就绪；
+     - 但 `.settings-overlay` 第一次出现在 DOM 的那一帧，必须是真实内容
+       （带「设置」标题 + 「通用」标题 + 4 行默认控件），且全程
+       `.settings-modal-skeleton` 0 帧。
+     旧的「overlayOpacity > 0.5」只验证入场动画起点，与骨架问题无关。 */
   await page.goto('/');
 
-  const settingsButton = page.getByRole('button', { name: '设置' });
-  await settingsButton.click({ noWaitAfter: true });
-
-  /* Inspect the first frame synchronously. */
-  const firstFrame = await page.evaluate(() => {
-    const overlay = document.querySelector('.settings-overlay') as HTMLElement | null;
-    const modal = document.querySelector('.settings-modal') as HTMLElement | null;
-    if (!overlay || !modal) {
-      return { overlay: false, modal: false, overlayOpacity: 0, modalOpacity: 0 };
-    }
-    const overlayStyle = getComputedStyle(overlay);
-    const modalStyle = getComputedStyle(modal);
-    return {
-      overlay: true,
-      modal: true,
-      overlayOpacity: parseFloat(overlayStyle.opacity),
-      modalOpacity: parseFloat(modalStyle.opacity),
-    };
+  // 装一套 MutationObserver，在点击同时挂上，截首帧 DOM。
+  await page.evaluate(() => {
+    const w = window as unknown as { __iss180Capture?: unknown };
+    w.__iss180Capture = null;
+    const observer = new MutationObserver(() => {
+      const overlay = document.querySelector('.settings-overlay');
+      if (overlay && !w.__iss180Capture) {
+        const snapshot = {
+          overlayClass: overlay.className,
+          modalClass: document.querySelector('.settings-modal')?.className ?? '',
+          skeletonCount: document.querySelectorAll('.settings-modal-skeleton').length,
+          loadingOverlayCount: document.querySelectorAll('.settings-overlay--loading').length,
+          title: document.querySelector('.settings-title')?.textContent ?? '',
+          sectionTitle: document.querySelector('.settings-section-title')?.textContent ?? '',
+          rowCount: document.querySelectorAll('.settings-row').length,
+          navButtons: Array.from(document.querySelectorAll('.settings-nav-item'))
+            .map((node) => node.textContent?.trim() ?? ''),
+        };
+        w.__iss180Capture = snapshot;
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    (window as unknown as { __iss180Observer?: MutationObserver }).__iss180Observer = observer;
   });
 
-  expect(firstFrame.overlay).toBe(true);
-  expect(firstFrame.modal).toBe(true);
-  /* The entrance animation must not start from an invisible state — first
-     frame opacity must be at least 50%, so the user never sees a blank
-     overlay / modal before the animation starts. */
-  expect(firstFrame.overlayOpacity).toBeGreaterThan(0.5);
-  expect(firstFrame.modalOpacity).toBeGreaterThan(0.5);
+  const settingsButton = page.getByRole('button', { name: '设置' });
+  await settingsButton.click();
 
-  /* After the entrance animation settles, the modal must be fully visible. */
-  await waitForElementAnimations(page, '.settings-modal');
-  await expect(page.locator('.settings-modal-content')).toBeVisible();
+  // 等首帧快照出现（最多 5s）。
+  await expect.poll(async () => page.evaluate(() => {
+    const w = window as unknown as { __iss180Capture?: unknown };
+    return w.__iss180Capture ? 'captured' : 'pending';
+  }), { timeout: 5000 }).toBe('captured');
+
+  const snapshot = await page.evaluate(() => {
+    const w = window as unknown as { __iss180Capture?: unknown };
+    return w.__iss180Capture;
+  }) as {
+    overlayClass: string;
+    modalClass: string;
+    skeletonCount: number;
+    loadingOverlayCount: number;
+    title: string;
+    sectionTitle: string;
+    rowCount: number;
+    navButtons: string[];
+  };
+
+  // 全过程 `.settings-modal-skeleton` 必须 0 帧。
+  expect(snapshot.skeletonCount).toBe(0);
+  expect(snapshot.loadingOverlayCount).toBe(0);
+  // 首帧的 overlay / modal 都不带 skeleton / loading 类。
+  expect(snapshot.overlayClass).not.toMatch(/settings-overlay--loading/);
+  expect(snapshot.modalClass).not.toMatch(/settings-modal-skeleton/);
+  // 首帧的真实内容必须齐备：标题、通用 section 标题、4 行默认控件、8 个 nav。
+  expect(snapshot.title).toBe('设置');
+  expect(snapshot.sectionTitle).toBe('通用');
+  expect(snapshot.rowCount).toBe(4);
+  expect(snapshot.navButtons).toEqual([
+    '通用', '编辑器', '预览', '外观', 'Word 导出', 'HTML 导出', '授权', '关于',
+  ]);
+
+  // 关闭 modal 准备下一个测试。
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.settings-modal')).toHaveCount(0);
 });
 
 test('settings modal first frame is non-blank after cache is cleared', async ({ page }) => {
-  /* Cache clear: open the page, clear localStorage, reload, then click
-     settings. This simulates a user who has cleared browser data and
-     reopens the app — the settings chunk must still resolve fast enough
-     to avoid a blank first frame. */
+  /* ISS-180 闭合：缓存清空场景同样按首帧非 fallback 契约。 */
   await page.goto('/');
   await page.evaluate(() => {
     window.localStorage.clear();
   });
   await page.reload();
 
-  const settingsButton = page.getByRole('button', { name: '设置' });
-  await settingsButton.click({ noWaitAfter: true });
-
-  const firstFrame = await page.evaluate(() => {
-    const overlay = document.querySelector('.settings-overlay') as HTMLElement | null;
-    const modal = document.querySelector('.settings-modal') as HTMLElement | null;
-    if (!overlay || !modal) {
-      return { overlay: false, modal: false, overlayOpacity: 0, modalOpacity: 0 };
-    }
-    return {
-      overlay: true,
-      modal: true,
-      overlayOpacity: parseFloat(getComputedStyle(overlay).opacity),
-      modalOpacity: parseFloat(getComputedStyle(modal).opacity),
-    };
+  await page.evaluate(() => {
+    const w = window as unknown as { __iss180Capture?: unknown };
+    w.__iss180Capture = null;
+    const observer = new MutationObserver(() => {
+      const overlay = document.querySelector('.settings-overlay');
+      if (overlay && !w.__iss180Capture) {
+        const snapshot = {
+          overlayClass: overlay.className,
+          modalClass: document.querySelector('.settings-modal')?.className ?? '',
+          skeletonCount: document.querySelectorAll('.settings-modal-skeleton').length,
+          loadingOverlayCount: document.querySelectorAll('.settings-overlay--loading').length,
+          title: document.querySelector('.settings-title')?.textContent ?? '',
+          sectionTitle: document.querySelector('.settings-section-title')?.textContent ?? '',
+          rowCount: document.querySelectorAll('.settings-row').length,
+        };
+        w.__iss180Capture = snapshot;
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    (window as unknown as { __iss180Observer?: MutationObserver }).__iss180Observer = observer;
   });
 
-  expect(firstFrame.overlay).toBe(true);
-  expect(firstFrame.modal).toBe(true);
-  expect(firstFrame.overlayOpacity).toBeGreaterThan(0.5);
-  expect(firstFrame.modalOpacity).toBeGreaterThan(0.5);
+  const settingsButton = page.getByRole('button', { name: '设置' });
+  await settingsButton.click();
 
-  await waitForElementAnimations(page, '.settings-modal');
-  await expect(page.locator('.settings-modal-content')).toBeVisible();
+  await expect.poll(async () => page.evaluate(() => {
+    const w = window as unknown as { __iss180Capture?: unknown };
+    return w.__iss180Capture ? 'captured' : 'pending';
+  }), { timeout: 5000 }).toBe('captured');
+
+  const snapshot = await page.evaluate(() => {
+    const w = window as unknown as { __iss180Capture?: unknown };
+    return w.__iss180Capture;
+  }) as {
+    overlayClass: string;
+    modalClass: string;
+    skeletonCount: number;
+    loadingOverlayCount: number;
+    title: string;
+    sectionTitle: string;
+    rowCount: number;
+  };
+
+  expect(snapshot.skeletonCount).toBe(0);
+  expect(snapshot.loadingOverlayCount).toBe(0);
+  expect(snapshot.overlayClass).not.toMatch(/settings-overlay--loading/);
+  expect(snapshot.modalClass).not.toMatch(/settings-modal-skeleton/);
+  expect(snapshot.title).toBe('设置');
+  expect(snapshot.sectionTitle).toBe('通用');
+  expect(snapshot.rowCount).toBe(4);
+
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.settings-modal')).toHaveCount(0);
 });
 
 test('status bar shows the no-file placeholder and keeps a fixed height when no document is open', async ({ page }) => {

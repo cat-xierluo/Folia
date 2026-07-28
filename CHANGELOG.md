@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **ISS-180 设置页首次打开白屏真正闭合**（DEC-124 决策 3 / 4）：v0.6.0 同时修复了内层 `GeneralSection` Suspense 与入口 `preloadSettingsPage().then(...)`，但 `SettingsPage` 自身仍是外层 `React.lazy`，React 首次真正渲染时仍先提交一次 `<Suspense fallback>` —— 即便 import Promise 已完成，肉眼仍可见约 302ms 的低对比骨架。现把 `SettingsPage` 外壳从外层 `React.lazy` 改为静态导入，剥掉外层 `<Suspense fallback>`；`GeneralSection` 保留静态导入，7 个非默认 section 仍按需 lazy（保留切换 tab 的 "正在加载" 过渡）。`Cmd+,` 与工具栏「设置」两条入口直接 `setSettingsVisible(true)` 并并行预热非默认 section。E2E 按 DEC-124 决策 4 重写为首帧非 fallback 契约：MutationObserver 截 `.settings-overlay` 首次出现那一帧，断言 `.settings-modal-skeleton` 0 帧、真实「设置 / 通用 / 4 行控件 / 8 nav」同帧齐备。ISS-152 用例新增 `settings-modal-skeleton=0` 断言；ISS-153 删掉旧的 skeleton 等待。
+
 ## [0.6.0] - 2026-07-26
 
 ### Added
