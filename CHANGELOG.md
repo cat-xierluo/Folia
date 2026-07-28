@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-07-28
+
 ### Fixed
 
 - **统一应用图标视觉尺寸**：Folia 的源图标此前铺满 ICNS 画布，导致 Finder 中的白色圆角图标比 WorkBuddy 等 macOS 应用大一轮。现为整张图标补入约 10% 的透明安全边距，并重新生成 macOS ICNS、Windows ICO 及 Tauri 桌面图标尺寸；设置页使用的本地图标同步更新。
