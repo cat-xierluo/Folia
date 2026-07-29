@@ -34,6 +34,7 @@ const FOLIA_LOCKED_VALUE = 'table';
 const FOLIA_TRIGGER_ATTR = 'data-folia-viewer-bound';
 const ICON_SIZE = 14;
 const ICON_STROKE_WIDTH = 1.6;
+const LOCAL_MEDIA_NODE_SELECTOR = 'img, source[src], source[srcset], video[poster], [style*="url("], style';
 
 type EditorPhase = 'loading' | 'ready' | 'error';
 
@@ -55,6 +56,11 @@ function collapseExpandedMarkers(editor: import('vditor').default | null): void 
 function editorHasFocus(editor: import('vditor').default): boolean {
   const ir = getIrElement(editor);
   return !!ir && (document.activeElement === ir || ir.contains(document.activeElement));
+}
+
+function nodeContainsLocalMedia(node: Node): boolean {
+  if (!(node instanceof Element)) return false;
+  return node.matches(LOCAL_MEDIA_NODE_SELECTOR) || node.querySelector(LOCAL_MEDIA_NODE_SELECTOR) !== null;
 }
 
 /**
@@ -498,6 +504,46 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
     };
   }, []);
 
+  // ISS-187：Vditor 在初始化 / 外部 setValue 之外仍可能重建 IR 子树。
+  // localImageResolver 写入的 asset URL 属于展示态 DOM；旧 <img> 被替换
+  // 后，新节点会恢复成 ../../figures/... 并再次加载失败。DOMPurify 后置
+  // 清理还可能保留 <img> 却剥掉未知 asset: 协议的 src。这里只观察
+  // childList / 媒体属性，在新增子树包含媒体节点时于下一帧补做幂等解析。
+  //
+  // 不要在 initializing / sanitizing 阶段丢弃 MutationRecord：真实 Vditor
+  // 初始化会在这些阶段末尾再次替换 IR 子树，而显式解析可能早于这次替换。
+  // 下一帧统一扫描当前存活 DOM，既能避开中间态，也能合并同一批变更。
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host || !filePath || typeof MutationObserver === 'undefined') return undefined;
+
+    let resolveFrame: number | null = null;
+    const observer = new MutationObserver((records) => {
+      const mediaChanged = records.some((record) => {
+        if (record.type === 'attributes') {
+          return record.target instanceof Element && record.target.matches(LOCAL_MEDIA_NODE_SELECTOR);
+        }
+        return Array.from(record.addedNodes).some(nodeContainsLocalMedia);
+      });
+      if (!mediaChanged || resolveFrame !== null) return;
+      resolveFrame = window.requestAnimationFrame(() => {
+        resolveFrame = null;
+        if (!host.isConnected) return;
+        void resolveLocalImages(host, filePath);
+      });
+    });
+    observer.observe(host, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['src', 'srcset', 'poster', 'style'],
+    });
+    return () => {
+      observer.disconnect();
+      if (resolveFrame !== null) window.cancelAnimationFrame(resolveFrame);
+    };
+  }, [filePath]);
+
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
@@ -623,6 +669,8 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
                   const sanitized = sanitizeIrDom(editor, latestSource.current);
                   sanitizingRef.current = false;
                   lockComplexTables();
+                  const host = hostRef.current;
+                  if (host) void resolveLocalImages(host, filePath);
                   if (sanitized) emitEditorValueIfChanged(editor);
                 } catch (error) {
                   sanitizingRef.current = false;
@@ -809,13 +857,19 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
         const sanitized = sanitizeIrDom(editor, source);
         sanitizingRef.current = false;
         lockComplexTables();
+        // ISS-187：外部 source 更新会通过 setValue() 重建整棵 IR DOM，
+        // 先前写入的 Tauri asset URL 会随旧节点一起丢失。必须对新 DOM
+        // 再解析一次本地相对资源，否则含 SVG sanitize / 会话同步等触发
+        // 外部更新后，../../figures/... 图片只剩替代文字。
+        const host = hostRef.current;
+        if (host) void resolveLocalImages(host, filePath);
         if (sanitized) emitEditorValueIfChanged(editor);
       } catch (error) {
         sanitizingRef.current = false;
         console.error('[Folia] [source] useEffect sanitize 失败:', error);
       }
     });
-  }, [source, lockComplexTables, emitEditorValueIfChanged]);
+  }, [source, filePath, lockComplexTables, emitEditorValueIfChanged]);
 
   /* Hover layer: when the user hovers a complex table, inject a small "view
      original" button at the top-right corner. The button is removed on

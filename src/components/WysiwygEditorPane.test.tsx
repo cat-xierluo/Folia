@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WysiwygEditorPane } from './WysiwygEditorPane';
 import { FOLIA_IR_SVG_FRAGMENT_CLASS, FOLIA_IR_SVG_ROOT_CLASS } from '../services/vditorIrSanitizeService';
 import { ImageAssetStoreProvider } from '../context/ImageAssetStoreProvider';
+import * as localImageResolver from '../services/localImageResolver';
 
 /**
  * DEC-119 / ISS-179 Phase 3 主编辑器接入：WysiwygEditorPane 现在依赖
@@ -533,6 +534,178 @@ describe('WysiwygEditorPane 内联 SVG 显示 + sanitize (ISS-168 编辑器部�
 
       // 卸载后 sanitize 不应再触发 onChange
       expect(onChange).not.toHaveBeenCalled();
+    });
+
+    it('外部 setValue 重建 IR DOM 后重新解析本地相对图片（ISS-187）', async () => {
+      let root: Root | null = null;
+      const onChange = vi.fn();
+      const filePath = '/Users/demo/project/manuscript/04-实战篇/ch10.md';
+      const resolveLocalImages = vi.mocked(localImageResolver.resolveLocalImages);
+
+      await act(async () => {
+        root = createRoot(host);
+        root.render(
+          renderWithProvider(
+            React.createElement(WysiwygEditorPane, {
+              source: '初始内容',
+              onChange,
+              filePath,
+            }),
+          ),
+        );
+        await flushMicrotasks();
+      });
+
+      const call = vditorCalls[0];
+      await act(async () => {
+        call.options.after?.();
+        await flushMicrotasks();
+        await flushFrames();
+      });
+      resolveLocalImages.mockClear();
+
+      await act(async () => {
+        root!.render(
+          renderWithProvider(
+            React.createElement(WysiwygEditorPane, {
+              source: '更新后 ![图](../../figures/示例.png)',
+              onChange,
+              filePath,
+            }),
+          ),
+        );
+        await flushMicrotasks();
+      });
+      await act(async () => {
+        await flushFrames();
+      });
+
+      expect(resolveLocalImages).toHaveBeenCalledWith(call.host, filePath);
+
+      await act(async () => {
+        root?.unmount();
+      });
+    });
+
+    it('Vditor 初始化阶段替换含图片的 IR 子树时也不会丢失重新解析（ISS-187）', async () => {
+      let root: Root | null = null;
+      const filePath = '/Users/demo/project/manuscript/04-实战篇/ch10.md';
+      const resolveLocalImages = vi.mocked(localImageResolver.resolveLocalImages);
+
+      await act(async () => {
+        root = createRoot(host);
+        root.render(
+          renderWithProvider(
+            React.createElement(WysiwygEditorPane, {
+              source: '初始内容',
+              onChange: () => undefined,
+              filePath,
+            }),
+          ),
+        );
+        await flushMicrotasks();
+      });
+
+      const call = vditorCalls[0];
+      resolveLocalImages.mockClear();
+
+      const replacement = document.createElement('p');
+      replacement.innerHTML = '<span data-type="img"><img src="../../figures/示例.png" alt="示例"></span>';
+      call.host.querySelector('.vditor-ir pre')?.appendChild(replacement);
+      await act(async () => {
+        await flushMicrotasks();
+        await flushFrames();
+      });
+
+      expect(resolveLocalImages).toHaveBeenCalledWith(call.host, filePath);
+
+      await act(async () => {
+        root?.unmount();
+      });
+    });
+
+    it('Vditor 把已解析图片的 src 属性改回相对路径时自动重新解析（ISS-187）', async () => {
+      let root: Root | null = null;
+      const filePath = '/Users/demo/project/manuscript/04-实战篇/ch10.md';
+      const resolveLocalImages = vi.mocked(localImageResolver.resolveLocalImages);
+
+      await act(async () => {
+        root = createRoot(host);
+        root.render(
+          renderWithProvider(
+            React.createElement(WysiwygEditorPane, {
+              source: '初始内容',
+              onChange: () => undefined,
+              filePath,
+            }),
+          ),
+        );
+        await flushMicrotasks();
+      });
+
+      const call = vditorCalls[0];
+      const image = document.createElement('img');
+      image.src = 'asset://localhost/already-resolved.png';
+      call.host.querySelector('.vditor-ir pre')?.appendChild(image);
+      await act(async () => {
+        await flushMicrotasks();
+        await flushFrames();
+      });
+      resolveLocalImages.mockClear();
+
+      image.setAttribute('src', '../../figures/示例.png');
+      await act(async () => {
+        await flushMicrotasks();
+        await flushFrames();
+      });
+
+      expect(resolveLocalImages).toHaveBeenCalledWith(call.host, filePath);
+
+      await act(async () => {
+        root?.unmount();
+      });
+    });
+
+    it('sanitize 剥掉 asset src 但保留图片节点时仍会触发恢复（ISS-187）', async () => {
+      let root: Root | null = null;
+      const filePath = '/Users/demo/project/manuscript/04-实战篇/ch10.md';
+      const resolveLocalImages = vi.mocked(localImageResolver.resolveLocalImages);
+
+      await act(async () => {
+        root = createRoot(host);
+        root.render(
+          renderWithProvider(
+            React.createElement(WysiwygEditorPane, {
+              source: '初始内容',
+              onChange: () => undefined,
+              filePath,
+            }),
+          ),
+        );
+        await flushMicrotasks();
+      });
+
+      const call = vditorCalls[0];
+      resolveLocalImages.mockClear();
+      const replacement = document.createElement('p');
+      replacement.innerHTML = [
+        '<span class="vditor-ir__node" data-type="img">',
+        '<span class="vditor-ir__marker--link">../../figures/示例.png</span>',
+        '<img alt="示例">',
+        '</span>',
+      ].join('');
+      call.host.querySelector('.vditor-ir pre')?.appendChild(replacement);
+
+      await act(async () => {
+        await flushMicrotasks();
+        await flushFrames();
+      });
+
+      expect(resolveLocalImages).toHaveBeenCalledWith(call.host, filePath);
+
+      await act(async () => {
+        root?.unmount();
+      });
     });
   });
 });

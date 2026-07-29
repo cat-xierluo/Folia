@@ -76,6 +76,54 @@ describe('resolveLocalImages', () => {
     expect(src).toContain('/Users/demo/docs/images/photo.jpg');
   });
 
+  it('restores a sanitized Vditor IR image src from its relative Markdown marker', async () => {
+    const { resolveLocalImages: resolve } = await importFresh();
+    const container = document.createElement('div');
+    container.innerHTML = [
+      '<span class="vditor-ir__node" data-type="img">',
+      '<span class="vditor-ir__marker vditor-ir__marker--link">../../figures/screenshots/ch10/示例图片.png</span>',
+      '<img alt="示例图片">',
+      '</span>',
+    ].join('');
+
+    await resolve(container, '/Users/demo/project/manuscript/04-实战篇/ch10.md');
+
+    const src = container.querySelector('img')?.getAttribute('src') ?? '';
+    expect(src).toContain('asset.localhost');
+    expect(src).toContain('/Users/demo/project/figures/screenshots/ch10/示例图片.png');
+  });
+
+  it('does not restore a sanitized Vditor IR image marker that resolves into a sensitive path', async () => {
+    const { resolveLocalImages: resolve } = await importFresh();
+    const container = document.createElement('div');
+    container.innerHTML = [
+      '<span class="vditor-ir__node" data-type="img">',
+      '<span class="vditor-ir__marker vditor-ir__marker--link">../../../etc/passwd</span>',
+      '<img alt="blocked">',
+      '</span>',
+    ].join('');
+
+    await resolve(container, '/Users/demo/decks/case.md');
+
+    expect(container.querySelector('img')?.hasAttribute('src')).toBe(false);
+  });
+
+  it('resolves two-level parent references with Chinese file names (ISS-187)', async () => {
+    const { resolveLocalImages: resolve } = await importFresh();
+    const container = createContainerWithImages([{
+      src: '../../figures/screenshots/ch10/fig-ch10-s3-05-W2a请求权预选.png',
+    }]);
+    await resolve(
+      container,
+      '/Users/demo/法律 skill 书籍项目/manuscript/04-实战篇/ch10-鉴定式案例分析.md',
+    );
+    const src = container.querySelector('img')?.getAttribute('src');
+    expect(src).toContain('asset.localhost');
+    expect(src).toContain(
+      '/Users/demo/法律 skill 书籍项目/figures/screenshots/ch10/fig-ch10-s3-05-W2a请求权预选.png',
+    );
+  });
+
   it('skips data: URIs', async () => {
     const { resolveLocalImages: resolve } = await importFresh();
     const container = createContainerWithImages([{ src: 'data:image/png;base64,abc123' }]);

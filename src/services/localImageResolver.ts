@@ -54,6 +54,19 @@ function resolveSingleUrl(rawSrc: string, filePath: string, convertFn: ConvertFi
   return convertFn(absolutePath);
 }
 
+/**
+ * Vditor IR keeps the original Markdown image destination in a sibling marker.
+ * A later DOMPurify pass may remove the already-converted `asset:` src while
+ * leaving that marker intact. Recover only relative marker values here; the
+ * normal sensitive-path guard still runs inside resolveSingleUrl().
+ */
+function getVditorIrImageMarkerSource(image: Element): string | null {
+  const irNode = image.closest('.vditor-ir__node[data-type="img"]');
+  const marker = irNode?.querySelector('.vditor-ir__marker--link');
+  const value = marker?.textContent?.trim();
+  return value || null;
+}
+
 const SRCSET_DESCRIPTOR_PATTERN = /^\d+(\.\d+)?[wx]$/;
 
 /** Resolve every candidate URL inside a `srcset` attribute (`./a.webp 1x, ./b.webp 2x`). */
@@ -113,15 +126,18 @@ export async function resolveLocalImages(
   const convertFn = await ensureConvertFileSrc();
   if (!convertFn) return;
 
-  // Single-attribute media sources: img[src], source[src], video[poster].
+  // Single-attribute media sources. Query all img nodes because Vditor's
+  // post-render sanitizer may have removed an asset: src; in that case the
+  // original relative destination is recovered from its IR marker.
   const singleAttrSelectors: Array<{ selector: string; attr: string }> = [
-    { selector: 'img[src]', attr: 'src' },
+    { selector: 'img', attr: 'src' },
     { selector: 'source[src]', attr: 'src' },
     { selector: 'video[poster]', attr: 'poster' },
   ];
   for (const { selector, attr } of singleAttrSelectors) {
     container.querySelectorAll(selector).forEach((el) => {
-      const raw = el.getAttribute(attr);
+      const raw = el.getAttribute(attr)
+        ?? (selector === 'img' ? getVditorIrImageMarkerSource(el) : null);
       if (!raw) return;
       const resolved = resolveSingleUrl(raw, filePath, convertFn);
       if (resolved !== null) el.setAttribute(attr, resolved);

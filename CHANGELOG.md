@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **修复跨父目录的本地相对路径图片在 WYSIWYG 中只显示替代文字的问题**（ISS-187 / DEC-129）：Vditor 的后处理清洗会移除已经转换好的 Tauri `asset:` 图片地址，但保留原始 Markdown 链接标记，导致 `../../figures/...` 这类合法路径在 Obsidian 可见、在 Folia 中丢失。现在会从 Vditor IR 标记恢复原始相对地址，重新经过现有本地资源解析与敏感路径检查后生成可加载 URL；同时监听 Vditor 初始化、外部 `setValue()` 和清洗引起的媒体节点替换。未通过全局放行 `asset:` 或扩大资源 scope 绕过安全边界。
+
 ## [0.6.2] - 2026-07-28
 
 ### Changed

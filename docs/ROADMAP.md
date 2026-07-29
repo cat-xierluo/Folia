@@ -76,7 +76,7 @@
 - [x] 长文章 TOC 使用统一标题模型与稳定锚点准确跳转（ISS-186 / DEC-128，2026-07-28 闭合）：排除 fenced code 伪标题与 HTML / 图表预览标题，重复标题按序绑定独立锚点；超远距离即时定位，30 节长文逐像素 E2E 覆盖。
 - [x] HTML 演示预览：直接打开受信任 HTML 演示文件，隔离运行其 JS/CSS/本地资源，并支持常见翻页操作
 - [x] Vditor WYSIWYG 一体化（ISS-155 / DEC-085）：所有 Markdown / HTML 文档默认进入 Vditor IR；含 `rowspan/colspan` 的复杂表格在 Vditor 中自动锁定（`contenteditable=false` + `data-folia-locked=”table”`），输入回调对比 `classifyHtmlTableBlocks` 自动恢复被改动的复杂表源码；hover 复杂表格弹出”查看原貌”图标，弹窗渲染 `createHtmlReadingPreviewHtml` 忠实 HTML；删除结构化表格编辑、HTML 阅读预览切换按钮、`html-reading-toolbar` / `markdown-preview-toolbar` 整段
-- [ ] 富媒体统一渲染与资源治理（ISS-179 / DEC-119）：统一 Mermaid / SVG / 图片在主编辑器、HTML 预览 / 复制 / 导出、Word 预览 / DOCX 中的完成契约、终态清洗、资源解析与错误诊断；新插入图片默认写入同目录 `文档名.assets/` 并使用相对路径（**最小落盘已完成 2026-07-24**：保存时 pending 图片字节经 Rust `write_managed_asset` 写入 `<doc>.assets/`，blob: 替换为相对路径，消除重启丢图）；剩余 CSP 收紧 / asset scope 治理 / 桌面验证仍待后续；以正式 fixture、Chromium CI 和 macOS / Windows 真实 WebView 作为完成门禁
+- [ ] 富媒体统一渲染与资源治理（ISS-179 / DEC-119）：统一 Mermaid / SVG / 图片在主编辑器、HTML 预览 / 复制 / 导出、Word 预览 / DOCX 中的完成契约、终态清洗、资源解析与错误诊断；新插入图片默认写入同目录 `文档名.assets/` 并使用相对路径（**最小落盘已完成 2026-07-24**：保存时 pending 图片字节经 Rust `write_managed_asset` 写入 `<doc>.assets/`，blob: 替换为相对路径，消除重启丢图；**ISS-187 已于 2026-07-29 闭合**：Vditor sanitize 后从 IR marker 安全恢复跨父目录相对图片，并完成真实 macOS WKWebView 验收）；剩余 CSP 收紧 / asset scope 治理 / Windows 桌面验证仍待后续；以正式 fixture、Chromium CI 和 macOS / Windows 真实 WebView 作为完成门禁
 - [x] 设置页首次打开不得出现短暂白屏或近似空白的低对比骨架（ISS-180，2026-07-28 闭合）：**外壳静态化**——`SettingsPage` 从外层 `React.lazy` 改为静态导入，剥掉外层 `<Suspense fallback>`；`GeneralSection` 保留静态导入，7 个非默认 section 仍按需 lazy。E2E 按 DEC-124 决策 4 重写为首帧非 fallback 契约：MutationObserver 截 `.settings-overlay` 首次出现那一帧，断言 `.settings-modal-skeleton` 0 帧、真实「设置 / 通用 / 4 行控件」同帧齐备。
 - [x] 设置页栏目切换不得显示懒加载骨架闪烁（ISS-185 / DEC-127，2026-07-28 闭合）：左侧选择立即响应，右侧用 deferred section 保留当前真实内容，目标 lazy chunk 就绪后一次性替换；pointer / focus / click 主动预热栏目，保留 7 个非默认 section 按需拆包。延迟 chunk 逐帧 E2E 断言 `.settings-section-loading` 0 帧。
 - [ ] 继续提升 WYSIWYG 编辑细节：快捷格式化、表格编辑工具、复杂 HTML 块的编辑提示
@@ -177,6 +177,9 @@
 - [ ] 补充真实应用截图、安装演示和更完整的用户文档入口。
 
 ## 进度日志
+
+- **2026-07-29**
+  - ISS-187 / DEC-129 跨父目录本地相对图片修复：真实书稿 `../../figures/screenshots/ch10/...中文名.png` 的路径解析本身正确，故障来自 DOMPurify 在 Vditor IR 后处理时剥除 Tauri `asset:` src。改为从同一图片节点的 `.vditor-ir__marker--link` 恢复原始 Markdown destination，再走既有敏感路径检查与 `convertFileSrc`；媒体 MutationObserver 覆盖无 src 图片、IR 初始化换树、外部 `setValue()` 与 sanitize 重写。全量 512 项 Vitest（含敏感路径拒绝回归）、typecheck、lint、cargo check、release app 构建全部通过；正式 macOS WKWebView 打开用户约 23,000 字真实书稿，图 10-3 / 10-4 均显示真实截图像素，目标图 10-4（917×671）不再退化为替代文字。
 
 - **2026-07-24（续四）**
   - v0.7 法律文档模板（ROADMAP：证据目录 / 材料清单 / 时间线）：新增 `src/services/legalTemplates.ts`（`LEGAL_TEMPLATES` 纯数据：Markdown 管道表格骨架 + 列表，可编辑优先——复杂 HTML 合并表会被 `lockComplexTables` 锁定为不可编辑，故模板用 Markdown 管道表而非 HTML rowspan/colspan；内容是精简骨架非完整样例，供用户填充）。入口：Toolbar view-actions 组加「插入模板」下拉按钮（`ClipboardList` 图标 + useState 控制开关 + backdrop 点外关闭），点击模板项 dispatch `folia:toolbar-insert-template` CustomEvent（复用已验证的 `743cd1e^` 范式）。接收：`WysiwygEditorPane` 监听该事件 → `editor.insertValue(markdown)` + `emitEditorValueIfChanged`，cleanup 移除监听。i18n 三语新增 `toolbarInsertTemplate*` + 三个模板标题键。CSS 复用 tab-context-menu 浮层样式模式。typecheck / lint / test（502）全绿。
