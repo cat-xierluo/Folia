@@ -8,6 +8,20 @@
 
 稳定预览包含 HTML 表格的 Markdown 文档，并支持 Word 纸张预览与导出。
 
+## 👨‍💼 关于作者
+
+**杨卫薪律师** - 专注于技术类纠纷领域（知识产权、数据与 AI），同时热衷于将 AI 技术应用于法律实务。
+
+Folia 是我在法律文档处理和 AI 协作实践中沉淀出来的轻量桌面工具。
+
+- GitHub: [cat-xierluo](https://github.com/cat-xierluo)
+- 个人主页：[cat-xierluo.github.io/personal-site](https://cat-xierluo.github.io/personal-site/)
+- 微信：`ywxlaw`
+
+<img src="docs/wechat-qr.png" width="200" alt="微信二维码"/>
+
+---
+
 ## 命名由来
 
 **Folia** 是拉丁语 *folium*（叶子）的复数形式，借取了「一片叶子 = 一页文档」的意象——做一款轻量、随手展开的 Markdown 阅读器时，这个名字既直观又克制。
@@ -60,20 +74,6 @@ open /Applications/Folia.app
 - Vite 8
 - Vditor.preview()（Lute 引擎 + 代码高亮 / Mermaid / KaTeX）
 - CodeMirror 6
-
-## 作者
-
-**杨卫薪律师** - 专注于技术类纠纷领域，包括知识产权、数据与 AI 相关争议，同时长期关注 AI 技术在法律实务、知识管理和专业写作中的应用。
-
-Folia 是我在法律文档处理和 AI 协作实践中沉淀出来的轻量桌面工具：重点解决 Markdown 文档阅读、复杂 HTML 表格稳定预览，以及导出 Word 前的版式确认。
-
-- GitHub: [cat-xierluo](https://github.com/cat-xierluo)
-- 个人主页：[cat-xierluo.github.io/personal-site](https://cat-xierluo.github.io/personal-site/)
-- 微信：`ywxlaw`
-
-<p>
-  <img src="docs/wechat-qr.png" alt="微信二维码" width="160" height="160">
-</p>
 
 ## 开发环境
 
