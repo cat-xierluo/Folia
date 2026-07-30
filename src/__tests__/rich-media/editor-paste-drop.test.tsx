@@ -35,6 +35,8 @@ const vditorCalls: VditorConstructorCall[] = [];
  *  注入 .vditor-ir pre，记录 insertValue / getValue 调用，方便测试断言
  *  paste / drop 后是否真的把 markdown 写进编辑器。*/
 let lastInsertedValue = '';
+/** 记录 insertValue 第二参数（render）。ISS-67 纯文本粘贴用 render=false。 */
+let lastInsertRender: boolean | undefined;
 
 vi.mock('vditor', () => {
   const noopRender = () => undefined;
@@ -55,9 +57,10 @@ vi.mock('vditor', () => {
       this.vditor = { ir: { element: pre } };
     }
 
-    public insertValue(value: string): void {
-      // 记录最后一次插入的 markdown，供测试断言
+    public insertValue(value: string, render?: boolean): void {
+      // 记录最后一次插入的内容 + render 标志，供测试断言
       lastInsertedValue = value;
+      lastInsertRender = render;
     }
 
     public getValue(): string {
@@ -119,16 +122,30 @@ function flushFrames(count = 4): Promise<void> {
   });
 }
 
-/** DataTransfer 在 jsdom 中没有完整实现；测试桩补足 paste / drop 需要的接口。 */
-function makeDataTransfer(items: DataTransferItem[]): DataTransfer {
+/**
+ * DataTransfer 在 jsdom 中没有完整实现；测试桩补足 paste / drop 需要的接口。
+ * ISS-67 起 getData 需按 type 返回真实内容（text/plain / text/html），
+ * 故用 stringData 携带 { type -> text } 映射；文件项仍由 items 提供。
+ */
+function makeDataTransfer(
+  items: DataTransferItem[],
+  stringData: Record<string, string> = {},
+): DataTransfer {
+  const types: string[] = [];
+  for (const it of items) {
+    types.push(it.kind === 'file' ? 'Files' : it.type);
+  }
+  for (const t of Object.keys(stringData)) {
+    if (!types.includes(t)) types.push(t);
+  }
   const dt = {
     items: items as unknown as DataTransferItemList,
     files: items
       .filter((it) => it.kind === 'file')
       .map((it) => it.getAsFile()!)
       .filter(Boolean) as unknown as FileList,
-    types: items.map((it) => it.kind === 'file' ? 'Files' : 'text/plain'),
-    getData: () => '',
+    types,
+    getData: (type: string) => stringData[type] ?? '',
     setData: () => undefined,
     clearData: () => undefined,
     setDragImage: () => undefined,
@@ -166,6 +183,7 @@ describe('WysiwygEditorPane paste/drop · DEC-119 / ISS-179 Phase 3 主编辑器
   beforeEach(() => {
     vditorCalls.length = 0;
     lastInsertedValue = '';
+    lastInsertRender = undefined;
     host = document.createElement('div');
     document.body.append(host);
   });
@@ -261,13 +279,14 @@ describe('WysiwygEditorPane paste/drop · DEC-119 / ISS-179 Phase 3 主编辑器
     expect(lastInsertedValue).toContain('（待落盘）');
   });
 
-  it('paste 纯文本 → 不拦截默认行为（preventDefault 未调用）', async () => {
+  it('paste 纯文本 → 按 text/plain 插入（ISS-67：默认纯文本粘贴，render=false）', async () => {
     await mountPane();
     await triggerAfter();
     const editorHost = vditorCalls[0].host;
 
+    // string item 仅用于让 types 含 text/plain；真实内容由 stringData 提供
     const stringItem = makeStringItem('hello world');
-    const dt = makeDataTransfer([stringItem]);
+    const dt = makeDataTransfer([stringItem], { 'text/plain': 'hello world' });
 
     const pasteEvent = new Event('paste', { bubbles: true, cancelable: true });
     Object.defineProperty(pasteEvent, 'clipboardData', { value: dt });
@@ -282,9 +301,10 @@ describe('WysiwygEditorPane paste/drop · DEC-119 / ISS-179 Phase 3 主编辑器
       await flushFrames();
     });
 
-    // 非 image 内容应让 Vditor 默认行为继续；我们的 handler 不调 preventDefault
-    expect(preventDefaultCalled).toBe(false);
-    expect(lastInsertedValue).toBe(''); // editor.insertValue 未被调用
+    // ISS-67：纯文本粘贴被拦截，按 text/plain 内容插入、不渲染 markdown
+    expect(preventDefaultCalled).toBe(true);
+    expect(lastInsertedValue).toBe('hello world');
+    expect(lastInsertRender).toBe(false);
   });
 
   it('paste 多个 image File → markdown 片段用换行分隔', async () => {
@@ -310,5 +330,132 @@ describe('WysiwygEditorPane paste/drop · DEC-119 / ISS-179 Phase 3 主编辑器
     expect(lastInsertedValue).toContain('a.png');
     expect(lastInsertedValue).toContain('b.jpg');
     expect(lastInsertedValue.split('\n\n').length).toBeGreaterThanOrEqual(2);
+  });
+
+  /**
+   * ISS-67：粘贴带标题格式的文本时，默认 Cmd/Ctrl+V 应按纯文本插入
+   * （不把 <h2> 等 HTML 块级格式渲染成独立块、造成跳行）；
+   * Cmd/Ctrl+Shift+V 放行 Vditor 默认富文本粘贴。
+   */
+  describe('ISS-67 · 粘贴默认纯文本 / Shift+V 富文本', () => {
+    /** 构造一个 paste 事件，可指定修饰键。 */
+    function makePasteEvent(dt: DataTransfer, mods: { meta?: boolean; ctrl?: boolean; shift?: boolean }): Event {
+      const ev = new Event('paste', { bubbles: true, cancelable: true });
+      Object.defineProperty(ev, 'clipboardData', { value: dt });
+      Object.defineProperty(ev, 'dataTransfer', { value: dt });
+      Object.defineProperty(ev, 'metaKey', { value: !!mods.meta });
+      Object.defineProperty(ev, 'ctrlKey', { value: !!mods.ctrl });
+      Object.defineProperty(ev, 'shiftKey', { value: !!mods.shift });
+      return ev;
+    }
+
+    it('普通粘贴含 text/html + text/plain → 按 text/plain 插入且 render=false，preventDefault 被调', async () => {
+      await mountPane();
+      await triggerAfter();
+      const editorHost = vditorCalls[0].host;
+
+      // 模拟从浏览器/Word 复制带二级标题的内容：HTML 含 <h2>，plain 是纯文本
+      const dt = makeDataTransfer(
+        [],
+        {
+          'text/html': '<h2>二级标题</h2>',
+          'text/plain': '二级标题',
+        },
+      );
+      const ev = makePasteEvent(dt, {});
+      let preventDefaultCalled = false;
+      ev.preventDefault = () => { preventDefaultCalled = true; };
+
+      await act(async () => {
+        editorHost.dispatchEvent(ev);
+        await flushMicrotasks();
+        await flushFrames();
+      });
+
+      // 拦截了默认行为（否则 Vditor 会按 HTML 渲染成标题块）
+      expect(preventDefaultCalled).toBe(true);
+      // 插入的是纯文本，不是 HTML
+      expect(lastInsertedValue).toBe('二级标题');
+      // render=false：纯文本插入，不当 markdown 渲染
+      expect(lastInsertRender).toBe(false);
+    });
+
+    it('Cmd/Ctrl+Shift+V（富文本快捷键）→ 不拦截，放行 Vditor 默认', async () => {
+      await mountPane();
+      await triggerAfter();
+      const editorHost = vditorCalls[0].host;
+
+      const dt = makeDataTransfer(
+        [],
+        {
+          'text/html': '<h2>二级标题</h2>',
+          'text/plain': '二级标题',
+        },
+      );
+      // Mac: metaKey+shiftKey；这里同时设 ctrl 以兼容非 Mac 判定逻辑
+      const ev = makePasteEvent(dt, { meta: true, ctrl: true, shift: true });
+      let preventDefaultCalled = false;
+      ev.preventDefault = () => { preventDefaultCalled = true; };
+
+      await act(async () => {
+        editorHost.dispatchEvent(ev);
+        await flushMicrotasks();
+        await flushFrames();
+      });
+
+      // 富文本快捷键：放行，不调 preventDefault，也不插入纯文本
+      expect(preventDefaultCalled).toBe(false);
+      expect(lastInsertedValue).toBe('');
+    });
+
+    it('text/plain 为空但含 text/html → 放行（不误吃粘贴）', async () => {
+      await mountPane();
+      await triggerAfter();
+      const editorHost = vditorCalls[0].host;
+
+      // 只有 HTML、没有可用纯文本（某些来源的边缘情况）
+      const dt = makeDataTransfer(
+        [],
+        { 'text/html': '<p>只有HTML</p>' },
+      );
+      const ev = makePasteEvent(dt, {});
+      let preventDefaultCalled = false;
+      ev.preventDefault = () => { preventDefaultCalled = true; };
+
+      await act(async () => {
+        editorHost.dispatchEvent(ev);
+        await flushMicrotasks();
+        await flushFrames();
+      });
+
+      // 纯文本为空 → 放行交给 Vditor，不强行吃掉粘贴
+      expect(preventDefaultCalled).toBe(false);
+      expect(lastInsertedValue).toBe('');
+    });
+
+    it('同时含图片 File → 仍走图片路径，纯文本分支不介入', async () => {
+      await mountPane();
+      await triggerAfter();
+      const editorHost = vditorCalls[0].host;
+
+      // 既有图片文件，也有 text/plain（部分截图工具会同时给）
+      const imageItem = makeImageFileItem('shot.png', 'image/png', 'img-bytes');
+      const dt = makeDataTransfer(
+        [imageItem],
+        { 'text/plain': '一些文字' },
+      );
+      const ev = makePasteEvent(dt, {});
+
+      await act(async () => {
+        editorHost.dispatchEvent(ev);
+        await flushMicrotasks();
+        await flushFrames();
+      });
+
+      // 走图片路径：插入的是图片 markdown（含待落盘），不是纯文本「一些文字」
+      expect(lastInsertedValue).toContain('shot.png');
+      expect(lastInsertedValue).toContain('（待落盘）');
+      expect(lastInsertedValue).not.toContain('一些文字');
+    });
   });
 });

@@ -44,6 +44,35 @@ function getIrElement(editor: import('vditor').default): HTMLElement | null {
   return vditor?.ir?.element ?? null;
 }
 
+/**
+ * ISS-67：判断本次粘贴是否为「保留源格式」快捷键（Cmd/Ctrl+Shift+V）。
+ * 命中时放行 Vditor 默认富文本粘贴；否则按纯文本插入（见 handleTextPaste）。
+ * Mac 用 metaKey，其余平台用 ctrlKey，需同时按住 shift。
+ *
+ * 注：ClipboardEvent 在 lib.dom 里未声明 metaKey/ctrlKey/shiftKey（它们属于
+ * KeyboardEvent/MouseEvent），但运行时 paste 事件确实携带这些修饰键属性，
+ * 故用窄类型断言读取，避免散落的 any。
+ */
+function isRichPasteShortcut(event: ClipboardEvent): boolean {
+  const mods = event as unknown as { metaKey?: boolean; ctrlKey?: boolean; shiftKey?: boolean };
+  const primary = mods.metaKey || mods.ctrlKey;
+  return !!primary && !!mods.shiftKey;
+}
+
+/**
+ * ISS-67：从粘贴事件中取出纯文本。优先取 text/plain；为空时返回 null
+ * 表示放行（避免吃掉只有 text/html、无纯文本的剪贴板内容）。
+ */
+function extractPlainText(event: ClipboardEvent): string | null {
+  const dt = event.clipboardData;
+  if (!dt) return null;
+  // getData 对不存在的 type 返回空串；types 数组更可靠地反映剪贴板内容
+  const types = Array.from(dt.types ?? []);
+  if (!types.includes('text/plain')) return null;
+  const text = dt.getData('text/plain');
+  return text.length > 0 ? text : null;
+}
+
 function collapseExpandedMarkers(editor: import('vditor').default | null): void {
   if (!editor) return;
   const ir = getIrElement(editor);
@@ -420,6 +449,34 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
     [imageAssetStore, emitEditorValueIfChanged],
   );
 
+  /**
+   * ISS-67：文本类粘贴处理。
+   *
+   * 默认（Cmd/Ctrl+V）强制按 text/plain 插入：用 insertValue(text, false)
+   * 的 render=false 走「不解析 markdown」的纯文本路径，避免剪贴板里的
+   * <h2> 等块级格式被 Lute 转成独立块、把当前段落「撑开」造成跳行。
+   *
+   * Cmd/Ctrl+Shift+V（isRichPasteShortcut 命中）放行，让 Vditor 按源格式
+   * （text/html）粘贴，保留富文本能力。返回 false 表示「未处理、放行默认」。
+   */
+  const handleTextPaste = useCallback(
+    (event: ClipboardEvent): boolean => {
+      // 富文本快捷键：放行 Vditor 默认（HTML→markdown）粘贴
+      if (isRichPasteShortcut(event)) return false;
+      const text = extractPlainText(event);
+      // 没有 text/plain（如只有图片，或只有 text/html）→ 放行，交由后续逻辑 / Vditor
+      if (text === null) return false;
+      const editor = editorRef.current;
+      if (!editor) return false;
+      event.preventDefault();
+      // render=false：作为纯文本插入，不把内容当 markdown 重新渲染
+      editor.insertValue(text, false);
+      emitEditorValueIfChanged(editor);
+      return true;
+    },
+    [emitEditorValueIfChanged],
+  );
+
   const lockComplexTables = useCallback(() => {
     const editor = editorRef.current;
     if (!editor) return;
@@ -561,8 +618,15 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
     // DEC-119 / ISS-179 Phase 3：拦截 paste/drop 中的 image File，
     // 走 ImageAssetStore -> 待落盘 markdown 插入 Vditor。
     // 非 image 内容返回 false，让 markUserInteracted / Vditor 默认处理。
+    //
+    // ISS-67：对 paste 事件，图片处理先行；若未命中图片，再交给
+    // handleTextPaste 做纯文本粘贴（默认 Cmd/Ctrl+V）或放行富文本
+    // （Cmd/Ctrl+Shift+V）。drop 事件不涉及纯文本降级，保持原行为。
     const pasteHandler = (event: Event) => {
-      void handleImageFiles(event as ClipboardEvent);
+      const ce = event as ClipboardEvent;
+      void handleImageFiles(ce).then((handled) => {
+        if (!handled) handleTextPaste(ce);
+      });
     };
     const dropHandler = (event: Event) => {
       void handleImageFiles(event as DragEvent);
@@ -828,7 +892,7 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
       initializingRef.current = false;
       userInteractedRef.current = false;
     };
-  }, [filePath, lockComplexTables, emitEditorValueIfChanged, onChange, retryKey, handleImageFiles]);
+  }, [filePath, lockComplexTables, emitEditorValueIfChanged, onChange, retryKey, handleImageFiles, handleTextPaste]);
 
   useEffect(() => {
     const editor = editorRef.current;
