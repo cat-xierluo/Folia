@@ -202,3 +202,62 @@ jobs:
           fi
 
           echo "Gitee release sync complete"
+
+      # ISS-72：把最新的 latest.json 同步推到一个固定的 "latest" tag，让
+      # tauri.conf.json 里的 Gitee fallback endpoint
+      # (https://gitee.com/cat-xierluo/Folia/releases/latest/download/latest.json)
+      # 能稳定返回最新 manifest（Gitee 没有 GitHub 那种 /releases/latest alias，
+      # 必须在某个固定 tag 下挂文件）。
+      - name: Sync latest manifest to fixed Gitee tag
+        if: env.GITEE_TOKEN != '' && env.GITEE_OWNER != ''
+        continue-on-error: true
+        timeout-minutes: 10
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          GITEE_OWNER: ${{ secrets.GITEE_OWNER }}
+        run: |
+          REPO="${GITEE_OWNER}/Folia"
+          LATEST_TAG="latest"
+
+          curl_gitee() {
+            curl --silent --show-error --connect-timeout 20 --max-time 60 --retry 1 --retry-delay 2 "$@"
+          }
+
+          # 查询是否已存在名为 "latest" 的 release
+          EXISTING_RELEASE_ID=$(curl_gitee \
+            "https://gitee.com/api/v5/repos/${REPO}/releases/tags/${LATEST_TAG}?access_token=${GITEE_TOKEN}" \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin).get("id",""))' 2>/dev/null || true)
+
+          if [ -z "$EXISTING_RELEASE_ID" ]; then
+            # 第一次发布时建一个固定 tag 的 release。所有错误用 || true 容忍——
+            # 这个 step 失败不会让整个 publish job 失败（GitHub release 已发布）。
+            CREATE_BODY=$(printf '{"access_token":"%s","tag_name":"%s","name":"Folia latest (auto)","body":"自动维护：每次发布时覆盖到此 tag，请勿手动修改。","target_commitish":"main","prerelease":false}' \
+              "${GITEE_TOKEN}" "${LATEST_TAG}")
+            EXISTING_RELEASE_ID=$(curl_gitee -X POST \
+              "https://gitee.com/api/v5/repos/${REPO}/releases" \
+              -H "Content-Type: application/json" \
+              -d "$CREATE_BODY" \
+              | python3 -c 'import json,sys; print(json.load(sys.stdin).get("id",""))' 2>/dev/null || true)
+          fi
+
+          if [ -z "$EXISTING_RELEASE_ID" ]; then
+            echo "WARN: failed to create/find 'latest' tag release on Gitee — fallback endpoint will 404 until first sync establishes it"
+            exit 0
+          fi
+
+          echo "Gitee 'latest' release ID: ${EXISTING_RELEASE_ID}"
+
+          # 删除旧附件，避免重复上传时报错
+          curl_gitee -X DELETE \
+            "https://gitee.com/api/v5/repos/${REPO}/releases/${EXISTING_RELEASE_ID}/assets?name=latest.json&access_token=${GITEE_TOKEN}" \
+            > /dev/null || true
+
+          # 上传新的 latest.json（注意：必须是 Gitee 版的，URL 字段指向 gitee.com）
+          if ! curl_gitee --fail-with-body -X POST \
+            "https://gitee.com/api/v5/repos/${REPO}/releases/${EXISTING_RELEASE_ID}/attach_files" \
+            -F "access_token=${GITEE_TOKEN}" \
+            -F "file=@latest-gitee.json;filename=latest.json" > /dev/null; then
+            echo "Failed to upload latest.json to 'latest' tag release, continuing"
+          else
+            echo "Gitee 'latest' tag manifest synced"
+          fi

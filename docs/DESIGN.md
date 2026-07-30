@@ -315,6 +315,22 @@ transition: background 0.15s;
 - `Cmd` 是 macOS 习惯用名；快捷键监听器同时识别 `metaKey` 与 `ctrlKey`，Windows / Linux 用户按 `Ctrl` 同样生效。E2E 校验用 `Cmd+X` 与 `Ctrl+X` 双正则匹配，覆盖两套平台。
 - 设置页不再展示快捷键列表；用户通过 Toolbar 按钮 hover 即看即用，避免设置页与实际工具栏文案两套信息源。
 
+### Update Button Phase（ISS-72）
+
+工具栏更新按钮三态由 phase 字段驱动，文案和图标行为如下：
+
+| phase | 图标 | 文案 | 可点击 | 用途 |
+|-------|------|------|--------|------|
+| `ready` | RefreshCw（静态） | 「重启更新 vX.Y.Z」 | ✅ 触发 install + relaunch | 下载完成，等用户手动重启 |
+| `downloading` | RefreshCw（spinning） | 「下载中 N%」 | ❌ cursor: default | 实时显示下载进度，避免误触 |
+| `installing` | RefreshCw（spinning） | 「安装中」 | ❌ disabled | install + relaunch 进行中 |
+
+设计要点：
+- 三个阶段共用 `.toolbar-update-button` 基底样式（`--accent` 文字 + `--control-active-bg` 背景），保持视觉一致性。
+- 下载阶段按钮**不 `disabled`**——保留 hover 反馈与 tooltip（显示完整百分比），但不接 onClick，避免用户以为点了能取消。
+- 百分比取整到 0~100，由 `updateService.downloadAppUpdate` 透传 `update.download` 的 Tauri Channel `Progress` 事件计算；事件丢失时 `percent` 保持上次值，UI 不会显示错误百分比。
+- 关于页面（Settings → 关于）通过 `updateSnapshot` 接收同一份 phase 派生数据，显示同样的「下载中 N%」+「更新已就绪」+「失败原因」+「重试下载」按钮，与工具栏保持单一信息源。
+
 ### Toggle Switch
 
 ```css

@@ -35,6 +35,15 @@ const zhCN = {
   updateButton: '检查更新',
   updateAvailable: '发现新版本',
   updateDownloadingBackground: '正在后台下载',
+  updateDownloadProgress: '下载中 {percent}%',
+  updateReadyTitle: '更新已就绪',
+  updateReadyHint: '请到工具栏点击「重启更新」完成安装。',
+  updateRetryLabel: '重试下载',
+  updateErrorTimeout: '下载超时，请检查网络后重试。',
+  updateErrorNetwork: '下载更新失败，请检查网络后重试。',
+  updateErrorSignature: '更新包校验失败，请稍后再试或联系开发者。',
+  updateErrorInstall: '安装更新失败，请稍后再试。',
+  updateErrorGeneric: '更新失败：{message}',
   updateLatest: '当前已经是最新版本。',
   updateUnsupported: '浏览器开发预览中不检查更新，打包后的桌面应用会启用。',
   updateError: '检查更新失败，请稍后再试。',
@@ -59,6 +68,8 @@ const zhCN = {
   toolbarWechatPreviewLabel: 'HTML 预览',
   toolbarRestartUpdateTitle: '安装已下载更新并重启',
   toolbarRestartUpdateLabel: '重启更新',
+  toolbarDownloadingTitle: '正在下载更新 {percent}%',
+  toolbarDownloadingLabel: '下载中 {percent}%',
   toolbarUpdateInstallingTitle: '正在安装更新',
   toolbarUpdateInstallingLabel: '安装中',
   toolbarSettingsTitle: '打开设置（Cmd+,）',
@@ -187,6 +198,15 @@ const enUS: Record<I18nKey, string> = {
   updateButton: 'Check for Updates',
   updateAvailable: 'New version is available',
   updateDownloadingBackground: 'downloading in the background',
+  updateDownloadProgress: 'Downloading {percent}%',
+  updateReadyTitle: 'Update ready',
+  updateReadyHint: 'Click "Restart Update" in the toolbar to finish installing.',
+  updateRetryLabel: 'Retry download',
+  updateErrorTimeout: 'Download timed out. Check your network and retry.',
+  updateErrorNetwork: 'Failed to download the update. Check your network and retry.',
+  updateErrorSignature: 'Update signature verification failed. Please retry later or contact the developer.',
+  updateErrorInstall: 'Failed to install the update. Please try again later.',
+  updateErrorGeneric: 'Update failed: {message}',
   updateLatest: 'You are already on the latest version.',
   updateUnsupported: 'Update checks are disabled in browser preview and enabled in the packaged desktop app.',
   updateError: 'Update check failed. Please try again later.',
@@ -211,6 +231,8 @@ const enUS: Record<I18nKey, string> = {
   toolbarWechatPreviewLabel: 'HTML Preview',
   toolbarRestartUpdateTitle: 'Install downloaded update and restart',
   toolbarRestartUpdateLabel: 'Restart Update',
+  toolbarDownloadingTitle: 'Downloading update {percent}%',
+  toolbarDownloadingLabel: 'Downloading {percent}%',
   toolbarUpdateInstallingTitle: 'Installing update',
   toolbarUpdateInstallingLabel: 'Installing',
   toolbarSettingsTitle: 'Open settings (Cmd+,)',
@@ -337,6 +359,15 @@ const jaJP: Record<I18nKey, string> = {
   updateButton: '更新を確認',
   updateAvailable: '新しいバージョンがあります',
   updateDownloadingBackground: 'バックグラウンドでダウンロード中',
+  updateDownloadProgress: 'ダウンロード中 {percent}%',
+  updateReadyTitle: '更新準備完了',
+  updateReadyHint: 'ツールバーの「再起動して更新」をクリックしてインストールを完了してください。',
+  updateRetryLabel: 'ダウンロードを再試行',
+  updateErrorTimeout: 'ダウンロードがタイムアウトしました。ネットワークを確認して再試行してください。',
+  updateErrorNetwork: '更新のダウンロードに失敗しました。ネットワークを確認して再試行してください。',
+  updateErrorSignature: '更新パッケージの検証に失敗しました。しばらくしてから再試行するか、開発者にお問い合わせください。',
+  updateErrorInstall: '更新のインストールに失敗しました。しばらくしてから再試行してください。',
+  updateErrorGeneric: '更新に失敗しました：{message}',
   updateLatest: '現在のバージョンは最新です。',
   updateUnsupported: 'ブラウザの開発プレビューでは更新確認を行いません。パッケージ版のデスクトップアプリで有効になります。',
   updateError: '更新確認に失敗しました。しばらくしてから再試行してください。',
@@ -361,6 +392,8 @@ const jaJP: Record<I18nKey, string> = {
   toolbarWechatPreviewLabel: 'HTML プレビュー',
   toolbarRestartUpdateTitle: 'ダウンロード済み更新をインストールして再起動',
   toolbarRestartUpdateLabel: '再起動して更新',
+  toolbarDownloadingTitle: '更新をダウンロード中 {percent}%',
+  toolbarDownloadingLabel: 'ダウンロード中 {percent}%',
   toolbarUpdateInstallingTitle: '更新をインストール中',
   toolbarUpdateInstallingLabel: 'インストール中',
   toolbarSettingsTitle: '設定を開く（Cmd+,）',
@@ -464,6 +497,16 @@ const dictionaries: Record<AppLocale, Record<I18nKey, string>> = {
   'ja-JP': jaJP,
 };
 
-export function translate(locale: AppLocale, key: I18nKey): string {
-  return dictionaries[locale]?.[key] ?? zhCN[key];
+export function translate(
+  locale: AppLocale,
+  key: I18nKey,
+  params?: Record<string, string | number>,
+): string {
+  let template = dictionaries[locale]?.[key] ?? zhCN[key];
+  if (params) {
+    for (const [name, value] of Object.entries(params)) {
+      template = template.replaceAll(`{${name}}`, String(value));
+    }
+  }
+  return template;
 }

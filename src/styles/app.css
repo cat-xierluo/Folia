@@ -209,6 +209,12 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   opacity: 0.72;
 }
 
+/* ISS-72：下载中阶段——按钮可点击区域仍激活（便于 hover tooltip），
+   但不响应 click；spinner + 百分比文本让用户实时看到下载进度。 */
+.toolbar-update-button.downloading {
+  cursor: default;
+}
+
 .toolbar-update-button span {
   white-space: nowrap;
   line-height: 1;

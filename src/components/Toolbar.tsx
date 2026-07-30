@@ -16,8 +16,12 @@ import { handleTitlebarMouseDown } from '../services/titlebarDrag';
 import type { EditorMode } from '../types/session';
 
 type UpdateToolbarStatus = {
-  phase: 'ready' | 'installing';
+  phase: 'ready' | 'downloading' | 'installing' | 'error';
   version: string;
+  /** 仅在 downloading 阶段存在；其它阶段忽略。 */
+  percent?: number;
+  /** 仅在 error 阶段存在，承载本地化错误文案。 */
+  message?: string;
 };
 
 type ToolbarProps = {
@@ -39,15 +43,18 @@ type ToolbarProps = {
   onPreloadSettings?: () => void;
   updateStatus?: UpdateToolbarStatus;
   onRestartUpdate?: () => void;
+  /** ISS-72：错误状态下点击重试按钮。仅在 updateStatus.phase === 'error' 时使用。 */
+  onRetryUpdate?: () => void;
 };
 
 export function Toolbar({
   dirty, fileName, tabBar,
   editorMode, wordPreviewVisible, wechatPreviewVisible, editingDisabled, onToggleEditorMode, onToggleWordPreview, onToggleWechatPreview,
-  onOpen, onSave, onSaveAs, onOpenSettings, onPreloadSettings, updateStatus, onRestartUpdate,
+  onOpen, onSave, onSaveAs, onOpenSettings, onPreloadSettings, updateStatus, onRestartUpdate, onRetryUpdate,
 }: ToolbarProps) {
   const settings = useSettings();
-  const t = (key: Parameters<typeof translate>[1]) => translate(settings.locale, key);
+  const t = (key: Parameters<typeof translate>[1], params?: Record<string, string | number>) =>
+    translate(settings.locale, key, params);
   const hasOpenedFile = fileName !== '未命名';
   const iconSize = 18;
   const strokeWidth = 1.6;
@@ -94,30 +101,51 @@ export function Toolbar({
         <div className="toolbar-group toolbar-view-actions" aria-label={t('toolbarViewGroup')}>
           {updateStatus && (
             <button
-              className={`toolbar-update-button ${updateStatus.phase === 'installing' ? 'installing' : ''}`}
-              onClick={onRestartUpdate}
+              // ISS-72：四态——ready / downloading / installing / error。
+              // downloading 阶段按钮不 disabled，让用户看到 spinner 持续旋转；
+              // 不接 onClick 避免误触（点击仅 ready 阶段触发安装；error 阶段触发重试）。
+              className={`toolbar-update-button ${updateStatus.phase}`}
+              onClick={
+                updateStatus.phase === 'ready'
+                  ? onRestartUpdate
+                  : updateStatus.phase === 'error'
+                    ? onRetryUpdate
+                    : undefined
+              }
               disabled={updateStatus.phase === 'installing'}
               data-no-window-drag="true"
               title={
-                updateStatus.phase === 'installing'
-                  ? t('toolbarUpdateInstallingTitle')
-                  : `${t('toolbarRestartUpdateTitle')} ${updateStatus.version}`
+                updateStatus.phase === 'downloading'
+                  ? t('toolbarDownloadingTitle', { percent: updateStatus.percent ?? 0 })
+                  : updateStatus.phase === 'installing'
+                    ? t('toolbarUpdateInstallingTitle')
+                    : updateStatus.phase === 'error'
+                      ? (updateStatus.message ?? t('updateRetryLabel'))
+                      : `${t('toolbarRestartUpdateTitle')} ${updateStatus.version}`
               }
               aria-label={
-                updateStatus.phase === 'installing'
-                  ? t('toolbarUpdateInstallingLabel')
-                  : `${t('toolbarRestartUpdateLabel')} ${updateStatus.version}`
+                updateStatus.phase === 'downloading'
+                  ? t('toolbarDownloadingLabel', { percent: updateStatus.percent ?? 0 })
+                  : updateStatus.phase === 'installing'
+                    ? t('toolbarUpdateInstallingLabel')
+                    : updateStatus.phase === 'error'
+                      ? t('updateRetryLabel')
+                      : `${t('toolbarRestartUpdateLabel')} ${updateStatus.version}`
               }
             >
               <RefreshCw
                 size={14}
                 strokeWidth={strokeWidth}
-                className={updateStatus.phase === 'installing' ? 'spinning' : ''}
+                className={updateStatus.phase === 'installing' || updateStatus.phase === 'downloading' ? 'spinning' : ''}
               />
               <span>
-                {updateStatus.phase === 'installing'
-                  ? t('toolbarUpdateInstallingLabel')
-                  : t('toolbarRestartUpdateLabel')}
+                {updateStatus.phase === 'downloading'
+                  ? t('toolbarDownloadingLabel', { percent: updateStatus.percent ?? 0 })
+                  : updateStatus.phase === 'installing'
+                    ? t('toolbarUpdateInstallingLabel')
+                    : updateStatus.phase === 'error'
+                      ? t('updateRetryLabel')
+                      : t('toolbarRestartUpdateLabel')}
               </span>
             </button>
           )}

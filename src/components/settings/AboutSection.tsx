@@ -12,8 +12,18 @@ import {
 
 type AvailableUpdate = Extract<UpdateCheckResult, { status: 'available' }>;
 
+/** ISS-72：来自 AppLayout 的真实下载状态。'checking' 阶段由 AboutSection 内部 state 表达。 */
+export type UpdateSnapshot = {
+  phase: 'idle' | 'downloading' | 'ready' | 'error';
+  percent?: number;
+  version?: string;
+  message?: string;
+};
+
 type AboutSectionProps = {
   onUpdateAvailable: (update: AvailableUpdate) => void;
+  updateSnapshot?: UpdateSnapshot;
+  onRetryUpdate?: () => void;
 };
 
 type CheckState = 'idle' | 'checking' | 'latest' | 'available' | 'unsupported' | 'error';
@@ -21,13 +31,36 @@ type CheckState = 'idle' | 'checking' | 'latest' | 'available' | 'unsupported' |
 const appIconUrl = new URL('../../assets/folia-icon.png', import.meta.url).href;
 const wechatQrUrl = new URL('../../../docs/wechat-qr.png', import.meta.url).href;
 
-export function AboutSection({ onUpdateAvailable }: AboutSectionProps) {
+export function AboutSection({ onUpdateAvailable, updateSnapshot, onRetryUpdate }: AboutSectionProps) {
   const settings = useSettings();
-  const t = (key: Parameters<typeof translate>[1]) => translate(settings.locale, key);
+  const t = (key: Parameters<typeof translate>[1], params?: Record<string, string | number>) =>
+    translate(settings.locale, key, params);
   const [version, setVersion] = useState(FALLBACK_APP_VERSION);
   const [checkState, setCheckState] = useState<CheckState>('idle');
   const [message, setMessage] = useState<string | null>(null);
-  const displayMessage = checkState === 'idle' ? t('updateIdle') : message ?? t('updateIdle');
+
+  // ISS-72：displayMessage 响应真实 phase。优先级：
+  //   1. 用户点击「检查更新」中 → checking
+  //   2. AppLayout 传来的真实 phase（downloading / ready / error）覆盖本地 message
+  //   3. 否则显示本地上次检查结果（latest / unsupported / available）
+  //   4. 默认 idle 文案
+  const displayMessage = (() => {
+    if (checkState === 'checking') return t('updateCheckingRemote');
+    if (updateSnapshot?.phase === 'downloading') {
+      return `${updateSnapshot.version ? `${t('updateAvailable')} ${updateSnapshot.version} · ` : ''}${t('updateDownloadProgress', { percent: updateSnapshot.percent ?? 0 })}`;
+    }
+    if (updateSnapshot?.phase === 'ready') {
+      return `${t('updateReadyTitle')}${updateSnapshot.version ? ` ${updateSnapshot.version}` : ''} · ${t('updateReadyHint')}`;
+    }
+    if (updateSnapshot?.phase === 'error') {
+      return updateSnapshot.message ?? message ?? t('updateError');
+    }
+    if (checkState === 'available') {
+      // 用户刚点了检查并发现更新，但 updateSnapshot 还没传过来（极短窗口期）
+      return `${t('updateAvailable')} ${message ?? ''}`.trim();
+    }
+    return message ?? t('updateIdle');
+  })();
 
   useEffect(() => {
     void getCurrentAppVersion().then(setVersion);
@@ -43,8 +76,10 @@ export function AboutSection({ onUpdateAvailable }: AboutSectionProps) {
 
     const result = await checkForAppUpdate();
     if (result.status === 'available') {
+      // ISS-72：把"已发现更新"告诉上层触发下载，本地只标记 available；后续 phase
+      // 由 updateSnapshot 驱动，不再写死"正在后台下载"文案。
       setCheckState('available');
-      setMessage(`${t('updateAvailable')} ${result.version} · ${t('updateDownloadingBackground')}`);
+      setMessage(result.version);
       onUpdateAvailable(result);
       return;
     }
@@ -109,11 +144,24 @@ export function AboutSection({ onUpdateAvailable }: AboutSectionProps) {
                 aria-pressed={settings.autoUpdateCheck}
               />
             </span>
+            {/* ISS-72：下载失败时显示「重试下载」按钮，复用 settings-action-button 风格。 */}
+            {updateSnapshot?.phase === 'error' && onRetryUpdate && (
+              <button
+                type="button"
+                className="settings-action-button"
+                onClick={onRetryUpdate}
+                aria-label={t('updateRetryLabel')}
+                title={t('updateRetryLabel')}
+              >
+                <RefreshCw size={14} />
+                <span>{t('updateRetryLabel')}</span>
+              </button>
+            )}
             <button
               type="button"
               className="settings-action-button"
               onClick={handleCheckUpdate}
-              disabled={checkState === 'checking'}
+              disabled={checkState === 'checking' || updateSnapshot?.phase === 'downloading'}
             >
               <RefreshCw size={14} className={checkState === 'checking' ? 'spinning' : ''} />
               {checkState === 'checking' ? t('updateChecking') : t('updateButton')}

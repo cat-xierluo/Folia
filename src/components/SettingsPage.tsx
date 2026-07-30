@@ -12,6 +12,7 @@ import {
   preloadPreviewSection,
 } from './settings/preloadSections';
 import { GeneralSection } from './settings/GeneralSection';
+import type { UpdateSnapshot } from './settings/AboutSection';
 
 type AvailableUpdate = Extract<UpdateCheckResult, { status: 'available' }>;
 type SettingsSection =
@@ -46,6 +47,10 @@ const AboutSection = lazy(preloadAboutSection);
 interface SettingsPageProps {
   onClose: () => void;
   onUpdateAvailable: (update: AvailableUpdate) => void;
+  /** ISS-72：来自 AppLayout 的真实下载状态，传给 AboutSection 显示进度/错误。 */
+  updateSnapshot?: UpdateSnapshot;
+  /** ISS-72：下载失败时 AboutSection 的「重试下载」按钮回调。 */
+  onRetryUpdate?: () => void;
 }
 
 const NAV_ITEMS: { id: SettingsSection; labelKey: Parameters<typeof translate>[1] }[] = [
@@ -80,7 +85,7 @@ function SectionFallback() {
   );
 }
 
-export function SettingsPage({ onClose, onUpdateAvailable }: SettingsPageProps) {
+export function SettingsPage({ onClose, onUpdateAvailable, updateSnapshot, onRetryUpdate }: SettingsPageProps) {
   const [selectedSection, setSelectedSection] = useState<SettingsSection>('general');
   const activeSection = useDeferredValue(selectedSection);
   const isSectionPending = selectedSection !== activeSection;
@@ -148,7 +153,13 @@ export function SettingsPage({ onClose, onUpdateAvailable }: SettingsPageProps) 
             {activeSection === 'export' && <ExportSection onOpenLicense={() => handleSectionSelect('license')} />}
             {activeSection === 'htmlExport' && <HtmlExportSection onOpenLicense={() => handleSectionSelect('license')} />}
             {activeSection === 'license' && <LicenseSection />}
-            {activeSection === 'about' && <AboutSection onUpdateAvailable={onUpdateAvailable} />}
+            {activeSection === 'about' && (
+              <AboutSection
+                onUpdateAvailable={onUpdateAvailable}
+                updateSnapshot={updateSnapshot}
+                onRetryUpdate={onRetryUpdate}
+              />
+            )}
           </Suspense>
         </div>
       </div>
