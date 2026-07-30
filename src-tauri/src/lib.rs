@@ -492,22 +492,36 @@ fn take_tab_ids_for_window(app: &tauri::AppHandle, label: &str) -> Vec<String> {
 /// ISS-164：主动关闭某 label 的 tab 窗口（merge-back 时源窗口用）。
 /// 前端无法直接 `invoke` 关闭别的窗口，需走这条 command。
 ///
-/// 注意：本函数只触发 `window.close()`，**不**预取 tab_ids。CloseRequested
-/// handler（`handle_window_close`）是回收 tab 列表 + emit `window:closed` 的
-/// 唯一权威——若本函数提前 `take_tab_ids_for_window`，CloseRequested handler
-/// 拿到的就是空 Vec，会 emit `window:closed { remainingTabIds: [] }`，主窗口
-/// 误以为没 tab 要回收，导致用户丢 tab。这是 ISS-174 review 时发现的竞态，
-/// 修复方案：把回收职责彻底收敛到 CloseRequested 一处。
+/// 这是程序化关闭路径，走 destroy() 绕过 Issue #68 的 CloseRequested 拦截
+/// （destroy 不触发 CloseRequested，无递归）。回收职责由 finalize_window_close
+/// 在 destroy 前完成——必须在此处一次性 take + emit，不能由调用方预取，
+/// 否则主窗口会收到空 remainingTabIds（ISS-174 review 发现的竞态）。
 #[tauri::command]
 fn close_tab_window(label: String, app: tauri::AppHandle) -> Result<(), String> {
   if !is_valid_tab_window_label(&label) {
     return Err(format!("invalid tab window label '{label}'"));
   }
+  finalize_window_close(&app, &label);
   if let Some(window) = app.get_webview_window(&label) {
     window
-      .close()
+      .destroy()
       .map_err(|error| format!("failed to close tab window '{label}': {error}"))?;
   }
+  Ok(())
+}
+
+/// Issue #68：前端完成 dirty 确认（保存 / 不保存）后，调用本命令真正销毁
+/// 当前窗口。主窗口 destroy = 进程退出；tear-off 窗口 destroy 前先回收 tab。
+///
+/// 注意：本命令接收 `tauri::Window`（命令调用者所在窗口），而非 label——
+/// 这样无需前端回传 label，且天然只关闭「发起确认的那个窗口」。
+#[tauri::command]
+fn confirm_close(window: tauri::Window, app: tauri::AppHandle) -> Result<(), String> {
+  let label = window.label().to_string();
+  finalize_window_close(&app, &label);
+  window
+    .destroy()
+    .map_err(|error| format!("failed to close window '{label}': {error}"))?;
   Ok(())
 }
 
@@ -561,7 +575,8 @@ pub fn run() {
       unwatch_path,
       create_tab_window,
       update_tab_window_tabs,
-      close_tab_window
+      close_tab_window,
+      confirm_close
     ])
     .setup(|app| {
       if cfg!(debug_assertions) {
@@ -574,20 +589,25 @@ pub fn run() {
       Ok(())
     })
     .on_window_event(|window, event| {
-      // ISS-164：新窗口（包括 tear-off 出的独立窗口）创建时也挂上关闭监听。
-      if let tauri::WindowEvent::CloseRequested { .. } = event {
-        if window.label() == "main" {
-          // 主窗口：关窗即退出（不做 hide-to-Dock——见 DEC-110 设计：与用户「关窗即退出」
-          // 期望一致；macOS 标准 hide-to-Dock 是 UX 决策，需用户明确要求再合入）。
-          handle_window_close(window);
-          return;
-        }
-        // 独立 tear-off 窗口：emit window:closed 回收 tab，然后显式 destroy()。
-        // macOS 上偶发 CloseRequested 默认不销毁窗口（PR #54 报告），destroy() 强制销毁
-        // 且不再触发 CloseRequested（无递归）。如果 Rust 默认行为已稳定，destroy() 是
-        // 多余调用但不破坏行为——保留作为兜底。
-        handle_window_close(window);
-        let _ = window.destroy();
+      // Issue #68：用户请求关闭窗口（红绿灯 / Cmd+Q / 窗口 X）时，先交给前端
+      // 检查是否存在未保存修改（dirty 标签），由前端弹三选项确认框后决定真正
+      // 关闭还是取消。这里只 prevent_close 并 emit `request:confirm-close`，
+      // 真正的窗口销毁由前端 invoke `confirm_close`（内部 destroy()）完成。
+      //
+      // 必须走 Rust prevent_close 而非前端 onCloseRequested：历史教训（ISS-174
+      // review，见 useSession.ts 注释）——前端 onCloseRequested 在 macOS Tauri
+      // 2.11.0 上即便不调 preventDefault 也会误拦截 close，造成窗口无法销毁。
+      //
+      // 程序化关闭路径（merge-back 的 close_tab_window、确认后的 confirm_close）
+      // 直接调 destroy()，destroy() 不会再触发 CloseRequested（无递归，见 Tauri
+      // app.rs 注释），因此不会误触发本拦截逻辑。
+      if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+        api.prevent_close();
+        let label = window.label().to_string();
+        let _ = window.app_handle().emit(
+          "request:confirm-close",
+          serde_json::json!({ "label": label }),
+        );
       }
     })
     .build(tauri::generate_context!())
@@ -618,18 +638,17 @@ pub fn run() {
     });
 }
 
-/// ISS-164：tear-off 窗口关闭时回收 tab 列表并 emit `window:closed` 给主窗口。
+/// Issue #68 / ISS-164：tear-off 窗口关闭前回收 tab 列表并 emit `window:closed`
+/// 给主窗口。在真正 `destroy()` 之前调用——因为 destroy() 不再触发 CloseRequested
+/// （无递归，见 Tauri app.rs 注释），tab 回收职责需要从旧的 CloseRequested handler
+/// 迁移到程序化关闭路径（confirm_close / close_tab_window）。
 ///
-/// `on_window_event` 回调给的是 `&Window`（tao 抽象层），通过 `window.label()`
-/// 拿到 label，再用 `app.get_webview_window` 取 `WebviewWindow` 走状态查找。
-fn handle_window_close(window: &tauri::Window) {
-  let label = window.label().to_string();
-  // 主窗口关闭 = 应用退出，无需回收 tab（AppState 跟着进程销毁）。
+/// 主窗口关闭 = 应用退出，AppState 跟着进程销毁，无需 emit 回收。
+fn finalize_window_close(app: &tauri::AppHandle, label: &str) {
   if label == "main" {
     return;
   }
-  let app = window.app_handle();
-  let remaining = take_tab_ids_for_window(app, &label);
+  let remaining = take_tab_ids_for_window(app, label);
   let _ = app.emit(
     "window:closed",
     serde_json::json!({
