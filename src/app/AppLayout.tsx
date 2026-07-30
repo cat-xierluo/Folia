@@ -331,6 +331,10 @@ export function AppLayout() {
   // 复用 saveFile 底层写盘 + 图片落盘逻辑，但不依赖 active 状态——直接从 session.tabs
   // 取出该 tab 的 file 处理。保存成功后该 tab 会立即被关闭，故无需更新 dirty 标志。
   // docx 不可写（write_opened_document 拒绝 docx），直接跳过。
+  //
+  // 当目标文件无 path（未保存过的新文件）时，saveFile → saveFileAs 会弹原生保存
+  // 对话框。若用户在该对话框里取消，saveFileAs 返回原 file（path 仍为空）——此时
+  // 抛错让上层 try/catch 终止关闭，避免「选了保存但实际没存」导致内容丢失。
   const saveDirtyTabById = useCallback(async (tabId: string) => {
     const target = tabs.find((t) => t.id === tabId);
     if (!target) return;
@@ -348,7 +352,10 @@ export function AppLayout() {
         fileToSave = { ...targetFile, content: nextContent };
       }
     }
-    await saveFile(fileToSave);
+    const saved = await saveFile(fileToSave);
+    if (!saved.path) {
+      throw new Error('save cancelled by user');
+    }
   }, [tabs, imageAssetStore]);
 
   const handleExportWord = useCallback(async () => {
