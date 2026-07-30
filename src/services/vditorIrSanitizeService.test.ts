@@ -306,3 +306,81 @@ describe('sanitizeVditorIrHtml', () => {
     expect(marker?.textContent).toBe('<text x="60" y="62" font-size="14" fill="#111111" text-anchor="middle">片段</text>');
   });
 });
+
+// ISS-69：sanitizeVditorIrHtml 区分 changed（任何字节级差异，含序列化
+// 规范化）/ sourceChanged（marker 源码被改写）/ securityChanged（确实
+// 剥除了危险节点/属性/URI）。Folia 决定是否整体重写 IR DOM 走
+// securityChanged 门控，避免 DOMPurify 序列化规范化摧毁 Selection 引发
+// 「删除偶发未生效」。
+describe('sanitizeVditorIrHtml ISS-69 securityChanged 语义', () => {
+  it('C1: 纯文本段落不含任何危险内容，securityChanged === false', () => {
+    const { html } = createIrHtml('# 标题\n\n这是一段纯正文文本。\n');
+    const result = sanitizeVditorIrHtml(html);
+
+    expect(result.securityChanged).toBe(false);
+    expect(result.sourceChanged).toBe(false);
+    expect(result.changed).toBe(false);
+    expect(result.html).toBe(html);
+  });
+
+  it('C2: 含 <img onerror> 的 IR DOM，securityChanged === true', () => {
+    const { html } = createIrHtml('<div><img src="x" onerror="alert(1)"></div>');
+    const result = sanitizeVditorIrHtml(html);
+
+    expect(result.securityChanged).toBe(true);
+    expect(result.sourceChanged).toBe(true);
+    expect(result.changed).toBe(true);
+    expect(result.html).not.toContain('onerror');
+    expect(result.html).not.toContain('alert(');
+  });
+
+  it('C3: 含 marker 内嵌 <script> 危险源码，securityChanged === true', () => {
+    // 模拟 marker 文本内已被 Lute 转义为 &lt;script&gt; 的危险源码
+    const root = document.createElement('div');
+    root.innerHTML = [
+      '<div data-block="0" data-type="html-block" class="vditor-ir__node">',
+      '<pre class="vditor-ir__marker--pre vditor-ir__marker"><code data-type="html-block">',
+      '&lt;script&gt;alert(1)&lt;/script&gt;',
+      '</code></pre>',
+      '<pre class="vditor-ir__preview" data-render="2"></pre>',
+      '</div>',
+    ].join('');
+
+    const result = sanitizeVditorIrHtml(root.innerHTML);
+    const sanitizedRoot = document.createElement('div');
+    sanitizedRoot.innerHTML = result.html;
+    const marker = sanitizedRoot.querySelector<HTMLElement>('code[data-type="html-block"]');
+
+    expect(result.securityChanged).toBe(true);
+    expect(result.sourceChanged).toBe(true);
+    expect(marker?.textContent).not.toContain('<script>');
+    expect(marker?.textContent).not.toContain('alert(');
+  });
+
+  it('C4: 仅序列化规范化（无危险内容）的安全 SVG，securityChanged === false 且 changed 可能为 true', () => {
+    // 构造一段属性顺序会被 DOMPurify 重排的安全 SVG，自身无危险属性
+    // —— 这是关键回归：必须验证「changed 但 securityChanged false」，
+    // 旧实现会把这种序列化差异误判为「需要整体重写 IR DOM」。
+    const root = document.createElement('div');
+    root.innerHTML = [
+      '<div data-block="0" data-type="html-block" class="vditor-ir__node">',
+      '<pre class="vditor-ir__marker--pre vditor-ir__marker"><code data-type="html-block">',
+      '&lt;svg viewBox="0 0 10 10" width="10" height="10"&gt;&lt;rect width="10" height="10"/&gt;&lt;/svg&gt;',
+      '</code></pre>',
+      '<pre class="vditor-ir__preview" data-render="1">',
+      '<svg viewBox="0 0 10 10" width="10" height="10"><rect width="10" height="10"></rect></svg>',
+      '</pre>',
+      '</div>',
+    ].join('');
+
+    const result = sanitizeVditorIrHtml(root.innerHTML);
+
+    expect(result.securityChanged).toBe(false);
+    expect(result.sourceChanged).toBe(false);
+    // 至少确认 returned html 含 svg（保留预览），不含任何危险内容
+    expect(result.html).toContain('<svg');
+    expect(result.html).toContain('<rect');
+    expect(result.html).not.toContain('<script');
+    expect(result.html).not.toContain('onerror');
+  });
+});

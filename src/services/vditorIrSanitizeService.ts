@@ -2,9 +2,23 @@ import { sanitizeForVditor } from './sanitizeService';
 import { extractMarkdownSvgBlocks } from './markdownSvgPreviewService';
 
 export type VditorIrSanitizeResult = {
+  /**
+   * `result.html`：建议写回 IR DOM 的字符串（与 IR 子树序列化结构一致）。
+   * `changed`：与原文相比有任何字节级差异（含 DOMPurify / 浏览器 HTML parser
+   *   的属性顺序、SVG 属性大小写、自闭合标签、空白等序列化规范化）。
+   *   单独看 `changed` 不能区分「真的有安全剥除」与「仅规范化」。
+   * `sourceChanged`：HTML-block marker 源码（`code[data-type="html-block"]`
+   *   或 `code.vditor-ir__marker` 转义文本）是否被安全清洗改写。
+   * `securityChanged`：sanitize 实际移除了危险节点/属性/URI 的总判定——
+   *   marker sanitize 命中、preview 还原命中安全剥除、或整篇 IR DOM 中
+   *   危险节点/属性/协议被 DOMPurify 剥除。该字段是 Folia 决定是否整体
+   *   重写 IR DOM 的门控，**不**依赖 `changed`，避免序列化规范化触发
+   *   无意义的 innerHTML 整体替换（ISS-69 编辑器删除偶发未生效根因）。
+   */
   html: string;
   changed: boolean;
   sourceChanged: boolean;
+  securityChanged: boolean;
 };
 
 export const FOLIA_IR_SVG_ROOT_CLASS = 'folia-ir-svg-root';
@@ -375,6 +389,72 @@ function sanitizeHtmlBlockMarkers(root: HTMLElement): boolean {
 }
 
 /**
+ * ISS-69：判定 sanitize 是否真的剥除了危险节点/属性/URI。
+ *
+ * DOMPurify / 浏览器 HTML parser 在序列化 IR DOM 时常产生「无安全意义」的
+ * 字符串差异（属性顺序、SVG 属性大小写、自闭合标签、空白等），
+ * 不能凭 `sanitized !== irHtml` 判定需要整体重写 IR DOM。
+ *
+ * 策略：在 detached DOM 上同时跑「危险节点/属性/URI」扫描，对比原文与安全
+ * 副本中这些危险特征的出现次数；只要原文 > 安全副本即认为发生了真实剥除，
+ * 返回 true。该判定仅用于 `securityChanged` 决策，独立于 `changed`，避免
+ * 序列化规范化触发整体 innerHTML 替换摧毁 Selection（ISS-69）。
+ */
+const UNSAFE_TAGS = [
+  'script',
+  'iframe',
+  'object',
+  'embed',
+  'meta',
+  'link',
+  'base',
+  'form',
+  'style',
+] as const;
+
+// 注：attribute.name 来自 Element.attributes，不含前导空格（HTML 解析
+// 器自动 trim），所以「以空白开头」的旧写法永远不匹配；改成完整名匹配。
+const UNSAFE_ATTR_PATTERN = /^on[a-z][\w:-]*$/i;
+const UNSAFE_PROTOCOL_PATTERN = /(?:href|xlink:href|src|formaction|action)\s*=\s*["']?\s*(?:javascript|vbscript|data)\s*:/i;
+
+function countUnsafeMarkers(root: HTMLElement): number {
+  let count = 0;
+
+  root.querySelectorAll<HTMLElement>(UNSAFE_TAGS.join(',')).forEach(() => {
+    count += 1;
+  });
+
+  root.querySelectorAll<HTMLElement>('*').forEach((element) => {
+    for (const attr of Array.from(element.attributes)) {
+      if (UNSAFE_ATTR_PATTERN.test(attr.name)) count += 1;
+      if (UNSAFE_PROTOCOL_PATTERN.test(attr.name + '=' + attr.value)) count += 1;
+    }
+    // inline style 表达式（如 expression(...)）历史上是 IE XSS 向量。
+    if (element.hasAttribute('style') && /expression\s*\(|javascript:/i.test(element.getAttribute('style') ?? '')) {
+      count += 1;
+    }
+  });
+
+  // svg 内部 <foreignObject> 若 html profile 不开也可能被剥；
+  // DOMPurify svg profile 保留它但内部 script / on* 会被剥。此处仍计为
+  // 危险检测目标以便下游安全副本差异判断。
+  root.querySelectorAll('foreignObject script, foreignObject iframe').forEach(() => {
+    count += 1;
+  });
+
+  return count;
+}
+
+function hasRemovedUnsafeContent(original: string, sanitized: string): boolean {
+  if (original === sanitized) return false;
+  const originalRoot = document.createElement('div');
+  originalRoot.innerHTML = original;
+  const sanitizedRoot = document.createElement('div');
+  sanitizedRoot.innerHTML = sanitized;
+  return countUnsafeMarkers(originalRoot) > countUnsafeMarkers(sanitizedRoot);
+}
+
+/**
  * Sanitize Vditor IR DOM and its hidden HTML-block source markers.
  *
  * IR mode keeps raw HTML blocks twice: a rendered preview and escaped marker
@@ -392,7 +472,7 @@ function sanitizeHtmlBlockMarkers(root: HTMLElement): boolean {
  * sanitized 与 preserved 一致无需还原；异步产物存在时还原阻止被破坏。
  */
 export function sanitizeVditorIrHtml(irHtml: string): VditorIrSanitizeResult {
-  if (irHtml === '') return { html: irHtml, changed: false, sourceChanged: false };
+  if (irHtml === '') return { html: irHtml, changed: false, sourceChanged: false, securityChanged: false };
 
   const root = document.createElement('div');
   root.innerHTML = irHtml;
@@ -408,10 +488,16 @@ export function sanitizeVditorIrHtml(irHtml: string): VditorIrSanitizeResult {
 
   // 还原 preview innerHTML（如果 sanitize 抹掉了已渲染产物）
   if (preservedPreviewHtml.length === 0) {
+    // ISS-69：securityChanged 与 changed 解耦 —— 仅 DOMPurify / 浏览器
+    // 序列化规范化（属性顺序、SVG 属性大小写等）会令 `sanitized !== irHtml`
+    // 但没有真实安全剥除；整体重写 IR DOM 会摧毁 Selection 并触发父组件
+    // 反馈 setValue。仅当确实剥除了危险节点/属性/URI 时才整体重写。
+    const securityChanged = markerChanged || hasRemovedUnsafeContent(irHtml, sanitized);
     return {
       html: sanitized,
       changed: markerChanged || sanitized !== irHtml,
       sourceChanged: markerChanged,
+      securityChanged,
     };
   }
 
@@ -435,10 +521,17 @@ export function sanitizeVditorIrHtml(irHtml: string): VditorIrSanitizeResult {
     }
   }
 
+  const finalHtml = restoredRoot.innerHTML;
+  // ISS-69：preview 路径下整体重写也要走 hasRemovedUnsafeContent 判定；
+  // restoredAny 表示预览节点本身被安全剥除（mermaid CVE 等），算作安全变化。
+  const securityChanged = markerChanged
+    || restoredAny
+    || hasRemovedUnsafeContent(irHtml, finalHtml);
   return {
-    html: restoredRoot.innerHTML,
+    html: finalHtml,
     changed: markerChanged || restoredAny || sanitized !== irHtml,
     sourceChanged: markerChanged,
+    securityChanged,
   };
 }
 

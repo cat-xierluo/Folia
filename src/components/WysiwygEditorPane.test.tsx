@@ -34,6 +34,7 @@ type VditorConstructorCall = {
 };
 
 const vditorCalls: VditorConstructorCall[] = [];
+const setValueCalls: string[] = [];
 
 /** Minimal Vditor mock: 构造时往 host 注入一个真实可操作的 .vditor-ir pre，
  *  让 sanitizeIrDom 能在真实 DOM 子树上工作（保留 sanitizeForVditor 的
@@ -70,8 +71,16 @@ vi.mock('vditor', () => {
       return this.vditor.ir.element.innerHTML;
     }
 
-    public setValue(): void {
-      // 测试中 useEffect 路径不验证 setValue 行为
+    public setValue(value: string): void {
+      // ISS-69：jsdom 测试需要观察 Vditor 实例是否被 input 回调 /
+      // [source] effect 等路径调用了 setValue —— 这是「删除偶发未生效」
+      // 反馈链路（onChange → parent source → useEffect → setValue）的
+      // 核心证据点。setValueCalls.length 即可表达测试期间被额外调用的
+      // 次数，beforeEach 通过 vi.clearAllMocks 重置。注意：**不**覆写
+      // IR DOM —— jsdom 测试多以手工 `ir.innerHTML = ...` 模拟 Lute
+      // 渲染，setValue 写入会破坏这些测试用例。生产代码的「setValue →
+      // IR DOM 重建」行为由 Vditor 内部负责，mock 只需观察调用即可。
+      setValueCalls.push(value);
     }
 
     public destroy(): void {
@@ -133,6 +142,7 @@ describe('WysiwygEditorPane 内联 SVG 显示 + sanitize (ISS-168 编辑器部�
 
   beforeEach(() => {
     vditorCalls.length = 0;
+    setValueCalls.length = 0;
     host = document.createElement('div');
     document.body.append(host);
   });
@@ -378,6 +388,191 @@ describe('WysiwygEditorPane 内联 SVG 显示 + sanitize (ISS-168 编辑器部�
       expect(saved).toContain('<img src="x"');
       expect(saved).not.toContain('onerror');
       expect(saved).not.toContain('alert(');
+
+      await act(async () => {
+        root?.unmount();
+      });
+    });
+
+    // ISS-69：纯文本删除不应触发 IR DOM 整体重写。节点 identity 必须
+    // 保持，且 setValue 不应被调用（否则 input 回调已经触发了父组件
+    // 反馈环路）。Selection 仍存在证明 innerHTML 整体替换路径未被走。
+    it('ISS-69 D2-1: 纯文本段落 input 回调后 IR DOM 节点 identity 保持，setValue 未被调用', async () => {
+      let root: Root | null = null;
+      const onChange = vi.fn();
+
+      await act(async () => {
+        root = createRoot(host);
+        root.render(
+          renderWithProvider(
+            React.createElement(WysiwygEditorPane, {
+              source: '',
+              onChange,
+            }),
+          ),
+        );
+        await flushMicrotasks();
+      });
+
+      const call = vditorCalls[0];
+      await act(async () => {
+        call.options.after?.();
+        await flushMicrotasks();
+        await flushFrames();
+      });
+
+      const ir = call.host.querySelector<HTMLElement>('.vditor-ir pre');
+      expect(ir).not.toBeNull();
+      // 模拟用户键入纯文本段落（Lute 已渲染到 IR DOM）
+      ir!.innerHTML = '<p data-block="0"><span data-type="text">纯正文无危险</span></p>';
+      const paragraphBefore = ir!.querySelector('p');
+      const textSpanBefore = ir!.querySelector('span');
+      expect(paragraphBefore).not.toBeNull();
+      expect(textSpanBefore).not.toBeNull();
+      ir!.focus();
+      ir!.dispatchEvent(new Event('beforeinput', { bubbles: true }));
+
+      // 记录 input 回调前的 setValue 调用计数，断言 input 回调期间
+      // 没有新增调用（父反馈环路未触发）。初始化 Vditor 构造时本身
+      // 会调一次 setValue(source) —— 已在 setValueCalls 数组里。
+      const setValueCallsBeforeInput = setValueCalls.length;
+
+      await act(async () => {
+        // 模拟纯文本 Backspace 后的 input 回调
+        call.options.input?.('纯正文');
+        await flushFrames();
+      });
+
+      // 节点 identity 保持 → sanitize 没有触发 innerHTML 整体重写
+      expect(ir!.querySelector('p')).toBe(paragraphBefore);
+      expect(ir!.querySelector('span')).toBe(textSpanBefore);
+      // onChange 拿到了 callback value（而非 editor.getValue）
+      expect(onChange).toHaveBeenCalled();
+      // input 回调期间没有新增 setValue 调用（父反馈环路未触发）
+      expect(setValueCalls.length).toBe(setValueCallsBeforeInput);
+
+      await act(async () => {
+        root?.unmount();
+      });
+    });
+
+    // ISS-69：input 回调后传给 onChange 的值在 sanitize 真剥除危险内容
+    // 时使用 editor.getValue()，避免 callback value 污染父组件反馈。
+    it('ISS-69 D2-2: sanitize 真剥除 onerror 时，onChange 收到 editor.getValue()（已剥除）而非 callback 旧 value', async () => {
+      let root: Root | null = null;
+      const onChange = vi.fn();
+
+      await act(async () => {
+        root = createRoot(host);
+        root.render(
+          renderWithProvider(
+            React.createElement(WysiwygEditorPane, {
+              source: '',
+              onChange,
+            }),
+          ),
+        );
+        await flushMicrotasks();
+      });
+
+      const call = vditorCalls[0];
+      await act(async () => {
+        call.options.after?.();
+        await flushMicrotasks();
+      });
+
+      const ir = call.host.querySelector<HTMLElement>('.vditor-ir pre');
+      expect(ir).not.toBeNull();
+      // IR DOM 含 marker 形态的危险源码（与现有 336-385 测试同模式）
+      ir!.innerHTML = [
+        '<div data-block="0" data-type="html-block" class="vditor-ir__node">',
+        '<pre class="vditor-ir__marker--pre vditor-ir__marker"><code data-type="html-block">',
+        '&lt;div&gt;&lt;img src=&quot;x&quot; onerror=&quot;alert(1)&quot;&gt;&lt;/div&gt;',
+        '</code></pre>',
+        '<pre class="vditor-ir__preview" data-render="2"><div><img src="x" onerror="alert(1)"></div></pre>',
+        '</div>',
+      ].join('');
+      ir!.focus();
+      ir!.dispatchEvent(new Event('beforeinput', { bubbles: true }));
+
+      await act(async () => {
+        // callback 旧 value（input 回调参数）仍含 onerror：模拟「DOM 已剥
+        // 除，但 callback value 是 sanitize 之前的 MD」场景
+        call.options.input?.('<div><img src="x" onerror="alert(1)"></div>');
+        await flushFrames();
+      });
+
+      const saved = onChange.mock.calls.at(-1)?.[0] as string;
+      // 必须用 editor.getValue()（已剥除 onerror）而不是 callback value
+      expect(saved).toContain('<img src="x"');
+      expect(saved).not.toContain('onerror');
+      expect(saved).not.toContain('alert(');
+
+      await act(async () => {
+        root?.unmount();
+      });
+    });
+
+    // ISS-69：sanitize 真正需要整体重写 IR DOM 时（剥除 onerror），
+    // collapsed caret 通过文本偏移快照恢复。
+    it('ISS-69 D2-3: 含 onerror 时整体重写后 Selection 仍 anchor 在 IR DOM 内', async () => {
+      let root: Root | null = null;
+
+      await act(async () => {
+        root = createRoot(host);
+        root.render(
+          renderWithProvider(
+            React.createElement(WysiwygEditorPane, {
+              source: '',
+              onChange: () => undefined,
+            }),
+          ),
+        );
+        await flushMicrotasks();
+      });
+
+      const call = vditorCalls[0];
+      await act(async () => {
+        call.options.after?.();
+        await flushMicrotasks();
+      });
+
+      const ir = call.host.querySelector<HTMLElement>('.vditor-ir pre');
+      expect(ir).not.toBeNull();
+      ir!.innerHTML = [
+        '<div data-block="0" data-type="html-block" class="vditor-ir__node">',
+        '<pre class="vditor-ir__marker--pre vditor-ir__marker"><code data-type="html-block">',
+        '&lt;div&gt;&lt;img src=&quot;x&quot; onerror=&quot;alert(1)&quot;&gt;&lt;/div&gt;',
+        '</code></pre>',
+        '<pre class="vditor-ir__preview" data-render="2"><div><img src="x" onerror="alert(1)"></div></pre>',
+        '</div>',
+      ].join('');
+      // 在 IR 内任意 text node 上建一个 collapsed range
+      const someTextNode = Array.from(ir!.querySelectorAll<HTMLElement>('*'))
+        .find((el) => (el.textContent ?? '').length > 0)?.firstChild;
+      expect(someTextNode).not.toBeNull();
+      const range = document.createRange();
+      range.setStart(someTextNode!, 0);
+      range.collapse(true);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+      ir!.focus();
+      ir!.dispatchEvent(new Event('beforeinput', { bubbles: true }));
+
+      await act(async () => {
+        call.options.input?.('<div><img src="x" onerror="alert(1)"></div>');
+        await flushFrames();
+      });
+
+      // onerror 已被剥除（sanitize 确实生效）
+      expect(ir!.innerHTML).not.toContain('onerror');
+      // Selection 仍然存在并 anchor 在 IR DOM 内（说明 restore 路径生效）
+      const after = window.getSelection();
+      expect(after).not.toBeNull();
+      expect(after!.rangeCount).toBeGreaterThan(0);
+      const afterRange = after!.getRangeAt(0);
+      expect(ir!.contains(afterRange.startContainer)).toBe(true);
 
       await act(async () => {
         root?.unmount();
