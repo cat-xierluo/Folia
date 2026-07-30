@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/icon.png" alt="Folia" width="128" height="128">
+  <img src="docs/icon-readme.png" alt="Folia 应用图标" width="128" height="128">
 </p>
 
 # Folia
