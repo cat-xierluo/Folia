@@ -40,6 +40,7 @@ import { TabBar } from '../components/TabBar';
 import type { TabDragPayload } from '../components/tabDragPayload';
 import { RecentFilesPage } from '../components/RecentFilesPage';
 import { ContextMenu } from '../components/ContextMenu';
+import { ConfirmCloseDialog, type ConfirmCloseResult } from '../components/ConfirmCloseDialog';
 import { SettingsPage } from '../components/SettingsPage';
 import type { SourceHeadingScrollRequest } from '../components/EditorPane';
 import { useSession } from '../hooks/useSession';
@@ -148,6 +149,7 @@ export function AppLayout() {
   const {
     activeFile: file,
     activeTab,
+    tabs,
     openInNewTab,
     closeTab,
     activeTabId,
@@ -155,7 +157,20 @@ export function AppLayout() {
     updateActiveTabMeta,
     tearOffViaDrag,
   } = session;
-  const confirmCloseDirty = useCallback(() => window.confirm('该标签有未保存改动，确定关闭吗？'), []);
+  // Issue #68：保存确认对话框挂载状态。resolve 由 confirmCloseDirty 触发——
+  // 它返回一个 Promise，把 resolve 回调暂存到 state，用户点按钮时回调兑现。
+  const [pendingClose, setPendingClose] = useState<{
+    fileName: string;
+    resolve: (result: ConfirmCloseResult) => void;
+  } | null>(null);
+  // Issue #68：把原来的同步 window.confirm 升级为异步三选项对话框。
+  // 返回 Promise，resolve 回调暂存到 pendingClose state，由 ConfirmCloseDialog
+  // 的按钮兑现。这样 closeTab / 退出循环可以 await 它。
+  const confirmCloseDirty = useCallback((fileName: string) => {
+    return new Promise<ConfirmCloseResult>((resolve) => {
+      setPendingClose({ fileName, resolve });
+    });
+  }, []);
   const windowLabel = useMemo(() => detectCurrentWindowLabel(), []);
   const isTearOffSupported = useMemo(
     () => '__TAURI_INTERNALS__' in window,
@@ -312,6 +327,30 @@ export function AppLayout() {
     }
   }, [file, updateActiveFile, imageAssetStore]);
 
+  // Issue #68：按 tabId 落盘指定标签（退出 / 关闭确认循环里用于保存非 active 标签）。
+  // 复用 saveFile 底层写盘 + 图片落盘逻辑，但不依赖 active 状态——直接从 session.tabs
+  // 取出该 tab 的 file 处理。保存成功后该 tab 会立即被关闭，故无需更新 dirty 标志。
+  // docx 不可写（write_opened_document 拒绝 docx），直接跳过。
+  const saveDirtyTabById = useCallback(async (tabId: string) => {
+    const target = tabs.find((t) => t.id === tabId);
+    if (!target) return;
+    const targetFile = target.file;
+    if (targetFile.fileType === 'docx') return;
+    const { saveFile } = await import('../services/fileService');
+    let fileToSave = targetFile;
+    if (targetFile.path) {
+      const { replacements, failures } = await persistPendingImageAssets(imageAssetStore, targetFile.path);
+      if (failures.length > 0) {
+        console.error('[Folia] 部分图片落盘失败:', failures);
+      }
+      if (replacements.length > 0) {
+        const nextContent = replaceBlobUrlsWithRelativePaths(targetFile.content, replacements);
+        fileToSave = { ...targetFile, content: nextContent };
+      }
+    }
+    await saveFile(fileToSave);
+  }, [tabs, imageAssetStore]);
+
   const handleExportWord = useCallback(async () => {
     if (!file.path || file.fileType === 'docx') return;
     try {
@@ -433,7 +472,7 @@ export function AppLayout() {
       if (e.key === 'm' && e.altKey && !e.shiftKey) { e.preventDefault(); handleToggleWechatPreview(); return; }
       if (e.key === 'w' && !e.shiftKey && !e.altKey) {
         e.preventDefault();
-        closeTab(activeTabId, { confirmDirty: confirmCloseDirty });
+        void closeTab(activeTabId, { confirmDirty: confirmCloseDirty, onSave: saveDirtyTabById });
         return;
       }
       if (e.key === ',' && !e.shiftKey && !e.altKey) {
@@ -446,7 +485,7 @@ export function AppLayout() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [handleOpen, handleSave, handleSaveAs, handleExportWord, handleToggleEditorMode, handleToggleWordPreview, handleToggleWechatPreview, closeTab, activeTabId, confirmCloseDirty]);
+  }, [handleOpen, handleSave, handleSaveAs, handleExportWord, handleToggleEditorMode, handleToggleWordPreview, handleToggleWechatPreview, closeTab, activeTabId, confirmCloseDirty, saveDirtyTabById]);
 
   useEffect(() => {
     const handler = async (e: DragEvent) => {
@@ -544,6 +583,61 @@ export function AppLayout() {
       unlisten?.();
     };
   }, [handleOpenPath, isTauriRuntime]);
+
+  // Issue #68：拦截窗口关闭 / 应用退出。Rust 侧 CloseRequested → prevent_close +
+  // emit `request:confirm-close`（见 lib.rs），前端收到后逐个确认 dirty 标签：
+  // 任一「取消」则放弃关闭；全部「保存 / 不保存」处理后 invoke `confirm_close`
+  // 真正销毁窗口。无 dirty 时直接关闭，不打扰用户。
+  useEffect(() => {
+    if (!isTauriRuntime) return;
+    let cancelled = false;
+    let unlisten: (() => void) | undefined;
+    let closing = false; // 防重入：用户连点红绿灯时只处理一次。
+
+    void Promise.all([
+      import('@tauri-apps/api/core'),
+      import('@tauri-apps/api/event'),
+    ]).then(async ([{ invoke }, { listen }]) => {
+      const listener = await listen<{ label: string }>('request:confirm-close', async (event) => {
+        // 只处理本窗口的关闭请求（多窗口场景下事件会广播，各窗口各管各的）。
+        if (event.payload.label !== windowLabel) return;
+        if (closing) return;
+        closing = true;
+        try {
+          const dirtyTabs = tabs.filter((t) => t.file.dirty);
+          for (const tab of dirtyTabs) {
+            const result = await confirmCloseDirty(tab.file.name);
+            if (result === 'cancel') {
+              closing = false;
+              return; // 用户取消，保持窗口打开。
+            }
+            if (result === 'save') {
+              await saveDirtyTabById(tab.id);
+            }
+            // 'discard' → 不保存，继续下一个。
+          }
+          // 全部处理完毕（或无 dirty）：真正关闭窗口。
+          await invoke('confirm_close');
+        } catch (error) {
+          console.warn('confirm-close flow failed:', error);
+          closing = false;
+        }
+      });
+
+      if (cancelled) {
+        listener();
+        return;
+      }
+      unlisten = listener;
+    }).catch((error) => {
+      console.warn('Failed to bind request:confirm-close:', error);
+    });
+
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [isTauriRuntime, windowLabel, tabs, confirmCloseDirty, saveDirtyTabById]);
 
   useEffect(() => {
     // session 已恢复持久化标签时，跳过旧的单文件重开逻辑（多标签会话已取代 reopenLastFile）。
@@ -811,7 +905,7 @@ export function AppLayout() {
             windowLabel={windowLabel}
             onSelect={session.switchTab}
             onContextMenu={(id, x, y) => setContextMenu({ tabId: id, x, y })}
-            onClose={(id) => session.closeTab(id, { confirmDirty: confirmCloseDirty })}
+            onClose={(id) => { void session.closeTab(id, { confirmDirty: confirmCloseDirty, onSave: saveDirtyTabById }); }}
             onNew={() => session.openInNewTab(createEmptyFile())}
             onTearOffViaDrag={isTearOffSupported ? tearOffViaDrag : undefined}
             onMergeBackDrop={isTearOffSupported ? handleMergeBackDrop : undefined}
@@ -893,7 +987,7 @@ export function AppLayout() {
           x={contextMenu.x}
           y={contextMenu.y}
           onClose={() => setContextMenu(null)}
-          onCloseTab={() => session.closeTab(contextMenu.tabId, { confirmDirty: confirmCloseDirty })}
+          onCloseTab={() => { void session.closeTab(contextMenu.tabId, { confirmDirty: confirmCloseDirty, onSave: saveDirtyTabById }); }}
           onCloseOthers={() => session.closeOthers(contextMenu.tabId)}
           onCloseToRight={() => session.closeToRight(contextMenu.tabId)}
           onCloseAll={() => session.closeAll()}
@@ -916,6 +1010,15 @@ export function AppLayout() {
             onClose={handleCloseHtmlTableViewer}
           />
         </Suspense>
+      )}
+      {pendingClose && (
+        <ConfirmCloseDialog
+          fileName={pendingClose.fileName}
+          onResolve={(result) => {
+            pendingClose.resolve(result);
+            setPendingClose(null);
+          }}
+        />
       )}
     </div>
     </ImageAssetStoreProvider>

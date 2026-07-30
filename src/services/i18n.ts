@@ -149,6 +149,11 @@ const zhCN = {
   fileLostLabel: '文件已丢失',
   draftTooLargeLabel: '草稿过大未自动保存',
   statusBarSaveAs: '另存为',
+  confirmCloseTitle: '是否保存对「{fileName}」的更改？',
+  confirmCloseMessage: '如果不保存，关闭后将丢失本次修改。',
+  confirmCloseSave: '保存',
+  confirmCloseDiscard: '不保存',
+  confirmCloseCancel: '取消',
 };
 
 type I18nKey = keyof typeof zhCN;
@@ -296,6 +301,11 @@ const enUS: Record<I18nKey, string> = {
   fileLostLabel: 'File missing',
   draftTooLargeLabel: 'Draft too large to auto-save',
   statusBarSaveAs: 'Save as',
+  confirmCloseTitle: 'Save changes to “{fileName}”?',
+  confirmCloseMessage: 'Your changes will be lost if you don’t save them.',
+  confirmCloseSave: 'Save',
+  confirmCloseDiscard: 'Don’t Save',
+  confirmCloseCancel: 'Cancel',
 };
 
 const jaJP: Record<I18nKey, string> = {
@@ -441,6 +451,11 @@ const jaJP: Record<I18nKey, string> = {
   fileLostLabel: 'ファイルが見つかりません',
   draftTooLargeLabel: '下書きが大きすぎて自動保存できません',
   statusBarSaveAs: '名前を付けて保存',
+  confirmCloseTitle: '「{fileName}」への変更を保存しますか？',
+  confirmCloseMessage: '保存しない場合、変更は失われます。',
+  confirmCloseSave: '保存',
+  confirmCloseDiscard: '保存しない',
+  confirmCloseCancel: 'キャンセル',
 };
 
 const dictionaries: Record<AppLocale, Record<I18nKey, string>> = {

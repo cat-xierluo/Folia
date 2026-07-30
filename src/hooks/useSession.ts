@@ -14,10 +14,19 @@ import {
   type TabMergeBackPayload,
   type TabTearOffPayload,
 } from '../services/tabWindowService';
+import type { ConfirmCloseResult } from '../components/ConfirmCloseDialog';
 
 export interface CloseOptions {
-  /** 关闭 dirty 标签前的确认回调；返回 false 取消关闭。无此回调时直接关闭。 */
-  confirmDirty?: () => boolean;
+  /**
+   * 关闭 dirty 标签前的确认回调（Issue #68）。异步三选项：
+   * - 'save'    → 调用 `onSave` 保存后继续关闭
+   * - 'discard' → 放弃修改并继续关闭
+   * - 'cancel'  → 取消本次关闭
+   * 无此回调时直接关闭（不确认）。
+   */
+  confirmDirty?: (fileName: string) => Promise<ConfirmCloseResult>;
+  /** 用户选「保存」时调用的保存逻辑（通常指向 AppLayout.handleSave，但需按指定 tab 落盘）。 */
+  onSave?: (tabId: string) => Promise<void>;
 }
 
 /**
@@ -192,10 +201,21 @@ export function useSession() {
   }, []);
 
   const closeTab = useCallback(
-    (id: string, options?: CloseOptions) => {
+    async (id: string, options?: CloseOptions) => {
       const tab = state.tabs.find((t) => t.id === id);
       if (!tab) return true;
-      if (tab.file.dirty && options?.confirmDirty && !options.confirmDirty()) return false;
+      if (tab.file.dirty && options?.confirmDirty) {
+        const result = await options.confirmDirty(tab.file.name);
+        // await 期间该 tab 可能已被关闭/切换，用最新 state 复核存在性，避免误关他页。
+        if (!stateRef.current.tabs.some((t) => t.id === id)) return false;
+        if (result === 'cancel') return false;
+        if (result === 'save') {
+          if (options.onSave) await options.onSave(id);
+          // 保存后再次复核：保存若失败或 tab 被移除，则放弃关闭。
+          if (!stateRef.current.tabs.some((t) => t.id === id)) return false;
+        }
+        // 'discard' → 直接关闭。
+      }
       dispatch({ type: 'closeTab', id, confirmed: true });
       return true;
     },
@@ -235,15 +255,22 @@ export function useSession() {
     async (id: string, options?: CloseOptions) => {
       const tab = state.tabs.find((t) => t.id === id);
       if (!tab) return false;
-      if (tab.file.dirty && options?.confirmDirty && !options.confirmDirty()) return false;
+      if (tab.file.dirty && options?.confirmDirty) {
+        const result = await options.confirmDirty(tab.file.name);
+        if (result === 'cancel') return false;
+        if (result === 'save' && options.onSave) await options.onSave(id);
+        // 保存 / 弹框期间 tab 可能已变，用最新 state 取最新快照。
+      }
 
+      // 重新读取 tab 快照：上面 await 后原 tab 引用可能已过期。
+      const current = stateRef.current.tabs.find((t) => t.id === id) ?? tab;
       const windowLabel = detectCurrentWindowLabel();
       const payload: TabMergeBackPayload = {
         tabId: id,
         sourceLabel: windowLabel,
         targetLabel: 'main',
-        dirty: tab.file.dirty,
-        tab,
+        dirty: current.file.dirty,
+        tab: current,
       };
       try {
         await mergeBackTab(payload);

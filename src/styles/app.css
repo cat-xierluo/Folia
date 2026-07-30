@@ -3509,3 +3509,96 @@ html[data-theme='dark'] .word-paper-content th,
 html[data-theme='dark'] .word-paper-content td {
   border-color: var(--border-soft);
 }
+
+/* ──────── Issue #68：关闭未保存文档 / 退出应用确认框 ──────── */
+/* 复用 .settings-overlay / .settings-modal 的遮罩 + 入场动画骨架，
+   z-index 取 2200 保证盖在设置面板（2000）与表格查看器（2100）之上。 */
+.confirm-close-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--overlay-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2200;
+  animation: settings-overlay-in 120ms ease-out both;
+}
+
+.confirm-close-dialog {
+  width: min(420px, calc(100vw - 48px));
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 22px 22px 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  box-shadow: 0 8px 36px var(--shadow-soft);
+  animation: settings-modal-in 140ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  will-change: transform;
+}
+
+.confirm-close-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.confirm-close-title {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--fg);
+}
+
+.confirm-close-message {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+/* 按钮区：右对齐，顺序与 macOS 一致（取消 · 不保存 · 保存）。 */
+.confirm-close-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.confirm-close-button {
+  min-width: 72px;
+}
+
+/* 「不保存」按钮：基于现有 .secondary-action-button 风格加 danger 强调。 */
+.danger-action-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 5px;
+  border: 1px solid color-mix(in oklch, var(--danger) 42%, transparent);
+  background: color-mix(in oklch, var(--danger) 12%, transparent);
+  color: var(--danger);
+  font-family: var(--font-body);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.danger-action-button:hover {
+  background: color-mix(in oklch, var(--danger) 20%, transparent);
+  border-color: var(--danger);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .confirm-close-overlay,
+  .confirm-close-dialog {
+    animation: none;
+    will-change: auto;
+  }
+}
