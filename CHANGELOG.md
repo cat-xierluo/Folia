@@ -7,9 +7,11 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - **关闭未保存文档或退出应用时增加保存确认**（#68 / DEC-130）：当文档存在未保存修改时，关闭标签、关闭窗口或退出应用（Cmd+Q / 红绿灯 / 窗口 X）前会先弹出三选项确认框——「保存」（保存后继续关闭）、「不保存」（放弃修改关闭）、「取消」（返回编辑器）；文档已保存时直接关闭不打扰。退出应用时若有多个未保存标签，会逐个确认，中途取消任一个即终止退出。原有原生 `window.confirm` 的单标签关闭确认也一并升级为该三选项对话框，并补齐中 / 英 / 日三语文案。窗口关闭拦截走 Rust `prevent_close` + 事件方案，避免此前前端 `onCloseRequested` 在 macOS 上的误拦截问题；程序化关闭路径（merge-back、确认后关闭）改走 `destroy()` 绕过拦截。Issue 列出的「批量关闭」「切换文档替换编辑内容」两个场景留作后续。
+- **新增 Gitee 镜像作为更新源 fallback**（ISS-72）：`tauri.conf.json` 的 updater endpoints 现在包含 GitHub 与 Gitee 两份 manifest URL；GitHub 受限/限速时 Tauri 后端按顺序自动降级到 Gitee。release workflow 新增「Sync latest manifest to fixed Gitee tag」步骤，把每次发布生成的 `latest-gitee.json` 同步推送到 Gitee 仓库的固定 `latest` tag 下（让 `https://gitee.com/.../releases/latest/download/latest.json` 稳定响应；Gitee 没有 GitHub 那种 `/releases/latest` alias）。
 
 ### Fixed
 
+- **修复自动更新长时间停留在"正在后台下载"且无进度或错误提示的问题**（ISS-72）：根因是 `AppLayout.startBackgroundUpdateDownload` 调用 `downloadAppUpdate(update.update)` 时**未传 `onProgress` 回调**——Tauri Channel 的 `Started/Progress/Finished` 事件全部丢失，且整个下载路径没有任何超时保护，一旦 Rust 端下载命令挂起（网络 chunk timeout 未触发、Channel 漏发 Finished 等已知问题），前端永远停留在 `'downloading'` 阶段。修复后：1）传入 `onProgress`，让下载进度进入 React 状态机；2）下载路径加入 5 分钟绝对超时，超时后强制切到 `error` 状态；3）错误信息按 Rust 端 `error.message` 分类（超时/网络/签名校验/安装/通用）映射成本地化文案（zh/en/ja 三语）；4）Toolbar 在下载中阶段显示「下载中 N%」+ spinner，用户随时能看到进度；5）关于页面文案响应真实 phase（`checking / downloading N% / ready / error`），不再是写死的"正在后台下载"；6）下载失败时关于页面与 Toolbar 均出现「重试下载」按钮，无需重启 App；7）自动检查更新开关从 `useRef` 改为 `useState`，关闭再打开能重新触发检查；8）`translate()` 函数新增 `params?` 占位符支持，顺带让此前不生效的 `{count}` 占位符真正可用。新增 2 项 service 单测与 5 项 AppLayout 单测覆盖进度回调、超时、错误本地化、重试入口和重入防护。
 - **修复粘贴带标题格式的文本时保留源格式并出现异常跳行的问题**（ISS-67）：在 WYSIWYG（Vditor IR）模式下，从浏览器、Word 等复制含 `## 二级标题` 等块级格式的内容后，普通 `Cmd/Ctrl+V` 会按源格式（HTML）粘贴——Vditor 用 Lute 把 `<h2>` 转成独立块级元素，光标停在正文中间时会把当前段落「撑开」，产生异常换行/跳行。现在普通粘贴强制按剪贴板 `text/plain` 插入（`insertValue(text, false)` 不重新渲染 markdown），保留当前段落结构；需要保留源格式时用 `Cmd/Ctrl+Shift+V` 粘贴富文本。图片粘贴与拖拽路径不变。`text/plain` 为空（如仅有 HTML）时仍放行默认行为，避免误吃粘贴。
 
 ## [0.6.3] - 2026-07-30

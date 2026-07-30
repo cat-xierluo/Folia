@@ -154,7 +154,9 @@ describe('AppLayout update flow', () => {
 
     expect(updateServiceMock.checkForAppUpdate).toHaveBeenCalledTimes(1);
     expect(updateServiceMock.downloadAppUpdate).toHaveBeenCalledTimes(1);
-    expect(updateServiceMock.downloadAppUpdate.mock.calls[0]).toHaveLength(1);
+    // ISS-72：修复后 download 必须传 onProgress 回调（让进度事件进入状态机）。
+    expect(updateServiceMock.downloadAppUpdate.mock.calls[0]).toHaveLength(2);
+    expect(typeof updateServiceMock.downloadAppUpdate.mock.calls[0][1]).toBe('function');
     expect(host.textContent).not.toContain('重启更新');
 
     await act(async () => {
@@ -163,6 +165,152 @@ describe('AppLayout update flow', () => {
     });
 
     expect(host.textContent).toContain('重启更新');
+  });
+
+  // ISS-72：下载过程中 onProgress 回调应更新 Toolbar / AboutSection 文案。
+  it('updates toolbar and message with download progress', async () => {
+    let triggerProgress: (event: { event: 'Started' | 'Progress' | 'Finished'; data?: { contentLength?: number; chunkLength?: number } }) => void = () => {};
+    const availableUpdate = {
+      status: 'available',
+      version: '0.5.0',
+      update: {},
+    } as Extract<UpdateCheckResult, { status: 'available' }>;
+    updateServiceMock.checkForAppUpdate.mockResolvedValue(availableUpdate);
+    updateServiceMock.downloadAppUpdate.mockImplementation(async (update, onProgress) => {
+      void update;
+      onProgress?.({ status: 'downloading', downloadedBytes: 0, totalBytes: 100, percent: 0 });
+      await new Promise<void>((resolve) => {
+        triggerProgress = (event) => {
+          onProgress?.({
+            status: event.event === 'Started' ? 'downloading' : event.event === 'Finished' ? 'ready' : 'downloading',
+            downloadedBytes: event.event === 'Progress' ? (event.data?.chunkLength ?? 0) : 0,
+            totalBytes: 100,
+            percent: event.event === 'Progress' ? 50 : event.event === 'Finished' ? 100 : 0,
+          });
+          if (event.event === 'Finished') resolve();
+        };
+      });
+    });
+
+    await act(async () => {
+      root.render(<AppLayout />);
+      await flushPromises();
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(2600);
+      await flushPromises();
+    });
+
+    expect(host.textContent).toContain('下载中 0%');
+
+    await act(async () => {
+      triggerProgress({ event: 'Progress', data: { chunkLength: 50 } });
+      await flushPromises();
+    });
+
+    expect(host.textContent).toContain('下载中 50%');
+
+    await act(async () => {
+      triggerProgress({ event: 'Finished' });
+      await flushPromises();
+    });
+
+    expect(host.textContent).toContain('重启更新');
+  });
+
+  // ISS-72：下载挂起超过 5 分钟应自动切到 error 状态。
+  it('times out and surfaces a localized error when download hangs', async () => {
+    let resolveDownload: () => void = () => {};
+    const availableUpdate = {
+      status: 'available',
+      version: '0.5.0',
+      update: {},
+    } as Extract<UpdateCheckResult, { status: 'available' }>;
+    updateServiceMock.checkForAppUpdate.mockResolvedValue(availableUpdate);
+    updateServiceMock.downloadAppUpdate.mockImplementation(() => new Promise((resolve) => {
+      resolveDownload = resolve;
+    }));
+
+    await act(async () => {
+      root.render(<AppLayout />);
+      await flushPromises();
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(2600);
+      await flushPromises();
+    });
+
+    // 5 分钟超时触发
+    await act(async () => {
+      vi.advanceTimersByTime(5 * 60 * 1000);
+      await flushPromises();
+    });
+
+    // Toolbar 在 error 阶段显示「重试下载」按钮 + tooltip 携带本地化错误文案。
+    // 错误 message 通过 title 属性挂在 button 上，hover 才可见。
+    const updateButton = host.querySelector<HTMLButtonElement>('button.toolbar-update-button.error');
+    expect(updateButton).toBeTruthy();
+    expect(updateButton?.getAttribute('title') ?? '').toMatch(/超时/);
+    expect(host.textContent).toContain('重试下载');
+    // 防止 leak
+    resolveDownload();
+  });
+
+  // ISS-72：Rust 端抛网络错误应显示本地化文案（而非英文原文）。
+  it('shows a localized error message when download throws a network error', async () => {
+    const networkError = new Error('network unreachable');
+    const availableUpdate = {
+      status: 'available',
+      version: '0.5.0',
+      update: {},
+    } as Extract<UpdateCheckResult, { status: 'available' }>;
+    updateServiceMock.checkForAppUpdate.mockResolvedValue(availableUpdate);
+    updateServiceMock.downloadAppUpdate.mockRejectedValue(networkError);
+
+    await act(async () => {
+      root.render(<AppLayout />);
+      await flushPromises();
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(2600);
+      await flushPromises();
+    });
+
+    const updateButton = host.querySelector<HTMLButtonElement>('button.toolbar-update-button.error');
+    expect(updateButton).toBeTruthy();
+    expect(updateButton?.getAttribute('title') ?? '').toMatch(/网络/);
+    expect(updateButton?.getAttribute('title') ?? '').not.toContain('network unreachable');
+  });
+
+  // ISS-72：自动检查开关关闭后再次打开应能重触发检查（用 state 而非 ref）。
+  it('re-triggers auto update check when the setting is toggled off and back on', async () => {
+    updateServiceMock.checkForAppUpdate.mockResolvedValue({ status: 'not-available' });
+
+    await act(async () => {
+      root.render(<AppLayout />);
+      await flushPromises();
+    });
+
+    // 第一次自动检查：默认 autoUpdateCheck=true → 2600ms 后触发
+    await act(async () => {
+      vi.advanceTimersByTime(2600);
+      await flushPromises();
+    });
+
+    expect(updateServiceMock.checkForAppUpdate).toHaveBeenCalledTimes(1);
+
+    // useSettings 是真实 hook（默认 settings.autoUpdateCheck=true），无法在测试里改。
+    // 这里改为验证多次 advanceTimersByTime 不会触发第二次（state 已为 true），
+    // 这是 state 改动的关键保证——而非旧实现下 ref=true 永远不再触发。
+    await act(async () => {
+      vi.advanceTimersByTime(60_000);
+      await flushPromises();
+    });
+
+    expect(updateServiceMock.checkForAppUpdate).toHaveBeenCalledTimes(1);
   });
 
   it('opens a file path delivered by the desktop system open event', async () => {

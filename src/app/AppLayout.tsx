@@ -109,10 +109,17 @@ const HtmlTableViewerOverlay = lazy(() =>
 type AvailableUpdate = Extract<UpdateCheckResult, { status: 'available' }>;
 type UpdateInstallState =
   | { phase: 'idle' }
-  | { phase: 'downloading'; source: UpdateSource; update: AvailableUpdate }
+  | { phase: 'downloading'; source: UpdateSource; update: AvailableUpdate; percent: number }
   | { phase: 'ready'; source: UpdateSource; update: AvailableUpdate }
   | { phase: 'installing'; source: UpdateSource; update: AvailableUpdate }
   | { phase: 'error'; source: UpdateSource; update?: AvailableUpdate; message: string };
+
+/**
+ * ISS-72：下载卡死兜底。给下载流程一个绝对超时——若 Rust 端 `plugin:updater|download`
+ * 因网络 chunk timeout 未触发或 Channel 漏发 Finished 事件而永远不 resolve，
+ * 这里超时后强制切到 `error` 状态，避免界面永久停留在"下载中"。
+ */
+const UPDATE_DOWNLOAD_TIMEOUT_MS = 5 * 60 * 1000;
 
 // SettingsPageFallback 已删除（ISS-180 闭合）：外壳静态化后，外层不再需要
 // `<Suspense fallback>`。SettingsPage 内部 7 个非默认 section 的 `<Suspense>`
@@ -122,19 +129,42 @@ type UpdateInstallState =
 // 故把 TOC 刷新防抖到输入停顿后执行（ISS-159）。文件内容本身仍每键同步落盘/保存。
 const TOC_REFRESH_DEBOUNCE_MS = 150;
 
-function toUpdateErrorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  if (typeof error === 'string') return error;
-  return '更新安装失败';
+// ISS-72：把 Rust 端原始错误分类映射到本地化文案。fallback 仍展示原文便于排查。
+function toUpdateErrorMessage(
+  error: unknown,
+  locale: Parameters<typeof translate>[0],
+  t: (key: Parameters<typeof translate>[1], params?: Record<string, string | number>) => string,
+): string {
+  const raw = error instanceof Error ? error.message
+    : typeof error === 'string' ? error
+    : '';
+  void locale; // locale 已通过闭包 t 传入，这里仅为可读性占位。
+  if (!raw) return t('updateErrorGeneric', { message: '未知错误' });
+  if (/timeout/i.test(raw)) return t('updateErrorTimeout');
+  if (/network|fetch|connection|ENOTFOUND|ETIMEDOUT|unreachable/i.test(raw)) return t('updateErrorNetwork');
+  if (/signature|checksum|verify/i.test(raw)) return t('updateErrorSignature');
+  if (/install|permission/i.test(raw)) return t('updateErrorInstall');
+  return t('updateErrorGeneric', { message: raw });
 }
 
 export function AppLayout() {
   const settings = useSettings();
   const isTauriRuntime = '__TAURI_INTERNALS__' in window;
-  const t = (key: Parameters<typeof translate>[1]) => translate(settings.locale, key);
+  // ISS-72：t 加 useCallback 让 deps 引用稳定（避免 startBackgroundUpdateDownload /
+  // handleRestartUpdate 的 useCallback deps 在每次 render 都变）。
+  const t = useCallback(
+    (key: Parameters<typeof translate>[1], params?: Record<string, string | number>) =>
+      translate(settings.locale, key, params),
+    [settings.locale],
+  );
   const reopenAttempted = useRef(false);
-  const autoUpdateCheckStarted = useRef(false);
+  // ISS-72：用 state 而非 ref，让"关闭再打开自动检查"开关后能重触发检查。
+  // ref 在 effect 依赖里不会触发重渲染，开关切回 on 时 useEffect 不会重跑。
+  const [autoUpdateCheckStarted, setAutoUpdateCheckStarted] = useState(false);
   const updateDownloadVersionRef = useRef<string | null>(null);
+  // ISS-72：当前下载的取消句柄（虽然 Tauri JS SDK 不支持 abort，仅用于防御性
+  // 重入 + 在 finally 中清理 ref，避免 stale controller 残留）。
+  const downloadAbortRef = useRef<AbortController | null>(null);
   const mainContentRef = useRef<HTMLDivElement>(null);
   // 防抖挂起的 TOC 刷新定时器；卸载时清掉，避免 stale setToc（ISS-159）。
   const tocRefreshTimerRef = useRef<number | null>(null);
@@ -432,24 +462,58 @@ export function AppLayout() {
     window.addEventListener('pointerup', handlePointerUp);
   }, []);
 
+  // ISS-72：核心修复
+  //   1. 必须传 onProgress，让 Tauri Channel 的 Started/Progress/Finished 事件进入状态机
+  //   2. 加 5 分钟超时兜底，避免 Rust 端下载挂起时界面永久卡在"下载中"
+  //   3. 错误信息走本地化映射
   const startBackgroundUpdateDownload = useCallback((source: UpdateSource, update: AvailableUpdate) => {
     if (updateDownloadVersionRef.current === update.version) return;
 
+    // 防御性：取消上一次未结束的下载控制器（实际不会发生，但避免 race）
+    downloadAbortRef.current?.abort();
+    const abort = new AbortController();
+    downloadAbortRef.current = abort;
     updateDownloadVersionRef.current = update.version;
-    setUpdateState({ phase: 'downloading', source, update });
+    setUpdateState({ phase: 'downloading', source, update, percent: 0 });
 
-    void downloadAppUpdate(update.update)
-      .then(() => {
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      const timer = window.setTimeout(() => reject(new Error('download-timeout')), UPDATE_DOWNLOAD_TIMEOUT_MS);
+      abort.signal.addEventListener('abort', () => window.clearTimeout(timer));
+    });
+
+    Promise.race([
+      downloadAppUpdate(update.update, (p) => {
+        if (abort.signal.aborted) return;
         setUpdateState((current) => {
-          if (current.phase !== 'downloading' || current.update.version !== update.version) return current;
+          if (current.phase !== 'downloading') return current;
+          if (current.update.version !== update.version) return current;
+          return { phase: 'downloading', source, update, percent: p.percent ?? current.percent ?? 0 };
+        });
+      }),
+      timeoutPromise,
+    ])
+      .then(() => {
+        if (abort.signal.aborted) return;
+        setUpdateState((current) => {
+          if (current.phase !== 'downloading') return current;
+          if (current.update.version !== update.version) return current;
           return { phase: 'ready', source, update };
         });
       })
       .catch((error) => {
+        if (abort.signal.aborted) return;
         updateDownloadVersionRef.current = null;
-        setUpdateState({ phase: 'error', source, update, message: toUpdateErrorMessage(error) });
+        setUpdateState({
+          phase: 'error',
+          source,
+          update,
+          message: toUpdateErrorMessage(error, settings.locale, t),
+        });
+      })
+      .finally(() => {
+        if (downloadAbortRef.current === abort) downloadAbortRef.current = null;
       });
-  }, []);
+  }, [settings.locale, t]);
 
   const handleRestartUpdate = useCallback(async () => {
     if (updateState.phase !== 'ready') return;
@@ -462,9 +526,14 @@ export function AppLayout() {
       await installDownloadedAppUpdate(readyUpdate.update);
     } catch (error) {
       updateDownloadVersionRef.current = null;
-      setUpdateState({ phase: 'error', source, update: readyUpdate, message: toUpdateErrorMessage(error) });
+      setUpdateState({
+        phase: 'error',
+        source,
+        update: readyUpdate,
+        message: toUpdateErrorMessage(error, settings.locale, t),
+      });
     }
-  }, [updateState]);
+  }, [updateState, settings.locale, t]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -677,17 +746,17 @@ export function AppLayout() {
   }, [file.path, handleOpenPath, settings.reopenLastFile, systemOpenChecked, session.tabs]);
 
   useEffect(() => {
-    if (!settings.autoUpdateCheck || autoUpdateCheckStarted.current || !isTauriRuntime) return;
+    // ISS-72：用 state（而非 ref）作为防重入标志，让"关闭再打开自动检查"
+    // 开关后能重触发检查（ref 不会触发 useEffect 重跑）。
+    if (!settings.autoUpdateCheck || autoUpdateCheckStarted || !isTauriRuntime) return;
 
     return scheduleDelayedAutoUpdateCheck({
-      hasStarted: () => autoUpdateCheckStarted.current,
-      markStarted: () => {
-        autoUpdateCheckStarted.current = true;
-      },
+      hasStarted: () => autoUpdateCheckStarted,
+      markStarted: () => setAutoUpdateCheckStarted(true),
       checkForAppUpdate,
       onUpdateAvailable: (result) => startBackgroundUpdateDownload('auto', result),
     });
-  }, [isTauriRuntime, settings.autoUpdateCheck, startBackgroundUpdateDownload]);
+  }, [isTauriRuntime, settings.autoUpdateCheck, autoUpdateCheckStarted, startBackgroundUpdateDownload]);
 
   useEffect(() => {
     if (!settings.autoSave || !file.path || !file.dirty || file.fileType === 'docx') return;
@@ -731,9 +800,51 @@ export function AppLayout() {
   }, [file.dirty, file.name, isTauriRuntime]);
 
   const isDocx = file.fileType === 'docx';
-  const updateToolbarStatus = updateState.phase === 'ready' || updateState.phase === 'installing'
-    ? { phase: updateState.phase, version: updateState.update.version }
-    : undefined;
+  // ISS-72：Toolbar 在 downloading / error 阶段也展示，让用户不开 settings 也能看到进度和错误。
+  const updateToolbarStatus = (() => {
+    switch (updateState.phase) {
+      case 'downloading':
+        return { phase: 'downloading' as const, version: updateState.update.version, percent: updateState.percent };
+      case 'ready':
+        return { phase: 'ready' as const, version: updateState.update.version };
+      case 'installing':
+        return { phase: 'installing' as const, version: updateState.update.version };
+      case 'error':
+        return {
+          phase: 'error' as const,
+          version: updateState.update?.version ?? '',
+          message: updateState.message,
+        };
+      default:
+        return undefined;
+    }
+  })();
+  // ISS-72：AboutSection 需要真实 phase + 错误信息 + 重试入口。Toolbar 不需要这个派生。
+  const updateSnapshot: {
+    phase: 'idle' | 'downloading' | 'ready' | 'error';
+    percent?: number;
+    version?: string;
+    message?: string;
+  } = (() => {
+    switch (updateState.phase) {
+      case 'downloading':
+        return { phase: 'downloading', percent: updateState.percent, version: updateState.update.version };
+      case 'ready':
+        return { phase: 'ready', version: updateState.update.version };
+      case 'error':
+        return { phase: 'error', version: updateState.update?.version, message: updateState.message };
+      case 'installing':
+        // 安装中归为 ready 视图——告诉用户已下载好、马上重启
+        return { phase: 'ready', version: updateState.update.version };
+      default:
+        return { phase: 'idle' };
+    }
+  })();
+  const handleRetryUpdate = useCallback(() => {
+    if (updateState.phase !== 'error') return;
+    if (!updateState.update) return;
+    startBackgroundUpdateDownload(updateState.source, updateState.update);
+  }, [updateState, startBackgroundUpdateDownload]);
   const shouldShowHtmlPresentation = htmlPresentationVisible && file.fileType === 'html' && !isDocx;
   const tocPinned = tocSessionPinned || settings.tocAlwaysPinned;
   const mainContentClassName = [
@@ -936,6 +1047,7 @@ export function AppLayout() {
         onPreloadSettings={preloadNonDefaultSettingsSections}
         updateStatus={updateToolbarStatus}
         onRestartUpdate={handleRestartUpdate}
+        onRetryUpdate={handleRetryUpdate}
       />
       <div
         ref={mainContentRef}
@@ -1008,6 +1120,8 @@ export function AppLayout() {
         <SettingsPage
           onClose={() => setSettingsVisible(false)}
           onUpdateAvailable={(update) => startBackgroundUpdateDownload('manual', update)}
+          updateSnapshot={updateSnapshot}
+          onRetryUpdate={handleRetryUpdate}
         />
       )}
       {htmlTableViewer && (
