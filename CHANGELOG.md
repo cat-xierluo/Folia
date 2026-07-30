@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **修复粘贴带标题格式的文本时保留源格式并出现异常跳行的问题**（ISS-67）：在 WYSIWYG（Vditor IR）模式下，从浏览器、Word 等复制含 `## 二级标题` 等块级格式的内容后，普通 `Cmd/Ctrl+V` 会按源格式（HTML）粘贴——Vditor 用 Lute 把 `<h2>` 转成独立块级元素，光标停在正文中间时会把当前段落「撑开」，产生异常换行/跳行。现在普通粘贴强制按剪贴板 `text/plain` 插入（`insertValue(text, false)` 不重新渲染 markdown），保留当前段落结构；需要保留源格式时用 `Cmd/Ctrl+Shift+V` 粘贴富文本。图片粘贴与拖拽路径不变。`text/plain` 为空（如仅有 HTML）时仍放行默认行为，避免误吃粘贴。
+
 ## [0.6.3] - 2026-07-30
 
 ### Fixed
