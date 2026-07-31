@@ -313,10 +313,12 @@ const minimal = {
   ...legal,
   name: '简约通用',
   description: '无首行缩进，左对齐，通用格式',
+  // ISS-78：minimal 继承 ...legal 后会被 level1/level2 override 吃掉默认 color，
+  // 显式补回，防御性避免依赖 formatter 的 `?? color` 跨级 fallback。
   titles: {
     ...legal.titles,
-    level1: { size: 15, bold: true, align: 'center', space_before: 12, space_after: 6 },
-    level2: { size: 13, bold: true, align: 'left', space_before: 8, space_after: 4 },
+    level1: { size: 15, bold: true, align: 'center', space_before: 12, space_after: 6, color: '000000' },
+    level2: { size: 13, bold: true, align: 'left', space_before: 8, space_after: 4, color: '000000' },
   },
   paragraph: { line_spacing: 1.5, first_line_indent: 0, align: 'left' },
 } as const satisfies PresetConfig;

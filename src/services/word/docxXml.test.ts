@@ -321,7 +321,7 @@ describe('markdownToDocx XML output', () => {
     // 复现：使用内置预设导出未指定颜色的标题，
     // run 级必须显式声明颜色，避免被 docx 默认 Heading1-6 样式
     // （2E74B5 / 1F4D78）通过样式继承注入到正文 / 标题。
-    for (const presetId of ['legal', 'academic', 'report'] as const) {
+    for (const presetId of ['legal', 'academic', 'report', 'minimal'] as const) {
       const documentXml = await readDocumentXml([
         '# 一级',
         '## 二级',
@@ -330,15 +330,23 @@ describe('markdownToDocx XML output', () => {
         '##### 五级',
         '###### 六级',
         '普通段落文字。',
+        '',
+        '访问 [示例链接](https://example.com) 看引用。',
       ].join('\n'), getPreset(presetId));
 
       const runColors = allXmlAttrs(documentXml, 'w:color', 'w:val');
-      // 期望：run 颜色全部来自预设（legal/academic/report 都已设为 000000），
+      // 期望：run 颜色全部来自预设（4 个内置都已设为 000000），
       // 不应出现 docx 库默认 Heading 样式的 2E74B5 / 1F4D78 蓝色。
-      expect(runColors).not.toContain('2E74B5');
-      expect(runColors).not.toContain('1F4D78');
+      expect(runColors, `preset ${presetId} 不应被 Heading 样式注入蓝色`).not.toContain('2E74B5');
+      expect(runColors, `preset ${presetId} 不应被 Heading 样式注入深蓝`).not.toContain('1F4D78');
       // 标题与正文 run 都应该有显式颜色（预设中我们用 000000）。
-      expect(runColors).toContain('000000');
+      expect(runColors, `preset ${presetId} run 级应有显式黑`).toContain('000000');
+      // 超链接仍保留 formatter.ts:319 硬编码的 0563C1，不要被这次修复影响。
+      expect(runColors, `preset ${presetId} 超链接应保留 0563C1`).toContain('0563C1');
+      // 锁住颜色出现的最少频次：6 个 heading + 1 个普通段落 = 至少 7 个 000000。
+      // 弱化（例如只给 level1 加 color）的回归会在这里被抓住。
+      const blackCount = runColors.filter((c) => c === '000000').length;
+      expect(blackCount, `preset ${presetId} 至少 7 个黑色 run`).toBeGreaterThanOrEqual(7);
     }
   });
 });
