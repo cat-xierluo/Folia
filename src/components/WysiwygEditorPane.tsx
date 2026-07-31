@@ -82,6 +82,49 @@ function collapseExpandedMarkers(editor: import('vditor').default | null): void 
   });
 }
 
+/**
+ * ISS-76：标题节点的 marker（`# `）位于文本之前；Vditor 在用户输入/方向键
+ * 时给标题节点加 `vditor-ir__node--expand`，CSS 把 marker 从 0 宽渐变到
+ * 可见宽（150ms transition），整段标题文本向右偏移，让光标的视觉位置
+ * 向后「漂移」一格。220ms 后 IR_MARKER_COLLAPSE_DELAY_MS 才回退 --expand，
+ * 光标视觉回到正确位置——表现为瞬时跳动（ISS-76 用户报告的现象）。
+ *
+ * 修法：标题节点上的 --expand 必须在下一帧之前就回退，不要让用户看到
+ * marker 展开的中间态。粗体/斜体的 `**` 在文本两侧（`**foo**`），展开
+ * 时不会让光标视觉位移，仍按原 220ms timer 走——保留「输入 `**foo**` 时
+ * 短暂看到 `**`」的 UX。所以只对标题节点做立即折叠，其他 marker 类型
+ * 不动。
+ *
+ * 为什么用 requestAnimationFrame 而不是 queueMicrotask：Vditor 设置 --expand
+ * 的时点不一定先于本函数返回（取决于 Vditor 内部实现是先 expand 再 fire
+ * input，还是反过来）。RAF 在所有同步工作完成后、下一次绘制前执行，能保证
+ * 在用户看到这一帧时标题 marker 已经被折叠。
+ *
+ * 列表/引用等块级 marker（如果有）理论上也有同样问题，但用户报告只命中
+ * 标题行；其他 marker 类型先用现状 220ms 折叠，不主动扩大修复面。
+ */
+function scheduleImmediateHeadingCollapse(editor: import('vditor').default | null): void {
+  if (!editor) return;
+  const ir = getIrElement(editor);
+  if (!ir) return;
+  // 用 RAF 而非同步移除的原因：Vditor 在 input 事件里先批量移除所有节点的
+  // --expand，再由 selection change 处理器给当前光标所在节点加回 --expand。
+  // 两次 DOM 写都在同步路径里完成。RAF 在所有同步工作（包含 selection
+  // change 处理器）完成后、下一次绘制前执行，能保证用户看到这一帧时
+  // 标题 marker 已经被折叠——绕开 marker 从 0 宽渐变到可见宽的中间态。
+  window.requestAnimationFrame(() => {
+    if (!editor) return;
+    const liveIr = getIrElement(editor);
+    if (!liveIr) return;
+    liveIr.querySelectorAll(
+      'h1.vditor-ir__node--expand, h2.vditor-ir__node--expand, h3.vditor-ir__node--expand, '
+      + 'h4.vditor-ir__node--expand, h5.vditor-ir__node--expand, h6.vditor-ir__node--expand',
+    ).forEach((node) => {
+      node.classList.remove('vditor-ir__node--expand');
+    });
+  });
+}
+
 function editorHasFocus(editor: import('vditor').default): boolean {
   const ir = getIrElement(editor);
   return !!ir && (document.activeElement === ir || ir.contains(document.activeElement));
@@ -870,6 +913,12 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
             collapseTimerRef.current = null;
             collapseExpandedMarkers(editorRef.current);
           }, IR_MARKER_COLLAPSE_DELAY_MS);
+          // ISS-76：标题节点的 `# ` marker 在文本之前；220ms 后再折叠会
+          // 让用户看到 marker 从 0 宽渐变到可见宽的中间态，文本向右偏移
+          // 导致光标视觉向后漂移一格再复位。下帧立即折叠标题节点，绕开
+          // 这个视觉中间态；其他 marker（粗体/斜体的 `**` 等在文本两侧，
+          // 展开不会让光标视觉位移）保留 220ms timer 的 UX。
+          scheduleImmediateHeadingCollapse(editor);
 
           // ISS-168 编辑器部分：每次 input 回调先 sanitize IR DOM，
           // 保证用户输入/粘贴/拖入的 svg 保留、script/onerror 剥离。
@@ -972,6 +1021,10 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
             collapseTimerRef.current = null;
             collapseExpandedMarkers(editorRef.current);
           }, IR_MARKER_COLLAPSE_DELAY_MS);
+          // ISS-76：方向键也会让 Vditor 给光标所在标题节点加 --expand，
+          // 走和 input 同样的「marker 从 0 宽渐变可见宽 → 光标视觉漂移
+          // → 220ms 后复位」路径。keydown 路径也要立即折叠标题。
+          scheduleImmediateHeadingCollapse(editor);
         },
         blur() {
           if (collapseTimerRef.current !== null) {
