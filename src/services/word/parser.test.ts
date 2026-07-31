@@ -59,4 +59,52 @@ describe('parseLines', () => {
 
     expect(children.map((child) => findDocxAttribute(child, 'left'))).toEqual([480, 480]);
   });
+
+  // ISS-77：单列 Markdown 表格此前被 `isMarkdownTableRow` 的 `length >= 2` 门
+  // 拦掉，3 行 `| 单列 |` / `| --- |` / `| 值 |` 全部降级为普通段落，管道符和
+  // 分隔线作为字符散落到 DOCX。修复后应识别为 `w:tbl`。
+  it('converts single-column markdown table to a single Word table', async () => {
+    const children = await parseLines(
+      [
+        '| 单列表头 |',
+        '| --- |',
+        '| 单列值 |',
+      ].join('\n'),
+      getPreset(DEFAULT_PRESET_ID),
+    );
+
+    expect(children.map((child) => child.rootKey)).toEqual(['w:tbl']);
+  });
+
+  it('converts user example 4-column markdown table to a single Word table', async () => {
+    const children = await parseLines(
+      [
+        '| 序号 | 整改事项 | 完成时限 | 主要成果及验收材料 |',
+        '| --- | --- | --- | --- |',
+        '| 1 | 示例事项 | 1个月内 | 示例材料 |',
+      ].join('\n'),
+      getPreset(DEFAULT_PRESET_ID),
+    );
+
+    expect(children.map((child) => child.rootKey)).toEqual(['w:tbl']);
+  });
+
+  it('preserves markdown table surrounded by paragraphs', async () => {
+    const children = await parseLines(
+      [
+        '# 标题',
+        '',
+        '正文段落。',
+        '',
+        '| 单列 |',
+        '| --- |',
+        '| 值 |',
+        '',
+        '结尾段落。',
+      ].join('\n'),
+      getPreset(DEFAULT_PRESET_ID),
+    );
+
+    expect(children.map((child) => child.rootKey)).toEqual(['w:p', 'w:p', 'w:tbl', 'w:p']);
+  });
 });
