@@ -12,17 +12,19 @@ const legal = {
     margin_right: 3.18,
   },
   fonts: {
-    default: { name: '仿宋_GB2312', ascii: 'Times New Roman', size: 12 },
+    default: { name: '仿宋_GB2312', ascii: 'Times New Roman', size: 12, color: '000000' },
   },
   titles: {
-    level1: { size: 15, bold: true, align: 'center', space_before: 0, space_after: 12 },
-    level2: { size: 12, bold: true, align: 'left', space_before: 12, space_after: 6 },
-    level3: { size: 12, bold: true, align: 'left', space_before: 6, space_after: 6 },
-    level4: { size: 12, bold: true, align: 'left', space_before: 6, space_after: 3 },
+    // ISS-78：内置模板显式声明 headings 颜色为 000000，避免 docx 默认 Heading
+    // 样式（2E74B5 / 1F4D78）透过未指定 <w:color> 的 run 渗透到正文/标题。
+    level1: { size: 15, bold: true, align: 'center', space_before: 0, space_after: 12, color: '000000' },
+    level2: { size: 12, bold: true, align: 'left', space_before: 12, space_after: 6, color: '000000' },
+    level3: { size: 12, bold: true, align: 'left', space_before: 6, space_after: 6, color: '000000' },
+    level4: { size: 12, bold: true, align: 'left', space_before: 6, space_after: 3, color: '000000' },
     // ISS-181 第二期：H5/H6。legal 正文字号 12pt，层级已到底，H5/H6 沿用 level4
     // 的字号与加粗，仅收紧 spacing 区分层级。
-    level5: { size: 12, bold: true, align: 'left', space_before: 6, space_after: 3 },
-    level6: { size: 12, bold: true, align: 'left', space_before: 3, space_after: 3 },
+    level5: { size: 12, bold: true, align: 'left', space_before: 6, space_after: 3, color: '000000' },
+    level6: { size: 12, bold: true, align: 'left', space_before: 3, space_after: 3, color: '000000' },
   },
   paragraph: { line_spacing: 1.5, first_line_indent: 2, align: 'justify' },
   page_number: {
@@ -78,9 +80,11 @@ const academic = {
     margin_right: 2.54,
   },
   fonts: {
-    default: { name: '宋体', ascii: 'Times New Roman', size: 10.5 },
+    default: { name: '宋体', ascii: 'Times New Roman', size: 10.5, color: '000000' },
   },
   titles: {
+    // ISS-78：见 legal 预设注释。内置标题 color 显式 000000，避免被 docx 默认
+    // Heading 样式（2E74B5 / 1F4D78）覆盖。
     level1: {
       font: '黑体',
       ascii: 'Arial',
@@ -90,6 +94,7 @@ const academic = {
       space_before: 0,
       space_after: 12,
       line_spacing: 1.3,
+      color: '000000',
     },
     level2: {
       font: '黑体',
@@ -100,6 +105,7 @@ const academic = {
       space_before: 12,
       space_after: 6,
       line_spacing: 1.5,
+      color: '000000',
     },
     level3: {
       font: '黑体',
@@ -110,6 +116,7 @@ const academic = {
       space_before: 6,
       space_after: 3,
       line_spacing: 1.5,
+      color: '000000',
     },
     level4: {
       font: '宋体',
@@ -120,6 +127,7 @@ const academic = {
       space_before: 3,
       space_after: 3,
       line_spacing: 1.5,
+      color: '000000',
     },
     // ISS-181 第二期：H5/H6。academic 正文 10.5pt，层级已到底，沿用 level4。
     level5: {
@@ -131,6 +139,7 @@ const academic = {
       space_before: 3,
       space_after: 3,
       line_spacing: 1.5,
+      color: '000000',
     },
     level6: {
       font: '宋体',
@@ -141,6 +150,7 @@ const academic = {
       space_before: 3,
       space_after: 3,
       line_spacing: 1.5,
+      color: '000000',
     },
   },
   paragraph: { line_spacing: 1.5, first_line_indent: 2, align: 'justify' },
@@ -192,9 +202,11 @@ const report = {
     margin_right: 2.6,
   },
   fonts: {
-    default: { name: '仿宋_GB2312', ascii: 'Times New Roman', size: 16 },
+    default: { name: '仿宋_GB2312', ascii: 'Times New Roman', size: 16, color: '000000' },
   },
   titles: {
+    // ISS-78：见 legal 预设注释。内置标题 color 显式 000000，避免被 docx 默认
+    // Heading 样式（2E74B5 / 1F4D78）覆盖。
     level1: {
       font: '方正小标宋简体',
       ascii: 'Times New Roman',
@@ -204,6 +216,7 @@ const report = {
       space_before: 0,
       space_after: 18,
       line_spacing: 1.2,
+      color: '000000',
     },
     level2: {
       font: '黑体',
@@ -214,6 +227,7 @@ const report = {
       space_before: 12,
       space_after: 6,
       line_spacing: 1.75,
+      color: '000000',
     },
     level3: {
       font: '楷体_GB2312',
@@ -224,6 +238,7 @@ const report = {
       space_before: 6,
       space_after: 6,
       line_spacing: 1.75,
+      color: '000000',
     },
     level4: {
       font: '仿宋_GB2312',
@@ -234,6 +249,7 @@ const report = {
       space_before: 6,
       space_after: 3,
       line_spacing: 1.75,
+      color: '000000',
     },
     // ISS-181 第二期：H5/H6。report 层级靠字号递减（仿宋 16→15→14）。
     level5: {
@@ -245,6 +261,7 @@ const report = {
       space_before: 6,
       space_after: 3,
       line_spacing: 1.75,
+      color: '000000',
     },
     level6: {
       font: '仿宋_GB2312',
@@ -255,6 +272,7 @@ const report = {
       space_before: 3,
       space_after: 3,
       line_spacing: 1.75,
+      color: '000000',
     },
   },
   paragraph: { line_spacing: 1.75, first_line_indent: 2, align: 'justify' },
