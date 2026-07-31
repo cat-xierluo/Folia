@@ -902,5 +902,138 @@ describe('WysiwygEditorPane 内联 SVG 显示 + sanitize (ISS-168 编辑器部�
         root?.unmount();
       });
     });
+
+    // ISS-76：标题行的 `# ` marker 位于文本之前；Vditor 在用户输入/方向键
+    // 时给标题节点加 `vditor-ir__node--expand`，CSS 把 marker 从 0 宽
+    // 渐变到可见宽（150ms），期间整段文字向右偏移，让光标的视觉位置
+    // 向后「漂移」一格。220ms 后我们的 collapse timer 才回退 --expand，
+    // 光标视觉回到正确位置——表现为瞬时跳动。
+    //
+    // 期望：标题节点上的 --expand 必须在下一帧之前就被回退（不让用户
+    // 看到 marker 展开的中间态）；粗体/斜体的 `**` 在文本两侧，展开
+    // 不会让光标视觉位移，仍按原 220ms timer 走（保留用户输入时显示
+    // markdown 语法片段的 UX）。
+    it('ISS-76: input 回调后下一帧内移除标题节点的 --expand（防止光标视觉向后漂移）', async () => {
+      let root: Root | null = null;
+      const onChange = vi.fn();
+
+      await act(async () => {
+        root = createRoot(host);
+        root.render(
+          renderWithProvider(
+            React.createElement(WysiwygEditorPane, {
+              source: '# 标题',
+              onChange,
+            }),
+          ),
+        );
+        await flushMicrotasks();
+      });
+
+      const call = vditorCalls[0];
+      // 与 ISS-69 D2-1 一致：跑完 after() 后必须 flushFrames 让 pending
+      // source 的 RAF 回调复位 applyingExternalValue，后续 input() 才不会被
+      // 外层 guard 拦截。
+      await act(async () => {
+        call.options.after?.();
+        await flushMicrotasks();
+        await flushFrames();
+      });
+
+      const ir = call.host.querySelector<HTMLElement>('.vditor-ir pre');
+      expect(ir).not.toBeNull();
+
+      // 模拟 Lute 把 `# 标题` 渲染到 IR DOM（标题节点含 --heading marker）
+      ir!.innerHTML = [
+        '<h1 class="vditor-ir__node" data-block="0">',
+        '<span class="vditor-ir__marker vditor-ir__marker--heading"># </span>',
+        '标题',
+        '</h1>',
+      ].join('');
+
+      // 模拟 Vditor 在用户键入/方向键时给当前标题节点加 --expand
+      const heading = ir!.querySelector('h1') as HTMLElement;
+      heading.classList.add('vditor-ir__node--expand');
+      expect(heading.classList.contains('vditor-ir__node--expand')).toBe(true);
+
+      ir!.focus();
+      ir!.dispatchEvent(new Event('beforeinput', { bubbles: true }));
+
+      // 用户输入/Backspace/方向键后，Vditor 调 input() 回调
+      await act(async () => {
+        call.options.input?.('# 标题');
+        await flushFrames();
+      });
+
+      // 关键断言：标题节点的 --expand 必须在 flushFrames（4 帧 RAF）之内
+      // 被回退，绝不能等到 220ms collapse timer 才动。当前实现里 collapse
+      // timer 是 setTimeout(..., 220)，在真实测试环境下 setTimeout 不自动
+      // 前进——flushFrames 跑完 4 帧 requestAnimationFrame 也不会触发
+      // setTimeout，所以只有走 scheduleImmediateHeadingCollapse 的 RAF
+      // 路径才能命中此断言。
+      expect(heading.classList.contains('vditor-ir__node--expand')).toBe(false);
+
+      await act(async () => {
+        root?.unmount();
+      });
+    });
+
+    // ISS-76 配套：粗体/斜体节点的 marker 在文本两侧（`**foo**`），
+    // 展开时不会让光标视觉位移，仍按 220ms timer 折叠——保留「输入
+    // **foo** 时短暂看到 **」的 UX。本测试断言：标题立即折叠的同时，
+    // 粗体节点的 --expand 在 220ms 内仍保留（不被新逻辑误伤）。
+    it('ISS-76: 粗体/斜体节点仍按 220ms timer 折叠，不被立即折叠逻辑误伤', async () => {
+      let root: Root | null = null;
+      const onChange = vi.fn();
+
+      await act(async () => {
+        root = createRoot(host);
+        root.render(
+          renderWithProvider(
+            React.createElement(WysiwygEditorPane, {
+              source: '**粗体**',
+              onChange,
+            }),
+          ),
+        );
+        await flushMicrotasks();
+      });
+
+      const call = vditorCalls[0];
+      await act(async () => {
+        call.options.after?.();
+        await flushMicrotasks();
+      });
+
+      const ir = call.host.querySelector<HTMLElement>('.vditor-ir pre');
+      expect(ir).not.toBeNull();
+      // 模拟 Lute 把 `**粗体**` 渲染到 IR DOM（粗体 marker 在文本两侧）
+      ir!.innerHTML = [
+        '<p class="vditor-ir__node" data-block="0">',
+        '<span class="vditor-ir__marker vditor-ir__marker--bi">**</span>',
+        '粗体',
+        '<span class="vditor-ir__marker vditor-ir__marker--bi">**</span>',
+        '</p>',
+      ].join('');
+
+      // 模拟 Vditor 在用户键入时给粗体段节点加 --expand
+      const biNode = ir!.querySelector('p') as HTMLElement;
+      biNode.classList.add('vditor-ir__node--expand');
+
+      ir!.focus();
+      ir!.dispatchEvent(new Event('beforeinput', { bubbles: true }));
+
+      // 下一帧（4 帧 RAF）之后立即断言：粗体仍展开（220ms 还没到）
+      await act(async () => {
+        call.options.input?.('**粗体**');
+        await flushFrames();
+      });
+
+      expect(biNode.classList.contains('vditor-ir__node--expand')).toBe(true);
+
+      await act(async () => {
+        root?.unmount();
+      });
+    });
   });
 });
