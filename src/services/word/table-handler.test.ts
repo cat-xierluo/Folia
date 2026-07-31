@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_PRESET_ID, getPreset } from './config';
-import { createHtmlTable, createMarkdownTable, parseMarkdownTableRows } from './table-handler';
+import {
+  createHtmlTable,
+  createMarkdownTable,
+  isMarkdownSeparator,
+  isMarkdownTableRow,
+  parseMarkdownTableRows,
+} from './table-handler';
 import type { PresetConfig } from './types';
 
 describe('parseMarkdownTableRows', () => {
@@ -24,6 +30,35 @@ describe('parseMarkdownTableRows', () => {
       ['名称', '说明'],
       ['A|B', '含转义管道'],
     ]);
+  });
+});
+
+describe('isMarkdownTableRow / isMarkdownSeparator (ISS-77)', () => {
+  // 修复前：单列 Markdown 表格的 `isMarkdownTableRow` 在
+  // `splitMarkdownRow(...).length >= 2` 处直接拒绝，导致 parseMarkdownLines
+  // 把它们当成普通段落输出到 DOCX，管道符 `|` 与分隔线 `---` 变成纯文本。
+  it('detects single-column markdown table rows', () => {
+    expect(isMarkdownTableRow('| 单列表头 |')).toBe(true);
+    expect(isMarkdownTableRow('| 单列值 |')).toBe(true);
+    expect(isMarkdownTableRow('| --- |')).toBe(true);
+  });
+
+  it('detects single-column separator with alignment markers', () => {
+    expect(isMarkdownSeparator('| --- |')).toBe(true);
+    expect(isMarkdownSeparator('| :--- |')).toBe(true);
+    expect(isMarkdownSeparator('| ---: |')).toBe(true);
+    expect(isMarkdownSeparator('| :---: |')).toBe(true);
+  });
+
+  it('still rejects bare pipe and non-pipe lines', () => {
+    expect(isMarkdownTableRow('|')).toBe(false);
+    expect(isMarkdownTableRow('普通段落')).toBe(false);
+  });
+
+  it('still handles multi-column tables as before', () => {
+    expect(isMarkdownTableRow('| A | B |')).toBe(true);
+    expect(isMarkdownTableRow('| A | B | C | D |')).toBe(true);
+    expect(isMarkdownSeparator('| --- | --- |')).toBe(true);
   });
 });
 

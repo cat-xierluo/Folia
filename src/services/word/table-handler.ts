@@ -22,12 +22,16 @@ type MutableRunOptions = {
 // --- Markdown table ---
 
 export function isMarkdownTableRow(line: string): boolean {
-  return line.trimStart().startsWith('|') && splitMarkdownRow(line).length >= 2;
+  // 接受 1+ 列：单列 Markdown 表格（如 `| 标题 |` / `| --- |` / `| 值 |`）也
+  // 属于合法 Markdown 表格，必须在 parser 阶段被识别为表格而不是段落。`splitMarkdownRow`
+  // 会过滤掉首尾两侧的 `|` 产生的空 cell，单列时仍保留 1 个有效 cell，因此用 `>= 1`
+  // 作为最低门槛（`|` 单字符经 shift/pop 后得到空数组，长度 0 仍然不会误判）。
+  return line.trimStart().startsWith('|') && splitMarkdownRow(line).length >= 1;
 }
 
 export function isMarkdownSeparator(line: string): boolean {
   const cells = splitMarkdownRow(line);
-  return cells.length >= 2 && cells.every((cell) => /^:?-{3,}:?$/.test(cell.trim()));
+  return cells.length >= 1 && cells.every((cell) => /^:?-{3,}:?$/.test(cell.trim()));
 }
 
 export function parseMarkdownTableRows(lines: string[]): string[][] {
