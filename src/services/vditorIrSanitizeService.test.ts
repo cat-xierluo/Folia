@@ -420,3 +420,105 @@ describe('sanitizeVditorIrHtml ISS-69 securityChanged 语义', () => {
     expect(result.html).not.toContain('alert(');
   });
 });
+
+// ISS-75：编辑二级标题（h1-h6 + bold）输入英文字符时，Vditor IR 模式偶
+// 尔在 `<span data-type="strong">` 的内层 `<strong>` 文本中留下字面量
+// `****`。Lute.VditorIRDOM2Md 会原样保留 `****`，导致编辑器 / 预览 / 导
+// 出三方都显示 `致：XXX****市场监督管理局` 这种字面星号。手动删 `****`
+// 后恢复正常。
+//
+// 修复：在 sanitize 流程中通过 repairBrokenStrongMarkers 剥离 strong IR
+// 节点内的字面量 ****；要求 strong IR 节点同时具备开闭 marker span 与内
+// 层 <strong> 元素，避免误伤普通 Markdown 中的 `****` 内容。清理后必须
+// 触发 securityChanged=true，让父组件用修复后的 HTML 写回 IR DOM，否则
+// Vditor 仍持有脏状态，会继续产出 ****。
+describe('sanitizeVditorIrHtml ISS-75 strong IR 节点内字面量 **** 清理', () => {
+  // 复现 issue 截图里的 IR DOM 形态：h2 + strong IR 节点 + 内层 <strong>
+  // 文本里夹了字面量 ****。注意 strong IR 节点同时具备开闭
+  // vditor-ir__marker--bi span，是 Lute 解析 `## **致：XXX****市场监督
+  // 管理局**`（相邻空 bold 退化）后保留的字面态。
+  const brokenIrHtml = [
+    '<h2 data-block="0" class="vditor-ir__node" data-marker="#">',
+    '<span class="vditor-ir__marker vditor-ir__marker--heading" data-type="heading-marker">## </span>',
+    '<span data-type="strong" class="vditor-ir__node">',
+    '<span class="vditor-ir__marker vditor-ir__marker--bi">**</span>',
+    '<strong data-newline="1">致：XXX****市场监督管理局</strong>',
+    '<span class="vditor-ir__marker vditor-ir__marker--bi">**</span>',
+    '</span>',
+    '</h2>',
+  ].join('');
+
+  it('剥离 strong 内层 <strong> 文本里的 **** 字面量，且能 round-trip 回正确 MD', () => {
+    const { lute } = createIrHtml('## **致：XXX市场监督管理局**');
+    const result = sanitizeVditorIrHtml(brokenIrHtml);
+    const cleanedRoot = document.createElement('div');
+    cleanedRoot.innerHTML = result.html;
+    const innerStrong = cleanedRoot.querySelector(
+      'span[data-type="strong"] strong',
+    );
+
+    expect(result.changed).toBe(true);
+    expect(result.securityChanged).toBe(true);
+    // 字面量 **** 被剥
+    expect(innerStrong?.textContent).toBe('致：XXX市场监督管理局');
+    expect(result.html).not.toContain('****');
+    // round-trip 回正确 MD（不再有字面 ****，允许尾随换行）
+    expect(lute.VditorIRDOM2Md(result.html).replace(/\n+$/, '')).toBe('## **致：XXX市场监督管理局**');
+  });
+
+  it('清理在 h1/h3/h4/h5/h6 等任何标题层级的 strong IR 节点都生效', () => {
+    for (const tag of ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']) {
+      const html = brokenIrHtml.replace('<h2 ', `<${tag} `).replace('</h2>', `</${tag}>`);
+      const result = sanitizeVditorIrHtml(html);
+      expect(result.changed, `${tag}: 应当检测到 **** 残留`).toBe(true);
+      expect(result.html, `${tag}: 修复后不含 ****`).not.toContain('****');
+    }
+  });
+
+  it('对正常 strong IR 节点（无 **** 残留）保持幂等，不触发 securityChanged', () => {
+    // 构造正常 h2+bold：开闭 marker + 内层 <strong> 含中文，无 ****
+    const normalHtml = [
+      '<h2 data-block="0" class="vditor-ir__node" data-marker="#">',
+      '<span class="vditor-ir__marker vditor-ir__marker--heading" data-type="heading-marker">## </span>',
+      '<span data-type="strong" class="vditor-ir__node">',
+      '<span class="vditor-ir__marker vditor-ir__marker--bi">**</span>',
+      '<strong data-newline="1">致：XXX市场监督管理局</strong>',
+      '<span class="vditor-ir__marker vditor-ir__marker--bi">**</span>',
+      '</span>',
+      '</h2>',
+    ].join('');
+    const result = sanitizeVditorIrHtml(normalHtml);
+
+    expect(result.changed).toBe(false);
+    expect(result.securityChanged).toBe(false);
+    expect(result.html).not.toContain('****');
+  });
+
+  it('缺失开闭 marker span 的 <strong> 不在清理范围（保护裸 strong 文本）', () => {
+    // 用户直接在段落里写了 <strong>a****b</strong>，Folia 不应把
+    // **** 当作 Vditor 边界 bug 误剥；只有 IR 强语义结构
+    // （开闭 marker + inner <strong>）才触发清理。
+    const userHtml = '<p><strong>a****b</strong></p>';
+    const result = sanitizeVditorIrHtml(userHtml);
+
+    expect(result.changed).toBe(false);
+    expect(result.securityChanged).toBe(false);
+    expect(result.html).toContain('a****b');
+  });
+
+  it('修复后 id / data-folia-toc-anchor 等 strong 节点外属性不被破坏', () => {
+    // 真实 IR DOM 还带 id 与 folia 自定义属性，修复不应影响这些 attribute。
+    const htmlWithAttrs = brokenIrHtml.replace(
+      '<h2 data-block="0" class="vditor-ir__node" data-marker="#">',
+      '<h2 data-block="0" class="vditor-ir__node" id="ir-致-XXX----市场监督管理局" data-marker="#" data-folia-toc-anchor="true">',
+    );
+    const result = sanitizeVditorIrHtml(htmlWithAttrs);
+    const cleanedRoot = document.createElement('div');
+    cleanedRoot.innerHTML = result.html;
+    const h2 = cleanedRoot.querySelector('h2');
+
+    expect(h2?.getAttribute('id')).toBe('ir-致-XXX----市场监督管理局');
+    expect(h2?.getAttribute('data-folia-toc-anchor')).toBe('true');
+    expect(h2?.getAttribute('data-marker')).toBe('#');
+  });
+});

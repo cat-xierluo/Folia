@@ -436,6 +436,64 @@ function hasRemovedUnsafeContent(original: string, sanitized: string): boolean {
 }
 
 /**
+ * ISS-75：修复二级标题（h1-h6）等含 bold/strong 节点内的字面量 `****`。
+ *
+ * 背景：在 WYSIWYG 编辑器编辑二级标题时，只要在标题文字中插入英文字符，
+ * 标题中会生成并保留多余的字面量 `****`。`****` 会在编辑器、预览、导出
+ * 中作为字面量显示。手动删除 `****` 后标题恢复为正常 h2+加粗格式。
+ *
+ * 根因：Vditor IR 模式在标题节点内对 `**` 边界的处理存在边界条件——当 IR
+ * 节点的 `<strong data-newline="1">` 子元素文本中包含 4 个相邻 `*`（典型
+ * 来源：用户在加粗的标题中点入光标并连续键入 `**` 触发 bold split 后未
+ * 收尾，或保存/重载时 Lute 解析出现 `**xxx**...**yyy**` 相邻空 bold 的
+ * 退化形式），`<span data-type="strong">` 的内层 `<strong>` 文本节点会
+ * 携带 `****` 字面量。Lute.VditorIRDOM2Md 在 round-trip 时把这些字面量
+ * `****` 完整保留，导致编辑器、预览、导出三方都看到 `致：XXX****市场监督
+ * 管理局` 这样的字面星号。
+ *
+ * 修复策略：detached DOM 上对所有 `<span data-type="strong" class="vditor-ir__node">`
+ * 子树做局部清理，要求 strong IR 节点同时具备「外层 `vditor-ir__marker--bi`
+ * 开闭 marker + 内层 `<strong data-newline="1">`」的完整结构，避免误伤纯
+ * Markdown 文本中的 `****` 内容。仅在该结构下，移除内层 `<strong>` 文本
+ * 节点中的字面量 `****`，并去掉因此悬空的空文本节点。返回是否有修改，
+ * 让调用方决定是否需要触发 `securityChanged` 写回 IR DOM。
+ */
+function repairBrokenStrongMarkers(root: ParentNode): boolean {
+  let changed = false;
+  const strongNodes = Array.from(
+    root.querySelectorAll<HTMLElement>('span[data-type="strong"].vditor-ir__node'),
+  );
+  for (const strong of strongNodes) {
+    // 严格要求 strong IR 节点同时具备开闭 marker span（正常 bold 结构），
+    // 缺一即视为非 IR 强语义，不在本次修复范围（例如段落里裸 `<strong>`
+    // 元素、用户直接编辑 raw HTML 等）。
+    const markers = strong.querySelectorAll<HTMLElement>(':scope > .vditor-ir__marker--bi');
+    if (markers.length < 2) continue;
+
+    // 找内层承载文本的 `<strong data-newline="1">` 或 `<strong>`。
+    const inner = strong.querySelector<HTMLElement>(':scope > strong');
+    if (!inner) continue;
+
+    // 遍历内层 strong 的直接子节点，只清理纯文本节点里的 `****` 字面量，
+    // 不动嵌套元素（如未来 Vditor 引入子结构）。
+    for (const child of Array.from(inner.childNodes)) {
+      if (child.nodeType !== Node.TEXT_NODE) continue;
+      const text = child.textContent ?? '';
+      if (!text.includes('****')) continue;
+      const next = text.replace(/\*\*\*\*/g, '');
+      if (next === text) continue;
+      if (next === '') {
+        child.parentNode?.removeChild(child);
+      } else {
+        child.textContent = next;
+      }
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+/**
  * Sanitize Vditor IR DOM and its hidden HTML-block source markers.
  *
  * IR mode keeps raw HTML blocks twice: a rendered preview and escaped marker
@@ -464,6 +522,9 @@ export function sanitizeVditorIrHtml(irHtml: string): VditorIrSanitizeResult {
   const preservedPreviewHtml = previews.map((p) => p.innerHTML);
 
   const markerChanged = sanitizeHtmlBlockMarkers(root);
+  // ISS-75：清理 strong IR 节点内的字面量 ****，避免 Lute.VditorIRDOM2Md
+  // 把这种 Vditor 边界 bug 残留原样写到 source / 预览 / 导出。
+  const strongMarkerChanged = repairBrokenStrongMarkers(root);
   const withSanitizedMarkers = root.innerHTML;
   const sanitized = sanitizeForVditor(withSanitizedMarkers);
 
@@ -473,10 +534,15 @@ export function sanitizeVditorIrHtml(irHtml: string): VditorIrSanitizeResult {
     // 序列化规范化（属性顺序、SVG 属性大小写等）会令 `sanitized !== irHtml`
     // 但没有真实安全剥除；整体重写 IR DOM 会摧毁 Selection 并触发父组件
     // 反馈 setValue。仅当确实剥除了危险节点/属性/URI 时才整体重写。
-    const securityChanged = markerChanged || hasRemovedUnsafeContent(irHtml, sanitized);
+    // ISS-75：strongMarkerChanged 也算作 securityChanged，触发 IR DOM 写回——
+    // 单纯「strong marker 文本被剥」会改变 round-trip MD，必须让父组件拿到
+    // 修复后的 HTML，否则 Vditor 内的脏状态会继续产出 **** 字面量。
+    const securityChanged = markerChanged
+      || strongMarkerChanged
+      || hasRemovedUnsafeContent(irHtml, sanitized);
     return {
       html: sanitized,
-      changed: markerChanged || sanitized !== irHtml,
+      changed: markerChanged || strongMarkerChanged || sanitized !== irHtml,
       sourceChanged: markerChanged,
       securityChanged,
     };
@@ -505,12 +571,14 @@ export function sanitizeVditorIrHtml(irHtml: string): VditorIrSanitizeResult {
   const finalHtml = restoredRoot.innerHTML;
   // ISS-69：preview 路径下整体重写也要走 hasRemovedUnsafeContent 判定；
   // restoredAny 表示预览节点本身被安全剥除（mermaid CVE 等），算作安全变化。
+  // ISS-75：strongMarkerChanged 同样需要触发写回（理由同上）。
   const securityChanged = markerChanged
+    || strongMarkerChanged
     || restoredAny
     || hasRemovedUnsafeContent(irHtml, finalHtml);
   return {
     html: finalHtml,
-    changed: markerChanged || restoredAny || sanitized !== irHtml,
+    changed: markerChanged || strongMarkerChanged || restoredAny || sanitized !== irHtml,
     sourceChanged: markerChanged,
     securityChanged,
   };
