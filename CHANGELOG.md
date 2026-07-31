@@ -6,10 +6,17 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+### Fixed
+
+## [0.6.4] - 2026-07-31
+
+### Added
+
 - **关闭未保存文档或退出应用时增加保存确认**（#68 / DEC-130）：当文档存在未保存修改时，关闭标签、关闭窗口或退出应用（Cmd+Q / 红绿灯 / 窗口 X）前会先弹出三选项确认框——「保存」（保存后继续关闭）、「不保存」（放弃修改关闭）、「取消」（返回编辑器）；文档已保存时直接关闭不打扰。退出应用时若有多个未保存标签，会逐个确认，中途取消任一个即终止退出。原有原生 `window.confirm` 的单标签关闭确认也一并升级为该三选项对话框，并补齐中 / 英 / 日三语文案。窗口关闭拦截走 Rust `prevent_close` + 事件方案，避免此前前端 `onCloseRequested` 在 macOS 上的误拦截问题；程序化关闭路径（merge-back、确认后关闭）改走 `destroy()` 绕过拦截。Issue 列出的「批量关闭」「切换文档替换编辑内容」两个场景留作后续。
 
 ### Fixed
 
+- **修复单列 Markdown 表格导出 Word 时被降级为普通段落的问题**（ISS-77）：单列表格（`| 单列 |` / `| --- |` / `| 值 |`）导出 DOCX 时，管道符 `|`、分隔线 `---` 及各行内容会作为普通文本散落在文档里，未生成真实 Word 表格。根因是 `isMarkdownTableRow` / `isMarkdownSeparator` 此前要求 `splitMarkdownRow(line).length >= 2`——而 `splitMarkdownRow` 在两端有 `|` 时会 shift/pop 掉两个空 cell，单列情况切完只剩 1 个有效 cell，被门槛拦掉，进而走普通段落分支。修复后门槛降到 `>= 1`，单列表格可正常识别为 Word 表格；单独的 `|` 字符经 shift/pop 后得空数组（长度 0）仍不会误判。新增 7 项单测覆盖单列表/多列表/段落中间夹单列表及各种对齐标记（`:---` / `:---:` / `---:`）。
 - **修复二级标题（含 h1-h6）编辑时输入英文字符会生成并保留字面量 `****` 的问题**（ISS-75）：在 WYSIWYG（Vditor IR）模式下编辑带加粗的标题时，只要在标题文字中插入英文字符，标题中会生成并保留多余的字面量 `****`，编辑器 / 预览 / 导出三方都会显示 `致：XXX****市场监督管理局` 这种字面星号。根因是 Vditor IR 模式在标题节点的 `<span data-type="strong">` 内层 `<strong>` 文本里偶发残留 `****`（典型来源：用户在加粗标题中点入光标触发 bold split、保存/重载时 Lute 解析 `**xxx**...**yyy**` 相邻空 bold 的退化形式等），Lute.VditorIRDOM2Md 在 round-trip 时原样保留。修复后：`sanitizeVditorIrHtml` 新增 `repairBrokenStrongMarkers` 步骤，对同时具备「开闭 `vditor-ir__marker--bi` marker span + 内层 `<strong>`」完整 IR 强语义结构（不包含裸 `<strong>` 用户内容）剥离内层文本里的字面量 `****`，并触发 `securityChanged=true` 让父组件用修复后的 HTML 写回 IR DOM，避免 Vditor 持有脏状态继续产出 `****`。新增 5 项 service 单测覆盖 h1-h6 各层级、正常 strong 幂等、用户裸 `<strong>` 不被误伤、id/data-folia-toc-anchor 等外属性保留，以及完整 round-trip 回正确 MD。
 - **修复自动更新长时间停留在"正在后台下载"且无进度或错误提示的问题**（ISS-72）：根因是 `AppLayout.startBackgroundUpdateDownload` 调用 `downloadAppUpdate(update.update)` 时**未传 `onProgress` 回调**——Tauri Channel 的 `Started/Progress/Finished` 事件全部丢失，且整个下载路径没有任何超时保护，一旦 Rust 端下载命令挂起（网络 chunk timeout 未触发、Channel 漏发 Finished 等已知问题），前端永远停留在 `'downloading'` 阶段。修复后：1）传入 `onProgress`，让下载进度进入 React 状态机；2）下载路径加入 5 分钟绝对超时，超时后强制切到 `error` 状态；3）错误信息按 Rust 端 `error.message` 分类（超时/网络/签名校验/安装/通用）映射成本地化文案（zh/en/ja 三语）；4）Toolbar 在下载中阶段显示「下载中 N%」+ spinner，用户随时能看到进度；5）关于页面文案响应真实 phase（`checking / downloading N% / ready / error`），不再是写死的"正在后台下载"；6）下载失败时关于页面与 Toolbar 均出现「重试下载」按钮，无需重启 App；7）自动检查更新开关从 `useRef` 改为 `useState`，关闭再打开能重新触发检查；8）`translate()` 函数新增 `params?` 占位符支持，顺带让此前不生效的 `{count}` 占位符真正可用。新增 2 项 service 单测与 5 项 AppLayout 单测覆盖进度回调、超时、错误本地化、重试入口和重入防护。
 - **修复粘贴带标题格式的文本时保留源格式并出现异常跳行的问题**（ISS-67）：在 WYSIWYG（Vditor IR）模式下，从浏览器、Word 等复制含 `## 二级标题` 等块级格式的内容后，普通 `Cmd/Ctrl+V` 会按源格式（HTML）粘贴——Vditor 用 Lute 把 `<h2>` 转成独立块级元素，光标停在正文中间时会把当前段落「撑开」，产生异常换行/跳行。现在普通粘贴强制按剪贴板 `text/plain` 插入（`insertValue(text, false)` 不重新渲染 markdown），保留当前段落结构；需要保留源格式时用 `Cmd/Ctrl+Shift+V` 粘贴富文本。图片粘贴与拖拽路径不变。`text/plain` 为空（如仅有 HTML）时仍放行默认行为，避免误吃粘贴。
