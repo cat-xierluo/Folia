@@ -134,15 +134,126 @@ function nodeContainsLocalMedia(node: Node): boolean {
  * 需要重新处理；调 `Vditor.mermaidRender` / `Vditor.mathRender` 等静态方法
  * 让渲染器找到新 IR DOM 节点引用，异步产物会写到活节点上。
  */
-function sanitizeIrDom(editor: import('vditor').default | null, markdownSource: string): boolean {
-  if (!editor) return false;
+/**
+ * ISS-69：在 IR DOM 整体重写（`ir.innerHTML = ...`）前后保留 Selection。
+ *
+ * `ir.innerHTML = ...` 会丢弃当前 Selection 关联的所有 Range（HTML 规范：
+ * innerHTML 写入丢弃 selection）。编辑器内删除/输入路径如果一定要整体
+ * 重写 IR DOM，靠「直接保留 Range 对象 + addRange」会指向 detached
+ * 节点，恢复必失败。采用「文本偏移」快照：把 anchor/focus 表达为从 IR
+ * 根节点起算的累积 text 偏移，重写后用 TreeWalker 在新 text node 上
+ * 重新定位。clamp 到文末，失败时静默降级（不影响 sanitize 安全处理）。
+ *
+ * 不在 IR 子树内的 Selection（用户点了别处再切回）返回 null，跳过恢复
+ * 避免误改其他面板的选区。
+ */
+type IrSelectionSnapshot = { anchor: number; focus: number; backward: boolean } | null;
+
+function captureSelectionOffsets(ir: HTMLElement): IrSelectionSnapshot {
+  try {
+    const selection = typeof window !== 'undefined' ? window.getSelection() : null;
+    if (!selection || selection.rangeCount === 0) return null;
+    const range = selection.getRangeAt(0);
+    if (!ir.contains(range.startContainer) || !ir.contains(range.endContainer)) return null;
+
+    const measureTo = (node: Node, offset: number): number => {
+      const probe = document.createRange();
+      probe.selectNodeContents(ir);
+      probe.setEnd(node, offset);
+      return probe.toString().length;
+    };
+
+    const anchor = measureTo(range.startContainer, range.startOffset);
+    const focus = measureTo(range.endContainer, range.endOffset);
+    return {
+      anchor,
+      focus,
+      backward: selection.anchorNode
+        ? (selection.anchorNode === range.endContainer
+          && selection.anchorOffset === range.endOffset)
+        : false,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function restoreSelectionOffsets(ir: HTMLElement, snap: IrSelectionSnapshot): void {
+  if (!snap) return;
+  try {
+    const selection = window.getSelection();
+    if (!selection) return;
+
+    const walker = document.createTreeWalker(ir, NodeFilter.SHOW_TEXT, null);
+    let anchorNode: Text | null = null;
+    let anchorLocal = 0;
+    let focusNode: Text | null = null;
+    let focusLocal = 0;
+    let consumed = 0;
+
+    let current = walker.nextNode() as Text | null;
+    while (current) {
+      const length = current.data.length;
+      if (!anchorNode && consumed + length >= snap.anchor) {
+        anchorNode = current;
+        anchorLocal = Math.max(0, snap.anchor - consumed);
+      }
+      if (!focusNode && consumed + length >= snap.focus) {
+        focusNode = current;
+        focusLocal = Math.max(0, snap.focus - consumed);
+      }
+      consumed += length;
+      if (anchorNode && focusNode) break;
+      current = walker.nextNode() as Text | null;
+    }
+
+    // 找不到对应 text node（极端 sanitize 剥掉所有文本）时静默跳过
+    if (!anchorNode || !focusNode) return;
+
+    const range = document.createRange();
+    range.setStart(anchorNode, anchorLocal);
+    range.setEnd(focusNode, focusLocal);
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    // anchor/focus 在 range 上的位置决定方向；backward 选区方向仅在
+    // anchor === range.end / focus === range.start 时需要重新设 base/extent，
+    // 否则 addRange 已按正向设好。这里不再额外调整以保持简洁，jsdom
+    // 不暴露 setBaseAndExtent，真实浏览器也由默认行为处理。
+  } catch {
+    // 静默降级，不影响 sanitize 安全处理
+  }
+}
+
+/**
+ * ISS-69：`sanitizeIrDom` 同时返回 `sourceChanged`（HTML-block marker
+ * 源码变化，决定是否要 emitEditorValueIfChanged 触发父组件 onChange）
+ * 与 `securityChanged`（是否真的剥除了危险内容，决定 input 回调取
+ * nextValue 时该用 `editor.getValue()` 还是 callback 参数 `value`）。
+ * 两个语义独立，调用方按需读取。
+ */
+type SanitizeIrDomResult = {
+  sourceChanged: boolean;
+  securityChanged: boolean;
+};
+
+function sanitizeIrDom(editor: import('vditor').default | null, markdownSource: string): SanitizeIrDomResult {
+  if (!editor) return { sourceChanged: false, securityChanged: false };
   const ir = getIrElement(editor);
-  if (!ir) return false;
+  if (!ir) return { sourceChanged: false, securityChanged: false };
   const original = ir.innerHTML;
-  if (original === '') return false;
+  if (original === '') return { sourceChanged: false, securityChanged: false };
   const result = sanitizeVditorIrHtml(original);
-  if (result.changed) {
+  // ISS-69：用 securityChanged 门控整体 innerHTML 重写。`changed` 在
+  // DOMPurify / 浏览器 HTML parser 仅做序列化规范化（属性顺序、SVG
+  // 属性大小写、自闭合标签、空白等）时也会为 true —— 那种情况下整体
+  // 重写 IR DOM 没有安全收益，但会摧毁 Selection 引发「删除未生效」体感。
+  // `securityChanged` 仅在真正剥除了危险节点/属性/URI 时为 true，整体
+  // 重写前/后用文本偏移快照保留 Selection（见 captureSelectionOffsets）。
+  if (result.securityChanged) {
+    const snap = captureSelectionOffsets(ir);
     ir.innerHTML = result.html;
+    restoreSelectionOffsets(ir, snap);
   }
   repairSvgIrPreviewsFromMarkdown(ir, markdownSource);
   // ISS-63 / DEC-118：sanitize 完成后重跑 Vditor 内部代码块渲染器，让
@@ -150,7 +261,7 @@ function sanitizeIrDom(editor: import('vditor').default | null, markdownSource: 
   // 开 detached-node 竞争）。Try/catch 防 unhandled rejection + 卸载竞态
   // 检查防 await 期间 editor 被 cleanup 销毁。
   rerenderAsyncCodeBlocks(editor);
-  return result.sourceChanged;
+  return { sourceChanged: result.sourceChanged, securityChanged: result.securityChanged };
 }
 
 /**
@@ -699,7 +810,7 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
               lockComplexTables();
               const host = hostRef.current;
               if (host) void resolveLocalImages(host, filePath);
-              if (sanitized) emitEditorValueIfChanged(editor);
+              if (sanitized.sourceChanged) emitEditorValueIfChanged(editor);
             } catch (error) {
               sanitizingRef.current = false;
               console.error('[Folia] after() queueMicrotask sanitize 失败:', error);
@@ -735,7 +846,7 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
                   lockComplexTables();
                   const host = hostRef.current;
                   if (host) void resolveLocalImages(host, filePath);
-                  if (sanitized) emitEditorValueIfChanged(editor);
+                  if (sanitized.sourceChanged) emitEditorValueIfChanged(editor);
                 } catch (error) {
                   sanitizingRef.current = false;
                   console.error('[Folia] after() pending setValue sanitize 失败:', error);
@@ -767,9 +878,9 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
           // 但为防御性仍然包在 sanitizingRef 里。try/finally 保证 DOMException
           // 不会让 sanitizingRef 永远卡在 true（ISS-170 review follow-up）。
           sanitizingRef.current = true;
-          let sanitized = false;
+          let sanitizeResult: SanitizeIrDomResult = { sourceChanged: false, securityChanged: false };
           try {
-            sanitized = sanitizeIrDom(editor, latestSource.current);
+            sanitizeResult = sanitizeIrDom(editor, latestSource.current);
           } catch (error) {
             console.error('[Folia] input() sanitize 失败:', error);
           } finally {
@@ -782,7 +893,12 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
           const irEl = editorRef.current?.vditor.ir?.element;
           const host = irEl?.parentElement ?? null;
           if (host) void resolveLocalImages(host, filePath);
-          const nextValue = sanitized ? editor.getValue() : value;
+          // ISS-69：仅在 securityChanged 时才用 editor.getValue() 覆盖
+          // callback 参数 `value`。仅 sourceChanged（marker 源码被清洗，
+          // 但用户实际 DOM 已反映删除）时直接采用 callback value，避免
+          // 父组件反馈 setValue 重建整棵 IR DOM。原文的 `sanitized` 二
+          // 元语义（任何 changed）已被 securityChanged 取代。
+          const nextValue = sanitizeResult.securityChanged ? editor.getValue() : value;
 
           const complex = lastComplexBlocksRef.current;
           if (complex.length === 0) {
@@ -801,8 +917,9 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
             // onclick/onerror 等，再把 `original.html`（可能含这些属性）
             // 反向注入等于让 sanitize 失效——XSS bypass。用 sanitize 后的
             // nextBlocks 状态为准，锁的语义降级为「保持结构」而非「保持
-            // 字节级内容」。
-            if (sanitized) return;
+            // 字节级内容」。ISS-69 同步：判定改为 sourceChanged ||
+            // securityChanged，任一为真都不可被 original.html 反向覆盖。
+            if (sanitizeResult.sourceChanged || sanitizeResult.securityChanged) return;
             const next = nextBlocks.complex.find((candidate) => candidate.index === original.index)
               ?? nextBlocks.simple.find((candidate) => candidate.index === original.index);
             if (!next) {
@@ -828,7 +945,7 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
                 const restoredSanitized = sanitizeIrDom(editor, latestSource.current);
                 sanitizingRef.current = false;
                 lockComplexTables();
-                if (restoredSanitized) emitEditorValueIfChanged(editor);
+                if (restoredSanitized.sourceChanged) emitEditorValueIfChanged(editor);
               } catch (error) {
                 sanitizingRef.current = false;
                 console.error('[Folia] input() restore 后 sanitize 失败:', error);
@@ -927,7 +1044,7 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
         // 外部更新后，../../figures/... 图片只剩替代文字。
         const host = hostRef.current;
         if (host) void resolveLocalImages(host, filePath);
-        if (sanitized) emitEditorValueIfChanged(editor);
+        if (sanitized.sourceChanged) emitEditorValueIfChanged(editor);
       } catch (error) {
         sanitizingRef.current = false;
         console.error('[Folia] [source] useEffect sanitize 失败:', error);
