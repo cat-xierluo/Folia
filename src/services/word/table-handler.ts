@@ -30,6 +30,8 @@ export function isMarkdownTableRow(line: string): boolean {
 }
 
 export function isMarkdownSeparator(line: string): boolean {
+  // 门槛与 isMarkdownTableRow 对齐（>= 1）：单列分隔线 `| --- |` 也是合法
+  // Markdown 表格边界，1 个 cell 满足 `^:?-{3,}:?$` 即视为分隔行。
   const cells = splitMarkdownRow(line);
   return cells.length >= 1 && cells.every((cell) => /^:?-{3,}:?$/.test(cell.trim()));
 }

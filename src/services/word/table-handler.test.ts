@@ -53,6 +53,9 @@ describe('isMarkdownTableRow / isMarkdownSeparator (ISS-77)', () => {
   it('still rejects bare pipe and non-pipe lines', () => {
     expect(isMarkdownTableRow('|')).toBe(false);
     expect(isMarkdownTableRow('普通段落')).toBe(false);
+    expect(isMarkdownSeparator('|')).toBe(false);
+    expect(isMarkdownSeparator('普通段落')).toBe(false);
+    expect(isMarkdownSeparator('| 普通 |')).toBe(false);
   });
 
   it('still handles multi-column tables as before', () => {
