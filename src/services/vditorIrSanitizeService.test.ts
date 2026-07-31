@@ -506,6 +506,33 @@ describe('sanitizeVditorIrHtml ISS-75 strong IR 节点内字面量 **** 清理',
     expect(result.html).toContain('a****b');
   });
 
+  it('合法 IR strong 内层故意写 **** 字面量也会被剥（锁定语义，非 bug）', () => {
+    // repairBrokenStrongMarkers 的设计取舍：在通过白名单的 IR 强语义结构
+    // （开闭 marker + inner strong 齐备）内，无法可靠区分「Vditor 边界残留
+    // 的 ****」与「用户故意写的字面 ****」——Vditor 的 bug 本身就是在
+    // 合法 IR strong 结构内产生 ****。一旦尝试细分就会漏判 bug 情况，
+    // 重新打开 ISS-75 的脏状态。因此该结构内的 **** 一律剥除，偏向清理。
+    // 真要写字面星号应走裸 <strong>（上一用例已验证保留）或代码块/转义。
+    // 本测试锁定此行为，防止后人误以为是 bug 又来改。
+    const intentionalLiteralHtml = [
+      '<h2 data-block="0" class="vditor-ir__node" data-marker="#">',
+      '<span class="vditor-ir__marker vditor-ir__marker--heading" data-type="heading-marker">## </span>',
+      '<span data-type="strong" class="vditor-ir__node">',
+      '<span class="vditor-ir__marker vditor-ir__marker--bi">**</span>',
+      '<strong data-newline="1">hello****world</strong>',
+      '<span class="vditor-ir__marker vditor-ir__marker--bi">**</span>',
+      '</span>',
+      '</h2>',
+    ].join('');
+    const result = sanitizeVditorIrHtml(intentionalLiteralHtml);
+
+    // 即使是「用户字面」的 ****，在 IR strong 结构内也一律剥除。
+    expect(result.changed).toBe(true);
+    expect(result.securityChanged).toBe(true);
+    expect(result.html).not.toContain('****');
+    expect(result.html).toContain('helloworld');
+  });
+
   it('修复后 id / data-folia-toc-anchor 等 strong 节点外属性不被破坏', () => {
     // 真实 IR DOM 还带 id 与 folia 自定义属性，修复不应影响这些 attribute。
     const htmlWithAttrs = brokenIrHtml.replace(

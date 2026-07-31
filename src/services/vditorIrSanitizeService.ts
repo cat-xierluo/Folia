@@ -457,6 +457,17 @@ function hasRemovedUnsafeContent(original: string, sanitized: string): boolean {
  * Markdown 文本中的 `****` 内容。仅在该结构下，移除内层 `<strong>` 文本
  * 节点中的字面量 `****`，并去掉因此悬空的空文本节点。返回是否有修改，
  * 让调用方决定是否需要触发 `securityChanged` 写回 IR DOM。
+ *
+ * 为什么不再细分判定（IR strong 结构内的 `****` 一律视为 Vditor 边界残留，
+ * 而非用户字面量）：Vditor 的边界 bug 本身就是在「合法的 IR strong 结构」
+ * 内产生 `****`，所以在该结构内没有任何可靠信号能区分「用户的字面 `****`」
+ * 与「Vditor 残留的 `****`」——一旦尝试细分（如看 `****` 是否贴着 marker），
+ * 就会把 bug 产生的部分情况漏判，重新打开 ISS-75 的脏状态。选择偏向清理
+ * （与 `hasRemovedUnsafeContent` 偏向安全的取舍一致）。用户真要写字面 `****`
+ * 有两条逃生舱口：(1) 走裸 `<strong>`（不构成 IR 强语义结构，被
+ * `markers.length < 2` 白名单保护，`****` 原样保留）；(2) 用代码块 / 行内
+ * 代码 / `\*` 转义。下方测试「合法 IR strong 内层故意写 **** 字面量也被剥」
+ * 锁定了这个行为，防止后人误以为是 bug 又来改。
  */
 function repairBrokenStrongMarkers(root: ParentNode): boolean {
   let changed = false;

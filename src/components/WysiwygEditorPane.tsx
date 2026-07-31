@@ -102,8 +102,17 @@ function collapseExpandedMarkers(editor: import('vditor').default | null): void 
  *
  * 列表/引用等块级 marker（如果有）理论上也有同样问题，但用户报告只命中
  * 标题行；其他 marker 类型先用现状 220ms 折叠，不主动扩大修复面。
+ *
+ * 卸载竞态：RAF 在未来帧执行，可能在组件卸载、editor 被 destroy 之后才触发。
+ * 闭包持有的旧 editor 引用会让 getIrElement 操作已分离的 DOM。传入 cancelled
+ * getter（读 init effect 闭包的 cancelled 标志，cleanup 时翻转为 true），回调
+ * 首行短路——与本文件 input()/keydown() 内其它 RAF 调用点（如 after() 里的
+ * `if (cancelled) return;`）的既定卸载防护模式一致。
  */
-function scheduleImmediateHeadingCollapse(editor: import('vditor').default | null): void {
+function scheduleImmediateHeadingCollapse(
+  editor: import('vditor').default | null,
+  cancelled: () => boolean,
+): void {
   if (!editor) return;
   const ir = getIrElement(editor);
   if (!ir) return;
@@ -113,6 +122,9 @@ function scheduleImmediateHeadingCollapse(editor: import('vditor').default | nul
   // change 处理器）完成后、下一次绘制前执行，能保证用户看到这一帧时
   // 标题 marker 已经被折叠——绕开 marker 从 0 宽渐变到可见宽的中间态。
   window.requestAnimationFrame(() => {
+    // 卸载竞态防护：cleanup 已 destroy editor 并翻转 cancelled，直接返回，
+    // 避免操作已分离的 DOM（与 init effect 内其它 RAF 调用点一致）。
+    if (cancelled()) return;
     if (!editor) return;
     const liveIr = getIrElement(editor);
     if (!liveIr) return;
@@ -918,7 +930,8 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
           // 导致光标视觉向后漂移一格再复位。下帧立即折叠标题节点，绕开
           // 这个视觉中间态；其他 marker（粗体/斜体的 `**` 等在文本两侧，
           // 展开不会让光标视觉位移）保留 220ms timer 的 UX。
-          scheduleImmediateHeadingCollapse(editor);
+          // 传入 cancelled getter：RAF 可能在卸载后触发，需读最新标志短路。
+          scheduleImmediateHeadingCollapse(editor, () => cancelled);
 
           // ISS-168 编辑器部分：每次 input 回调先 sanitize IR DOM，
           // 保证用户输入/粘贴/拖入的 svg 保留、script/onerror 剥离。
@@ -1024,7 +1037,8 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
           // ISS-76：方向键也会让 Vditor 给光标所在标题节点加 --expand，
           // 走和 input 同样的「marker 从 0 宽渐变可见宽 → 光标视觉漂移
           // → 220ms 后复位」路径。keydown 路径也要立即折叠标题。
-          scheduleImmediateHeadingCollapse(editor);
+          // 传入 cancelled getter：RAF 可能在卸载后触发，需读最新标志短路。
+          scheduleImmediateHeadingCollapse(editor, () => cancelled);
         },
         blur() {
           if (collapseTimerRef.current !== null) {
