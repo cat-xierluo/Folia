@@ -383,4 +383,40 @@ describe('sanitizeVditorIrHtml ISS-69 securityChanged 语义', () => {
     expect(result.html).not.toContain('<script');
     expect(result.html).not.toContain('onerror');
   });
+
+  // ISS-69 安全缺口回归（C7/C8）：旧实现用「危险特征黑名单」计数判定
+  // securityChanged，srcset / poster 不在黑名单属性名里，DOMPurify 虽已
+  // 剥除危险值，计数不变会被误判为 false（fail-open，安全结果不写回 IR
+  // DOM）。结构化 DOM 差异对比通过「属性数减少」判定，覆盖任意危险类型。
+  //
+  // 关键路径：危险内容只在 .vditor-ir__preview、marker 源码保持干净 ——
+  // 这样 markerChanged=false，判定完全依赖 hasRemovedUnsafeContent，
+  // 才能真正暴露黑名单漏判（若用 createIrHtml 走 marker 路径，marker
+  // 清洗会让 markerChanged=true 提前短路，掩盖 hasRemovedUnsafeContent 的缺陷）。
+  const wrapHtmlBlockWithPreview = (previewInner: string): string => [
+    '<div data-block="0" data-type="html-block" class="vditor-ir__node">',
+    '<pre class="vditor-ir__marker--pre vditor-ir__marker"><code data-type="html-block">',
+    '&lt;svg viewBox="0 0 10 10"&gt;&lt;rect width="10"/&gt;&lt;/svg&gt;',
+    '</code></pre>',
+    `<pre class="vditor-ir__preview" data-render="1">${previewInner}</pre>`,
+    '</div>',
+  ].join('');
+
+  it('C7: preview 含 <img srcset="javascript:">，securityChanged === true（修复前 fail-open）', () => {
+    const result = sanitizeVditorIrHtml(wrapHtmlBlockWithPreview('<img src="x" srcset="javascript:alert(1)">'));
+
+    expect(result.securityChanged).toBe(true);
+    expect(result.sourceChanged).toBe(false);
+    expect(result.html).not.toContain('javascript:alert');
+    expect(result.html).not.toContain('alert(');
+  });
+
+  it('C8: preview 含 <video poster="javascript:">，securityChanged === true（修复前 fail-open）', () => {
+    const result = sanitizeVditorIrHtml(wrapHtmlBlockWithPreview('<video src="x" poster="javascript:alert(1)"></video>'));
+
+    expect(result.securityChanged).toBe(true);
+    expect(result.sourceChanged).toBe(false);
+    expect(result.html).not.toContain('javascript:alert');
+    expect(result.html).not.toContain('alert(');
+  });
 });

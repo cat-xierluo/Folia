@@ -395,54 +395,30 @@ function sanitizeHtmlBlockMarkers(root: HTMLElement): boolean {
  * 字符串差异（属性顺序、SVG 属性大小写、自闭合标签、空白等），
  * 不能凭 `sanitized !== irHtml` 判定需要整体重写 IR DOM。
  *
- * 策略：在 detached DOM 上同时跑「危险节点/属性/URI」扫描，对比原文与安全
- * 副本中这些危险特征的出现次数；只要原文 > 安全副本即认为发生了真实剥除，
- * 返回 true。该判定仅用于 `securityChanged` 决策，独立于 `changed`，避免
- * 序列化规范化触发整体 innerHTML 替换摧毁 Selection（ISS-69）。
+ * 策略（结构化 DOM 差异对比）：在 detached DOM 上分别统计原文与安全副本的
+ * 「元素节点总数 + 属性总数」。DOMPurify 的语义是「只删不加」——只要安全副本
+ * 的节点数或属性数少于原文，就一定发生了真实剥除，返回 true。该判定独立于
+ * `changed`，仅用于 `securityChanged` 决策，避免序列化规范化触发整体
+ * innerHTML 替换摧毁 Selection（ISS-69）。
+ *
+ * 为什么不用「危险特征黑名单」（如危险标签、事件属性、危险协议的枚举）计数：
+ * 黑名单必然补不全。历史上 DOMPurify 会剥除 SVG animate / set 子元素（含
+ * onbegin / onload 等事件处理器）、img 的 srcset javascript 协议、video 的
+ * poster javascript 协议等，这些若不在黑名单里，计数不变就会被误判为
+ * securityChanged=false，形成 sanitize fail-open——安全结果不写回 IR DOM。
+ * 结构化差异只看「节点或属性数是否减少」，从机制上覆盖任意危险类型，
+ * 不再依赖黑名单完整性。
  */
-const UNSAFE_TAGS = [
-  'script',
-  'iframe',
-  'object',
-  'embed',
-  'meta',
-  'link',
-  'base',
-  'form',
-  'style',
-] as const;
-
-// 注：attribute.name 来自 Element.attributes，不含前导空格（HTML 解析
-// 器自动 trim），所以「以空白开头」的旧写法永远不匹配；改成完整名匹配。
-const UNSAFE_ATTR_PATTERN = /^on[a-z][\w:-]*$/i;
-const UNSAFE_PROTOCOL_PATTERN = /(?:href|xlink:href|src|formaction|action)\s*=\s*["']?\s*(?:javascript|vbscript|data)\s*:/i;
-
-function countUnsafeMarkers(root: HTMLElement): number {
-  let count = 0;
-
-  root.querySelectorAll<HTMLElement>(UNSAFE_TAGS.join(',')).forEach(() => {
-    count += 1;
-  });
-
+function countDomStructure(root: ParentNode): { nodeCount: number; attrCount: number } {
+  let nodeCount = 0;
+  let attrCount = 0;
+  // querySelectorAll('*') 返回 root 下所有后代元素节点（含 svg / foreignObject
+  // 内部子元素），每个元素本身计为一个节点，其 attributes 计入 attrCount。
   root.querySelectorAll<HTMLElement>('*').forEach((element) => {
-    for (const attr of Array.from(element.attributes)) {
-      if (UNSAFE_ATTR_PATTERN.test(attr.name)) count += 1;
-      if (UNSAFE_PROTOCOL_PATTERN.test(attr.name + '=' + attr.value)) count += 1;
-    }
-    // inline style 表达式（如 expression(...)）历史上是 IE XSS 向量。
-    if (element.hasAttribute('style') && /expression\s*\(|javascript:/i.test(element.getAttribute('style') ?? '')) {
-      count += 1;
-    }
+    nodeCount += 1;
+    attrCount += element.attributes.length;
   });
-
-  // svg 内部 <foreignObject> 若 html profile 不开也可能被剥；
-  // DOMPurify svg profile 保留它但内部 script / on* 会被剥。此处仍计为
-  // 危险检测目标以便下游安全副本差异判断。
-  root.querySelectorAll('foreignObject script, foreignObject iframe').forEach(() => {
-    count += 1;
-  });
-
-  return count;
+  return { nodeCount, attrCount };
 }
 
 function hasRemovedUnsafeContent(original: string, sanitized: string): boolean {
@@ -451,7 +427,12 @@ function hasRemovedUnsafeContent(original: string, sanitized: string): boolean {
   originalRoot.innerHTML = original;
   const sanitizedRoot = document.createElement('div');
   sanitizedRoot.innerHTML = sanitized;
-  return countUnsafeMarkers(originalRoot) > countUnsafeMarkers(sanitizedRoot);
+  const originalCount = countDomStructure(originalRoot);
+  const sanitizedCount = countDomStructure(sanitizedRoot);
+  // 节点数或属性数任一严格减少 → 发生了真实剥除。纯序列化规范化（属性
+  // 重排、大小写、空白、自闭合标签）不会改变节点数和属性数，故不会误判。
+  return sanitizedCount.nodeCount < originalCount.nodeCount
+    || sanitizedCount.attrCount < originalCount.attrCount;
 }
 
 /**
