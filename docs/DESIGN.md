@@ -330,6 +330,7 @@ transition: background 0.15s;
 - 下载阶段按钮**不 `disabled`**——保留 hover 反馈与 tooltip（显示完整百分比），但不接 onClick，避免用户以为点了能取消。
 - 百分比取整到 0~100，由 `updateService.downloadAppUpdate` 透传 `update.download` 的 Tauri Channel `Progress` 事件计算；事件丢失时 `percent` 保持上次值，UI 不会显示错误百分比。
 - 关于页面（Settings → 关于）通过 `updateSnapshot` 接收同一份 phase 派生数据，显示同样的「下载中 N%」+「更新已就绪」+「失败原因」+「重试下载」按钮，与工具栏保持单一信息源。
+- **三条更新路径（手动检查 / 自动检查 / 后台下载）共用同一套错误归类逻辑** `updateService.categorizeUpdateError`（ISS-84）：任何路径捕获到底层错误后，都先归类为 `timeout / network / signature / install / generic`，再映射到阶段专用文案；绝不允许把 reqwest 的 `error sending request for url (...)` 等英文原文原样透传到界面。检查失败时「检查更新」按钮本身即重试入口，不另设按钮。
 
 ### Toggle Switch
 

@@ -8,6 +8,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **修复点击「检查更新」失败时界面直接暴露底层英文错误 `error sending request for url (...)` 的问题**（ISS-84）：在 `0.6.4` 中，手动「检查更新」走的是 `updateService.toErrorMessage`，它把 Tauri updater（reqwest）抛出的原始 `error.message` 原样透传给界面，而 ISS-72 的本地化文案只覆盖了下载路径（`AppLayout.toUpdateErrorMessage`），两条路径各维护一份错误映射逻辑。现在抽取共享的 `categorizeUpdateError`（手动检查 / 自动检查 / 后台下载三条路径共用），并扩展正则以识别 reqwest 的 `error sending request for url (...)` / `request failed` / `trying to connect` / `dns` 等传输层错误文案（旧正则不含这些关键词，会落到 generic 分支把英文原文嵌入 `更新失败：{message}`）。检查失败统一映射为中文「检查更新失败：无法连接更新服务器，请检查网络后重试。」（网络/超时）或「检查更新失败，请稍后重试。」（其它），中 / 英 / 日三语，绝不再向用户暴露 `error sending request` 原文；「检查更新」按钮本身即重试入口。新增 `categorizeUpdateError` 单测（含 #84 的精确 reqwest 错误串）与 `AboutSection` 行为回归测试（点击真实按钮 + 喂入 issue 原始错误串，断言中文文案出现、英文原文不出现）。注：Gitee 备用端点 `releases/latest/download/latest.json` 目前实测返回 404（固定 `latest` tag 未挂上 manifest），属于 CI/Gitee 同步的基础设施问题，不在本次代码修复范围——已记录待排查。
+
 ## [0.6.4] - 2026-07-31
 
 ### Added

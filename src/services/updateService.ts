@@ -28,6 +28,36 @@ function toErrorMessage(error: unknown): string {
   return '更新检查失败';
 }
 
+/**
+ * 更新流程错误类别（ISS-84）。
+ *
+ * 手动检查、自动检查与后台下载三条路径共用这套归类逻辑，避免各路径各自维护
+ * 一份正则导致漂移（ISS-72 只给下载路径做了本地化，检查路径漏掉，使 reqwest
+ * 的 `error sending request for url (...)` 原文透传到界面——见 #84）。
+ */
+export type UpdateErrorCategory = 'timeout' | 'network' | 'signature' | 'install' | 'generic';
+
+/**
+ * 把 Tauri updater（底层 reqwest）抛出的原始错误归类为稳定类别。
+ *
+ * 关键：reqwest 的网络错误文案是 `error sending request for url (...)`，其中
+ * 不含 network/fetch/connection 等旧关键词，必须显式匹配 `sending request` /
+ * `request for url`，否则会落到 generic 分支并把英文原文透传给用户（#84 复现路径）。
+ */
+export function categorizeUpdateError(error: unknown): UpdateErrorCategory {
+  const raw = error instanceof Error
+    ? error.message
+    : typeof error === 'string' ? error : '';
+  if (!raw) return 'generic';
+  if (/timeout|timed out/i.test(raw)) return 'timeout';
+  if (/sending request|request for url|request failed|trying to connect|connection refused|connect error|name resolution|dns|network|fetch|ENOTFOUND|ETIMEDOUT|unreachable/i.test(raw)) {
+    return 'network';
+  }
+  if (/signature|checksum|verify/i.test(raw)) return 'signature';
+  if (/install|permission/i.test(raw)) return 'install';
+  return 'generic';
+}
+
 export async function getCurrentAppVersion(): Promise<string> {
   if (!isTauriRuntime()) return FALLBACK_APP_VERSION;
   try {

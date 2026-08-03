@@ -18,6 +18,7 @@ import {
 import { firstOpenableDocumentPath, isOpenableDocumentPath } from '../services/fileDrop';
 import { useSettings } from '../hooks/useSettings';
 import {
+  categorizeUpdateError,
   checkForAppUpdate,
   downloadAppUpdate,
   installDownloadedAppUpdate,
@@ -129,22 +130,29 @@ const UPDATE_DOWNLOAD_TIMEOUT_MS = 5 * 60 * 1000;
 // 故把 TOC 刷新防抖到输入停顿后执行（ISS-159）。文件内容本身仍每键同步落盘/保存。
 const TOC_REFRESH_DEBOUNCE_MS = 150;
 
-// ISS-72：把 Rust 端原始错误分类映射到本地化文案。fallback 仍展示原文便于排查。
+// ISS-72 / ISS-84：把 Rust 端原始错误分类映射到本地化文案。fallback 仍展示原文便于排查。
+// 归类逻辑与检查更新路径共用 updateService.categorizeUpdateError（#84 要求三条路径共用一套）。
 function toUpdateErrorMessage(
   error: unknown,
   locale: Parameters<typeof translate>[0],
   t: (key: Parameters<typeof translate>[1], params?: Record<string, string | number>) => string,
 ): string {
+  void locale; // locale 已通过闭包 t 传入，这里仅为可读性占位。
   const raw = error instanceof Error ? error.message
     : typeof error === 'string' ? error
     : '';
-  void locale; // locale 已通过闭包 t 传入，这里仅为可读性占位。
-  if (!raw) return t('updateErrorGeneric', { message: '未知错误' });
-  if (/timeout/i.test(raw)) return t('updateErrorTimeout');
-  if (/network|fetch|connection|ENOTFOUND|ETIMEDOUT|unreachable/i.test(raw)) return t('updateErrorNetwork');
-  if (/signature|checksum|verify/i.test(raw)) return t('updateErrorSignature');
-  if (/install|permission/i.test(raw)) return t('updateErrorInstall');
-  return t('updateErrorGeneric', { message: raw });
+  switch (categorizeUpdateError(error)) {
+    case 'timeout':
+      return t('updateErrorTimeout');
+    case 'network':
+      return t('updateErrorNetwork');
+    case 'signature':
+      return t('updateErrorSignature');
+    case 'install':
+      return t('updateErrorInstall');
+    default:
+      return t('updateErrorGeneric', { message: raw || '未知错误' });
+  }
 }
 
 export function AppLayout() {

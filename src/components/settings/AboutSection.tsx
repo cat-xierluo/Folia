@@ -4,6 +4,7 @@ import { useSettings } from '../../hooks/useSettings';
 import { translate } from '../../services/i18n';
 import { updateSettings } from '../../services/settingsService';
 import {
+  categorizeUpdateError,
   checkForAppUpdate,
   FALLBACK_APP_VERSION,
   getCurrentAppVersion,
@@ -96,8 +97,16 @@ export function AboutSection({ onUpdateAvailable, updateSnapshot, onRetryUpdate 
       return;
     }
 
+    // ISS-84：检查更新失败时绝不能把底层 reqwest 的英文原文（如
+    // `error sending request for url (...)`）原样透传给用户。与下载路径共用
+    // categorizeUpdateError 归类逻辑，再映射到检查阶段专用文案（不含原始 message）。
     setCheckState('error');
-    setMessage(result.message || t('updateError'));
+    const category = categorizeUpdateError(result.message);
+    setMessage(
+      category === 'network' || category === 'timeout'
+        ? t('updateCheckFailedNetwork')
+        : t('updateCheckFailed'),
+    );
   };
 
   return (

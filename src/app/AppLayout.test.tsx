@@ -48,11 +48,17 @@ vi.mock('@tauri-apps/api/event', () => tauriEventMock);
 
 vi.mock('../services/fileService', () => fileServiceMock);
 
-vi.mock('../services/updateService', () => ({
-  checkForAppUpdate: updateServiceMock.checkForAppUpdate,
-  downloadAppUpdate: updateServiceMock.downloadAppUpdate,
-  installDownloadedAppUpdate: updateServiceMock.installDownloadedAppUpdate,
-}));
+vi.mock('../services/updateService', async (importOriginal) => {
+  // ISS-84：保留真实的 categorizeUpdateError，让下载错误的本地化测试与检查路径
+  // 共用同一套归类逻辑（而非各自 mock），与产品代码「三条路径共用一套」对齐。
+  const actual = await importOriginal<typeof import('../services/updateService')>();
+  return {
+    ...actual,
+    checkForAppUpdate: updateServiceMock.checkForAppUpdate,
+    downloadAppUpdate: updateServiceMock.downloadAppUpdate,
+    installDownloadedAppUpdate: updateServiceMock.installDownloadedAppUpdate,
+  };
+});
 
 vi.mock('../components/EditorPane', () => ({
   EditorPane: ({ source }: { source: string }) => {
