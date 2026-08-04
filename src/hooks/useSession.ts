@@ -165,6 +165,11 @@ export function useSession() {
     dispatch({ type: 'recordRecentFile', file });
   }, []);
 
+  // ISS-88：TabBar「+」专用——新增占位标签（欢迎页状态）；空占位无 path，不记录最近文件。
+  const newBlankTab = useCallback(() => {
+    dispatch({ type: 'newBlankTab' });
+  }, []);
+
   const switchTab = useCallback((id: string) => {
     dispatch({ type: 'switchTab', id });
   }, []);
@@ -298,6 +303,7 @@ export function useSession() {
     rightPanelMode: (activeTab?.rightPanelMode ?? 'none') as RightPanelMode,
     showHomePage: activeTab?.isPlaceholder ?? false,
     openInNewTab,
+    newBlankTab,
     switchTab,
     closeTab,
     closeOthers,

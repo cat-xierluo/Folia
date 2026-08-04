@@ -1032,7 +1032,7 @@ export function AppLayout() {
             onSelect={session.switchTab}
             onContextMenu={(id, x, y) => setContextMenu({ tabId: id, x, y })}
             onClose={(id) => { void session.closeTab(id, { confirmDirty: confirmCloseDirty, onSave: saveDirtyTabById }); }}
-            onNew={() => session.openInNewTab(createEmptyFile())}
+            onNew={() => session.newBlankTab()}
             onTearOffViaDrag={isTearOffSupported ? tearOffViaDrag : undefined}
             onMergeBackDrop={isTearOffSupported ? handleMergeBackDrop : undefined}
           />
