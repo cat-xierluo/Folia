@@ -3,6 +3,7 @@ import { Copy } from 'lucide-react';
 import { writeText } from '../services/clipboardService';
 import { useSettings } from '../hooks/useSettings';
 import { translate } from '../services/i18n';
+import { formatDisplayPath } from './statusPathFormat';
 
 type StatusBarProps = {
   filePath: string;
@@ -27,6 +28,8 @@ export function StatusBar({ filePath, dirty, draftPersisted, pathInvalid, reload
   const settings = useSettings();
   const t = (key: Parameters<typeof translate>[1]) => translate(settings.locale, key);
   const hasPath = filePath.length > 0;
+  // ISS-91：路径失效时复制无意义，与右键菜单 canRevealFile 的 `!pathInvalid` 约定保持一致。
+  const canCopy = hasPath && !pathInvalid;
   const [copyMarker, setCopyMarker] = useState<CopyMarker>(null);
   const resetTimerRef = useRef<number | null>(null);
 
@@ -51,7 +54,7 @@ export function StatusBar({ filePath, dirty, draftPersisted, pathInvalid, reload
 
   // ISS-85：复制逻辑抽成 handleCopy，供「双击路径」与「单击复制图标」共用。
   const handleCopy = () => {
-    if (!hasPath) return;
+    if (!canCopy) return;
     void writeText(filePath)
       .then(() => {
         setCopyMarker({ path: filePath, outcome: 'copied' });
@@ -65,7 +68,7 @@ export function StatusBar({ filePath, dirty, draftPersisted, pathInvalid, reload
   };
 
   const copyState: 'idle' | CopyOutcome =
-    copyMarker && copyMarker.path === filePath && hasPath
+    copyMarker && copyMarker.path === filePath && canCopy
       ? copyMarker.outcome
       : 'idle';
 
@@ -83,15 +86,16 @@ export function StatusBar({ filePath, dirty, draftPersisted, pathInvalid, reload
       <span
         className="status-path"
         data-copy-state={copyState}
-        onDoubleClick={hasPath ? handleCopy : undefined}
-        title={hasPath ? t('statusBarCopyHint') : undefined}
+        onDoubleClick={canCopy ? handleCopy : undefined}
+        // 显示可能是折叠后的短形式，title 始终给出完整路径。
+        title={hasPath ? (canCopy ? `${filePath}\n${t('statusBarCopyHint')}` : filePath) : undefined}
         style={
           hasPath ? { cursor: 'text', userSelect: 'text' } : undefined
         }
       >
-        {hasPath ? filePath : t('statusBarNoFile')}
+        {hasPath ? formatDisplayPath(filePath) : t('statusBarNoFile')}
       </span>
-      {hasPath && (
+      {canCopy && (
         <button
           type="button"
           className="status-copy-button"

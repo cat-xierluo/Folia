@@ -2274,9 +2274,19 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   letter-spacing: 0;
 }
 
+/* ISS-90：路径过长时不得撑破状态栏。显示层已做中段折叠（formatDisplayPath），
+   这里再兜一层尾部省略，防止窄窗口下折叠后的短形式仍溢出。 */
+.status-path {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .status-dirty {
   color: var(--accent);
   font-weight: 500;
+  flex-shrink: 0;
 }
 
 /* ISS-85：地址栏常驻复制图标，单击复制完整路径。视觉上与路径文本成组。 */
@@ -2297,6 +2307,12 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 }
 .status-copy-button:hover { background: var(--control-hover-bg); color: var(--fg); }
 .status-copy-button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* ISS-90：「已复制 / 复制失败」反馈被长路径挤压时会断成两行错位，禁止换行与收缩。 */
+.status-copy-feedback {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
 
 .status-notice {
   display: inline-flex;
