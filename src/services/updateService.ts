@@ -50,7 +50,7 @@ export function categorizeUpdateError(error: unknown): UpdateErrorCategory {
     : typeof error === 'string' ? error : '';
   if (!raw) return 'generic';
   if (/timeout|timed out/i.test(raw)) return 'timeout';
-  if (/sending request|request for url|request failed|trying to connect|connection refused|connect error|name resolution|dns|network|fetch|ENOTFOUND|ETIMEDOUT|unreachable/i.test(raw)) {
+  if (/sending request|request for url|request failed|trying to connect|connection|connect error|name resolution|dns|network|fetch|ENOTFOUND|ETIMEDOUT|unreachable/i.test(raw)) {
     return 'network';
   }
   if (/signature|checksum|verify/i.test(raw)) return 'signature';

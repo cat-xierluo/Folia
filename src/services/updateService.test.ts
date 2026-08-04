@@ -82,6 +82,13 @@ describe('updateService', () => {
       expect(categorizeUpdateError(new Error('network unreachable'))).toBe('network');
     });
 
+    // ISS-84 review：旧正则有裸 `connection`，重构时一度收窄成 `connection refused`，
+    // 会让 "connection reset by peer" / "connection closed" 等落到 generic。已补回。
+    it('classifies bare connection errors as network (regression guard)', () => {
+      expect(categorizeUpdateError(new Error('connection reset by peer'))).toBe('network');
+      expect(categorizeUpdateError(new Error('connection closed before message completed'))).toBe('network');
+    });
+
     it('classifies signature / checksum errors', () => {
       expect(categorizeUpdateError(new Error('signature verification failed'))).toBe('signature');
     });

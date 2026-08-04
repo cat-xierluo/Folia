@@ -18,6 +18,14 @@ vi.mock('../../services/updateService', async (importOriginal) => {
   };
 });
 
+// 精确定位「检查更新」按钮：AboutSection 里 retry-download 按钮也是 .settings-action-button
+// 且在 DOM 中更靠前，裸 querySelector 会选错（ISS-84 review 加固）。检查按钮文案含「更新」
+// （idle「检查更新」/ checking「更新中」），retry 按钮文案是「重试下载」—— 用文案区分。
+function findCheckButton(root: HTMLElement): HTMLButtonElement | undefined {
+  return Array.from(root.querySelectorAll<HTMLButtonElement>('button.settings-action-button'))
+    .find((button) => /检查更新|更新中/.test(button.textContent ?? ''));
+}
+
 describe('AboutSection update check error (ISS-84)', () => {
   let host: HTMLDivElement;
   let root: Root;
@@ -47,7 +55,7 @@ describe('AboutSection update check error (ISS-84)', () => {
       root.render(<AboutSection onUpdateAvailable={() => undefined} />);
     });
 
-    const checkButton = host.querySelector<HTMLButtonElement>('button.settings-action-button');
+    const checkButton = findCheckButton(host);
     expect(checkButton).toBeTruthy();
 
     await act(async () => {
@@ -72,7 +80,7 @@ describe('AboutSection update check error (ISS-84)', () => {
       root.render(<AboutSection onUpdateAvailable={() => undefined} />);
     });
 
-    const checkButton = host.querySelector<HTMLButtonElement>('button.settings-action-button');
+    const checkButton = findCheckButton(host);
     await act(async () => {
       checkButton!.click();
     });
