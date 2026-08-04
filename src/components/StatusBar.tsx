@@ -121,14 +121,7 @@ export function StatusBar({ filePath, dirty, draftPersisted, pathInvalid, reload
         </span>
       )}
       {copyState !== 'idle' && (
-        <span
-          className="status-copy-feedback"
-          data-copy-state={copyState}
-          style={{
-            color: copyState === 'copied' ? 'var(--success)' : 'var(--danger)',
-            fontWeight: 500,
-          }}
-        >
+        <span className="status-copy-feedback" data-copy-state={copyState}>
           {copyState === 'copied' ? t('statusBarCopied') : t('statusBarCopyFailed')}
         </span>
       )}

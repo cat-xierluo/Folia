@@ -15,7 +15,7 @@ export interface ContextMenuProps {
    */
   canRevealFile?: boolean;
   /** 点击「在文件管理器中显示」的回调（由调用方接入 fileLocationService）。 */
-  onRevealInFinder?: () => void;
+  onRevealInFileManager?: () => void;
   onClose: () => void;
   onCloseTab: () => void;
   onCloseOthers: () => void;
@@ -24,7 +24,7 @@ export interface ContextMenuProps {
 }
 
 /** 标签右键菜单。点击外部 / Esc 关闭；点选项执行后关闭；溢出视口自动翻转；支持 ↑↓/Home/End 键盘导航。文案接入 i18n。 */
-export function ContextMenu({ x, y, isPlaceholder = false, canRevealFile = false, onRevealInFinder, onClose, onCloseTab, onCloseOthers, onCloseToRight, onCloseAll }: ContextMenuProps) {
+export function ContextMenu({ x, y, isPlaceholder = false, canRevealFile = false, onRevealInFileManager, onClose, onCloseTab, onCloseOthers, onCloseToRight, onCloseAll }: ContextMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
   const settings = useSettings();
   const t = (key: Parameters<typeof translate>[1]) => translate(settings.locale, key);
@@ -35,6 +35,9 @@ export function ContextMenu({ x, y, isPlaceholder = false, canRevealFile = false
     const el = ref.current;
     if (!el) return;
     setPos(computeMenuPosition(x, y, el.offsetWidth, el.offsetHeight, window.innerWidth, window.innerHeight));
+    // ISS-92 a11y：菜单打开即聚焦首项，键盘用户可直接 ↑↓ 导航（不必先按 ↓ 进入）。
+    const firstItem = el.querySelector<HTMLButtonElement>('[role="menuitem"]');
+    if (firstItem) firstItem.focus();
   }, [x, y]);
 
   useEffect(() => {
@@ -81,7 +84,7 @@ export function ContextMenu({ x, y, isPlaceholder = false, canRevealFile = false
     <div ref={ref} className="tab-context-menu" style={{ left: pos.left, top: pos.top }} role="menu">
       {canRevealFile && (
         <>
-          <button type="button" role="menuitem" onClick={() => run(onRevealInFinder ?? (() => {}))}>{t('tabMenuRevealInFileManager')}</button>
+          <button type="button" role="menuitem" onClick={() => run(onRevealInFileManager ?? (() => {}))}>{t('tabMenuRevealInFileManager')}</button>
           <hr className="tab-context-menu-separator" />
         </>
       )}
