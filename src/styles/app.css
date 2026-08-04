@@ -567,6 +567,10 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
      is open. The variable is reused by the right-panel clamp below to make
      sure the panel never claims more width than the viewport allows. */
   --main-min-width: 480px;
+  /* ISS-93: Markdown 预览（.preview-shell）也有可读下限。三栏布局
+     （编辑器 + 预览 + 导出面板）中，预览独自承担全部挤压会被挤到不可读，
+     因此给它一个 320px 的底线，与编辑器 480px 对称保护。 */
+  --preview-min-width: 320px;
   --main-resizer-gap: 9px;
 }
 
@@ -582,13 +586,22 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 /* When a right panel is open, every writing-layout pane (including the HTML
    presentation pane that replaces the editor in `html-presentation-layout`)
    must refuse to shrink below the readable threshold. The right panel
-   instead takes the flex-shrink burden — see the clamp below. */
+   instead takes the flex-shrink burden — see the clamp below.
+   ISS-93: `.preview-shell`（Markdown 阅读预览）也纳入保护——三栏布局
+   （编辑器 + 预览 + 导出面板）中它原先是唯一 min-width:0 的 pane，
+   被挤到不可读。现在用 --preview-min-width(320px) 给它一个可读底线，
+   与编辑器 480px 对称。极窄窗口下若三栏总和超视口，父容器横向滚动
+   （与 .html-presentation-pane 既有处理一致），不让内容被裁切。 */
 .right-panel-open .writing-layout > .editor-pane,
 .right-panel-open .writing-layout > .wysiwyg-editor-pane,
 .right-panel-open .writing-layout > .markdown-editing-pane,
 .right-panel-open .writing-layout > .html-presentation-pane,
 .right-panel-open .writing-layout > .html-reading-pane {
   min-width: var(--main-min-width);
+}
+
+.right-panel-open .writing-layout > .preview-shell {
+  min-width: var(--preview-min-width, 320px);
 }
 
 .writing-layout .preview-shell {

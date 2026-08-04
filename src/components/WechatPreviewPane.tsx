@@ -64,6 +64,25 @@ export function WechatPreviewPane({ source, fileName = 'document.md', onClose, f
   );
   const sourceIsEmpty = deferredSource.trim() === '';
 
+  /* ISS-93: auto-collapse the HTML export preview panel when the viewport
+     is too narrow to host both the 480px main editor and the 360px right
+     panel together — mirrors the WordPaperPreviewPane MIN_VIEWPORT logic.
+     The CSS layout makes sure the main editor never gets squeezed below the
+     readable line length, but if this panel is forced open at a narrow
+     viewport the only way to keep that promise is to close this side panel.
+     The user can still reopen it once the window grows back. */
+  useEffect(() => {
+    const MIN_VIEWPORT = 850;
+    const handleResize = () => {
+      if (window.innerWidth < MIN_VIEWPORT) {
+        onClose();
+      }
+    };
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [onClose]);
+
   useEffect(() => {
     const el = renderRef.current;
     if (!el) return;

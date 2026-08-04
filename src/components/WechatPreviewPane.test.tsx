@@ -426,4 +426,85 @@ describe('WechatPreviewPane', () => {
     expect(exportedBlobs).toHaveLength(1);
     await expect(exportedBlobs[0].text()).resolves.toContain('rgb(12, 88, 44)');
   });
+
+  it('auto-closes when the viewport is narrower than MIN_VIEWPORT (850px)', async () => {
+    const originalWidth = window.innerWidth;
+    Object.defineProperty(window, 'innerWidth', {
+      configurable: true,
+      writable: true,
+      value: 700,
+    });
+
+    const onClose = vi.fn();
+    await act(async () => {
+      root.render(<WechatPreviewPane source="# 标题" onClose={onClose} />);
+      await flushPromises();
+    });
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+
+    Object.defineProperty(window, 'innerWidth', {
+      configurable: true,
+      writable: true,
+      value: originalWidth,
+    });
+  });
+
+  it('does not auto-close when the viewport is wide enough (≥850px)', async () => {
+    const originalWidth = window.innerWidth;
+    Object.defineProperty(window, 'innerWidth', {
+      configurable: true,
+      writable: true,
+      value: 1200,
+    });
+
+    const onClose = vi.fn();
+    await act(async () => {
+      root.render(<WechatPreviewPane source="# 标题" onClose={onClose} />);
+      await flushPromises();
+    });
+
+    expect(onClose).not.toHaveBeenCalled();
+
+    Object.defineProperty(window, 'innerWidth', {
+      configurable: true,
+      writable: true,
+      value: originalWidth,
+    });
+  });
+
+  it('auto-closes on resize when the viewport shrinks below MIN_VIEWPORT', async () => {
+    const originalWidth = window.innerWidth;
+    Object.defineProperty(window, 'innerWidth', {
+      configurable: true,
+      writable: true,
+      value: 1200,
+    });
+
+    const onClose = vi.fn();
+    await act(async () => {
+      root.render(<WechatPreviewPane source="# 标题" onClose={onClose} />);
+      await flushPromises();
+    });
+
+    expect(onClose).not.toHaveBeenCalled();
+
+    await act(async () => {
+      Object.defineProperty(window, 'innerWidth', {
+        configurable: true,
+        writable: true,
+        value: 600,
+      });
+      window.dispatchEvent(new Event('resize'));
+      await flushPromises();
+    });
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+
+    Object.defineProperty(window, 'innerWidth', {
+      configurable: true,
+      writable: true,
+      value: originalWidth,
+    });
+  });
 });
