@@ -6,6 +6,12 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+### Fixed
+
+## [0.6.5] - 2026-08-04
+
+### Added
+
 - **文件标签右键菜单增加「在文件管理器中显示」，并在地址栏增加常驻「复制路径」图标**（#85）：1）右键任意已保存文件标签 → 菜单顶部新增「在文件管理器中显示」（macOS 打开访达、Windows 打开资源管理器，并选中该文件），用分隔线与下方「关闭 / 关闭其他 / 关闭右侧 / 全部关闭」分组；点击调用 `@tauri-apps/plugin-opener` 的 `revealItemInDir`（权限 `opener:default` 已覆盖，无需改 capabilities）。文案平台中立（不写死 Finder，因 Windows 是发布目标）。未保存的新建标签或路径已失效时不渲染该项（沿用既有 `isPlaceholder`「不适用即隐藏」约定，保持菜单精简）；`revealItemInDir` 失败（如点击瞬间文件被删的竞态）吞掉异常仅 warn，避免 unhandled rejection。复用现有 `ContextMenu` props 驱动 + i18n（中 / 英 / 日）。2）Issue 另一诉求「复制文件路径」未加入菜单——底栏地址栏本就支持（双击路径即复制），故改为在地址栏新增一个常驻 lucide 复制小图标（单击复制完整路径，沿用现有「已复制 / 复制失败」反馈），解决原「仅双击 + 仅 hover tooltip」可发现性偏弱的问题；双击复制与 tooltip 保留。新增 `fileLocationService`（含浏览器预览下的静默降级）+ 5 项 ContextMenu 单测 + 2 项 StatusBar 单测 + 3 项 fileLocationService 单测。
 
 ### Fixed
