@@ -514,6 +514,11 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 }
 .tab-context-menu button:hover { background: var(--control-hover-bg); }
 .tab-context-menu button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.tab-context-menu-separator {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 4px 2px;
+}
 
 .file-name {
   display: inline-flex;
@@ -2273,6 +2278,25 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   color: var(--accent);
   font-weight: 500;
 }
+
+/* ISS-85：地址栏常驻复制图标，单击复制完整路径。视觉上与路径文本成组。 */
+.status-copy-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  margin-left: -8px;
+  border: none;
+  background: transparent;
+  color: var(--border);
+  cursor: pointer;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.status-copy-button:hover { background: var(--control-hover-bg); color: var(--fg); }
+.status-copy-button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
 .status-notice {
   display: inline-flex;

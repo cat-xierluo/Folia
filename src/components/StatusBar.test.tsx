@@ -111,6 +111,29 @@ describe('StatusBar', () => {
     expect(path?.getAttribute('data-copy-state')).toBe('copied');
   });
 
+  it('单击复制图标按钮即复制路径并显示「已复制」反馈（ISS-85）', async () => {
+    render({ filePath: '/Users/demo/case.md' });
+
+    const btn = host.querySelector<HTMLButtonElement>('.status-copy-button');
+    expect(btn).not.toBeNull();
+
+    await act(async () => {
+      btn!.click();
+      await flushPromises();
+    });
+
+    expect(writeTextMock).toHaveBeenCalledWith('/Users/demo/case.md');
+
+    const feedback = host.querySelector<HTMLSpanElement>('.status-copy-feedback');
+    expect(feedback?.textContent).toBe('已复制');
+    expect(feedback?.getAttribute('data-copy-state')).toBe('copied');
+  });
+
+  it('无路径时不渲染复制图标按钮（ISS-85）', () => {
+    render({ filePath: '' });
+    expect(host.querySelector('.status-copy-button')).toBeNull();
+  });
+
   it('keeps the dirty marker untouched by the copy feedback', async () => {
     render({ filePath: '/Users/demo/case.md', dirty: true });
 

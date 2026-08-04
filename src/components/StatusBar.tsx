@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Copy } from 'lucide-react';
 import { writeText } from '../services/clipboardService';
 import { useSettings } from '../hooks/useSettings';
 import { translate } from '../services/i18n';
@@ -48,7 +49,8 @@ export function StatusBar({ filePath, dirty, draftPersisted, pathInvalid, reload
     }, COPY_FEEDBACK_RESET_MS);
   };
 
-  const handleDoubleClick = () => {
+  // ISS-85：复制逻辑抽成 handleCopy，供「双击路径」与「单击复制图标」共用。
+  const handleCopy = () => {
     if (!hasPath) return;
     void writeText(filePath)
       .then(() => {
@@ -81,7 +83,7 @@ export function StatusBar({ filePath, dirty, draftPersisted, pathInvalid, reload
       <span
         className="status-path"
         data-copy-state={copyState}
-        onDoubleClick={hasPath ? handleDoubleClick : undefined}
+        onDoubleClick={hasPath ? handleCopy : undefined}
         title={hasPath ? t('statusBarCopyHint') : undefined}
         style={
           hasPath ? { cursor: 'text', userSelect: 'text' } : undefined
@@ -89,6 +91,18 @@ export function StatusBar({ filePath, dirty, draftPersisted, pathInvalid, reload
       >
         {hasPath ? filePath : t('statusBarNoFile')}
       </span>
+      {hasPath && (
+        <button
+          type="button"
+          className="status-copy-button"
+          data-no-window-drag="true"
+          aria-label={t('statusBarCopyLabel')}
+          title={t('statusBarCopyLabel')}
+          onClick={handleCopy}
+        >
+          <Copy size={13} />
+        </button>
+      )}
       {notice && (
         <span
           className={`status-notice status-notice--${notice.tone}`}

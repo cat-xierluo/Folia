@@ -26,6 +26,7 @@ import {
 } from '../services/updateService';
 import { scheduleDelayedAutoUpdateCheck } from '../services/autoUpdateScheduler';
 import { translate } from '../services/i18n';
+import { revealPathInFileExplorer } from '../services/fileLocationService';
 import type { HtmlTableBlock } from '../services/htmlTableBlockService';
 import { ImageAssetStoreProvider } from '../context/ImageAssetStoreProvider';
 import { ImageAssetStore } from '../services/imageAssetService';
@@ -1010,6 +1011,9 @@ export function AppLayout() {
     '--reading-heading-font-family': resolvePreviewHeadingFontFamily(settings),
   } as CSSProperties;
 
+  // ISS-85：右键菜单作用对象 = contextMenu.tabId 对应的 tab（可能不是当前激活 tab）。
+  const contextMenuTab = contextMenu ? session.tabs.find((t) => t.id === contextMenu.tabId) : undefined;
+
   return (
     <ImageAssetStoreProvider store={imageAssetStore}>
     <div className="app-layout" data-theme={settings.theme} style={appStyle}>
@@ -1110,7 +1114,12 @@ export function AppLayout() {
           onCloseOthers={() => session.closeOthers(contextMenu.tabId)}
           onCloseToRight={() => session.closeToRight(contextMenu.tabId)}
           onCloseAll={() => session.closeAll()}
-          isPlaceholder={session.tabs.find((t) => t.id === contextMenu.tabId)?.isPlaceholder ?? false}
+          isPlaceholder={contextMenuTab?.isPlaceholder ?? false}
+          canRevealFile={!!contextMenuTab?.file.path && !contextMenuTab?.pathInvalid}
+          onRevealInFinder={() => {
+            const path = contextMenuTab?.file.path;
+            if (path) void revealPathInFileExplorer(path);
+          }}
         />
       )}
       {settingsVisible && (

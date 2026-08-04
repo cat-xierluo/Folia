@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import React, { createElement, act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -87,6 +87,55 @@ describe('ContextMenu 占位标签', () => {
     const html = render({ ...handlers, x: 10, y: 10 });
     expect(html).toContain('关闭其他');
     expect(html).toContain('全部关闭');
+  });
+});
+
+describe('ContextMenu 在访达中显示（reveal in finder）', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('canRevealFile=true 时在关闭项之前渲染「在访达中显示」并加分隔线', () => {
+    const html = render({ ...handlers, x: 10, y: 10, canRevealFile: true, onRevealInFinder: noop });
+    expect(html).toContain('在访达中显示');
+    expect(html).toContain('<hr');
+    expect(html.indexOf('在访达中显示')).toBeLessThan(html.indexOf('关闭'));
+  });
+
+  it('未传 canRevealFile 时不渲染 reveal 项与分隔线（保持原有关闭菜单）', () => {
+    const html = render({ ...handlers, x: 10, y: 10 });
+    expect(html).not.toContain('在访达中显示');
+    expect(html).not.toContain('<hr');
+  });
+
+  it('en-US locale 渲染英文 reveal 文案', () => {
+    localStorage.setItem('folia-settings', JSON.stringify({ locale: 'en-US' }));
+    const html = render({ ...handlers, x: 10, y: 10, canRevealFile: true, onRevealInFinder: noop });
+    expect(html).toContain('Reveal in Finder');
+  });
+
+  it('ja-JP locale 渲染日文 reveal 文案', () => {
+    localStorage.setItem('folia-settings', JSON.stringify({ locale: 'ja-JP' }));
+    const html = render({ ...handlers, x: 10, y: 10, canRevealFile: true, onRevealInFinder: noop });
+    expect(html).toContain('Finder で表示');
+  });
+
+  it('点击 reveal 项触发 onRevealInFinder 并关闭菜单，菜单共 5 项', () => {
+    const host = document.createElement('div');
+    document.body.append(host);
+    const root = createRoot(host);
+    const onRevealInFinder = vi.fn();
+    const onClose = vi.fn();
+    act(() => {
+      root.render(<ContextMenu {...handlers} onClose={onClose} x={10} y={10} canRevealFile onRevealInFinder={onRevealInFinder} />);
+    });
+    const items = host.querySelectorAll<HTMLButtonElement>('[role="menuitem"]');
+    expect(items.length).toBe(5);
+    act(() => { items[0].click(); });
+    expect(onRevealInFinder).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    act(() => root.unmount());
+    host.remove();
   });
 });
 
