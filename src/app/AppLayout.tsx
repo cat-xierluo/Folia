@@ -1123,8 +1123,8 @@ export function AppLayout() {
           onCloseToRight={() => session.closeToRight(contextMenu.tabId)}
           onCloseAll={() => session.closeAll()}
           isPlaceholder={contextMenuTab?.isPlaceholder ?? false}
-          canRevealFile={!!contextMenuTab?.file.path && !contextMenuTab?.pathInvalid}
-          onRevealInFinder={() => {
+          canRevealFile={!!contextMenuTab?.file.path && !contextMenuTab?.pathInvalid && isTauriRuntime}
+          onRevealInFileManager={() => {
             const path = contextMenuTab?.file.path;
             if (path) void revealPathInFileExplorer(path);
           }}
