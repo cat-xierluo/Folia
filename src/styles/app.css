@@ -1180,7 +1180,11 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 .wysiwyg-editor-pane .vditor-ir,
 .wysiwyg-editor-pane .vditor-wysiwyg {
   height: 100%;
-  padding: 10px clamp(24px, 7vw, 104px);
+  /* ISS-93: padding 用 %（基于编辑器容器宽度）而非 vw（视口宽度）。
+     打开转 Word/HTML 面板时编辑器容器变窄，但 vw padding 仍按整个窗口算，
+     两侧大 padding 把内容挤窄（"容器够宽、内容被挤压"）。
+     改 % 后 padding 随编辑器容器缩放，内容区不再被两侧 padding 挤压。 */
+  padding: 10px clamp(24px, 7%, 104px);
   background: var(--bg);
   color: var(--fg);
   font-family: var(--reading-font-family, var(--font-reading));
