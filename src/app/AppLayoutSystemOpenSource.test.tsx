@@ -63,7 +63,10 @@ function waitForMacrotask(): Promise<void> {
 }
 
 async function waitUntil(predicate: () => boolean): Promise<void> {
-  for (let attempt = 0; attempt < 30; attempt += 1) {
+  // 轮询预算给足：handleOpenPath 走 pending_opened_paths → 动态 import(fileService)
+  // → read_opened_document 的异步链，在 vitest 动态 import 解析下偶发超过 30 次
+  // macrotask，旧值 30 会造成 flaky 超时（约 15%）。提到 200 后稳定全绿。
+  for (let attempt = 0; attempt < 200; attempt += 1) {
     if (predicate()) return;
     await waitForMacrotask();
   }
