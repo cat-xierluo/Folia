@@ -3,6 +3,7 @@ import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { StatusBar } from './StatusBar';
+import { formatDisplayPath } from './statusPathFormat';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -208,5 +209,113 @@ describe('StatusBar', () => {
   it('draftPersisted=true 正常状态不显示 notice', () => {
     render({ filePath: '/tmp/a.md', draftPersisted: true });
     expect(host.querySelector('.status-notice')).toBeNull();
+  });
+
+  // ===== ISS-90：长路径中段折叠显示 =====
+
+  it('短路径原样显示，不做折叠（ISS-90）', () => {
+    render({ filePath: '/Users/demo/case.md' });
+    expect(host.querySelector('.status-path')?.textContent).toBe('/Users/demo/case.md');
+  });
+
+  it('长路径折叠中段显示，保留首尾（ISS-90）', () => {
+    const longPath = '/Users/maoking/Library/Application Support/maoscripts/folia/notes/2026-08-04.md';
+    render({ filePath: longPath });
+
+    const path = host.querySelector<HTMLSpanElement>('.status-path');
+    const shown = path?.textContent ?? '';
+    expect(shown).not.toBe(longPath);
+    expect(shown.length).toBeLessThan(longPath.length);
+    expect(shown).toContain('…');
+    // 首段（根目录 / 用户名）与尾段（文件名）保留，识别性不丢。
+    expect(shown.startsWith('/Users/maoking')).toBe(true);
+    expect(shown.endsWith('notes/2026-08-04.md')).toBe(true);
+  });
+
+  it('长路径的 title 仍展示完整路径（ISS-90）', () => {
+    const longPath = '/Users/maoking/Library/Application Support/maoscripts/folia/notes/2026-08-04.md';
+    render({ filePath: longPath });
+    expect(host.querySelector('.status-path')?.getAttribute('title')).toContain(longPath);
+  });
+
+  it('长路径被折叠后，复制写入的仍是完整路径（ISS-90）', async () => {
+    const longPath = '/Users/maoking/Library/Application Support/maoscripts/folia/notes/2026-08-04.md';
+    render({ filePath: longPath });
+
+    const btn = host.querySelector<HTMLButtonElement>('.status-copy-button');
+    await act(async () => {
+      btn!.click();
+      await flushPromises();
+    });
+
+    expect(writeTextMock).toHaveBeenCalledWith(longPath);
+  });
+
+  describe('formatDisplayPath（ISS-90）', () => {
+    it('不超长的路径原样返回', () => {
+      expect(formatDisplayPath('/Users/demo/case.md')).toBe('/Users/demo/case.md');
+    });
+
+    it('POSIX 长路径折叠中段并保留前导斜杠', () => {
+      const shown = formatDisplayPath('/Users/maoking/Library/Application Support/maoscripts/folia/notes/a.md');
+      expect(shown).toBe('/Users/maoking/…/notes/a.md');
+    });
+
+    it('Windows 长路径按反斜杠折叠', () => {
+      const shown = formatDisplayPath('C:\\Users\\maoking\\Documents\\Projects\\folia\\notes\\report.md');
+      expect(shown).toBe('C:\\Users\\…\\notes\\report.md');
+    });
+
+    it('无分隔符的超长串退化为尾部省略', () => {
+      const shown = formatDisplayPath('a'.repeat(80));
+      expect(shown.endsWith('…')).toBe(true);
+      expect(shown.length).toBeLessThanOrEqual(48);
+    });
+
+    it('文件名本身极长时退化为尾部省略，不超出上限', () => {
+      const shown = formatDisplayPath(`/Users/demo/${'b'.repeat(120)}.md`);
+      expect(shown.endsWith('…')).toBe(true);
+      expect(shown.length).toBeLessThanOrEqual(48);
+    });
+  });
+
+  // ===== ISS-91：pathInvalid 时复制入口与右键菜单保持一致 =====
+
+  it('pathInvalid 时不渲染复制图标按钮（ISS-91）', () => {
+    render({ filePath: '/tmp/missing.md', pathInvalid: true });
+    expect(host.querySelector('.status-copy-button')).toBeNull();
+  });
+
+  it('pathInvalid 时双击路径不触发复制（ISS-91）', async () => {
+    render({ filePath: '/tmp/missing.md', pathInvalid: true });
+
+    const path = host.querySelector<HTMLSpanElement>('.status-path');
+    expect(path?.ondblclick).toBeNull();
+
+    await act(async () => {
+      path!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+      await flushPromises();
+    });
+
+    expect(writeTextMock).not.toHaveBeenCalled();
+    expect(host.querySelector('.status-copy-feedback')).toBeNull();
+  });
+
+  it('pathInvalid 时 title 只给完整路径、不含双击提示（ISS-91）', () => {
+    render({ filePath: '/tmp/missing.md', pathInvalid: true });
+    expect(host.querySelector('.status-path')?.getAttribute('title')).toBe('/tmp/missing.md');
+  });
+
+  it('路径有效时复制按钮与双击复制仍可用（ISS-91 回归）', async () => {
+    render({ filePath: '/tmp/ok.md', pathInvalid: false });
+    expect(host.querySelector('.status-copy-button')).not.toBeNull();
+
+    const path = host.querySelector<HTMLSpanElement>('.status-path');
+    await act(async () => {
+      path!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+      await flushPromises();
+    });
+
+    expect(writeTextMock).toHaveBeenCalledWith('/tmp/ok.md');
   });
 });
