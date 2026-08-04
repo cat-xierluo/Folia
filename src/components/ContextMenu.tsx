@@ -8,6 +8,14 @@ export interface ContextMenuProps {
   y: number;
   /** 占位标签（首页空标签）时为 true：只显示「关闭」，隐藏「关闭其他/右侧/全部」。 */
   isPlaceholder?: boolean;
+  /**
+   * 当前 tab 是否可做「定位文件」操作（有本地路径且未失效）。true 时在菜单顶部渲染
+   * 「在文件管理器中显示」并用分隔线与关闭组隔开；false（含占位/未保存）时不渲染，保持菜单精简。
+   * 沿用 isPlaceholder「不适用即隐藏」的既有约定（ISS-85）。文案平台中立，macOS=访达 / Windows=资源管理器。
+   */
+  canRevealFile?: boolean;
+  /** 点击「在文件管理器中显示」的回调（由调用方接入 fileLocationService）。 */
+  onRevealInFinder?: () => void;
   onClose: () => void;
   onCloseTab: () => void;
   onCloseOthers: () => void;
@@ -16,7 +24,7 @@ export interface ContextMenuProps {
 }
 
 /** 标签右键菜单。点击外部 / Esc 关闭；点选项执行后关闭；溢出视口自动翻转；支持 ↑↓/Home/End 键盘导航。文案接入 i18n。 */
-export function ContextMenu({ x, y, isPlaceholder = false, onClose, onCloseTab, onCloseOthers, onCloseToRight, onCloseAll }: ContextMenuProps) {
+export function ContextMenu({ x, y, isPlaceholder = false, canRevealFile = false, onRevealInFinder, onClose, onCloseTab, onCloseOthers, onCloseToRight, onCloseAll }: ContextMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
   const settings = useSettings();
   const t = (key: Parameters<typeof translate>[1]) => translate(settings.locale, key);
@@ -71,6 +79,12 @@ export function ContextMenu({ x, y, isPlaceholder = false, onClose, onCloseTab, 
 
   return (
     <div ref={ref} className="tab-context-menu" style={{ left: pos.left, top: pos.top }} role="menu">
+      {canRevealFile && (
+        <>
+          <button type="button" role="menuitem" onClick={() => run(onRevealInFinder ?? (() => {}))}>{t('tabMenuRevealInFileManager')}</button>
+          <hr className="tab-context-menu-separator" />
+        </>
+      )}
       <button type="button" role="menuitem" onClick={() => run(onCloseTab)}>{t('tabMenuClose')}</button>
       {!isPlaceholder && (
         <>

@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **文件标签右键菜单增加「在文件管理器中显示」，并在地址栏增加常驻「复制路径」图标**（#85）：1）右键任意已保存文件标签 → 菜单顶部新增「在文件管理器中显示」（macOS 打开访达、Windows 打开资源管理器，并选中该文件），用分隔线与下方「关闭 / 关闭其他 / 关闭右侧 / 全部关闭」分组；点击调用 `@tauri-apps/plugin-opener` 的 `revealItemInDir`（权限 `opener:default` 已覆盖，无需改 capabilities）。文案平台中立（不写死 Finder，因 Windows 是发布目标）。未保存的新建标签或路径已失效时不渲染该项（沿用既有 `isPlaceholder`「不适用即隐藏」约定，保持菜单精简）；`revealItemInDir` 失败（如点击瞬间文件被删的竞态）吞掉异常仅 warn，避免 unhandled rejection。复用现有 `ContextMenu` props 驱动 + i18n（中 / 英 / 日）。2）Issue 另一诉求「复制文件路径」未加入菜单——底栏地址栏本就支持（双击路径即复制），故改为在地址栏新增一个常驻 lucide 复制小图标（单击复制完整路径，沿用现有「已复制 / 复制失败」反馈），解决原「仅双击 + 仅 hover tooltip」可发现性偏弱的问题；双击复制与 tooltip 保留。新增 `fileLocationService`（含浏览器预览下的静默降级）+ 5 项 ContextMenu 单测 + 2 项 StatusBar 单测 + 3 项 fileLocationService 单测。
+
 ### Fixed
 
 - **修复点击「检查更新」失败时界面直接暴露底层英文错误 `error sending request for url (...)` 的问题**（ISS-84）：在 `0.6.4` 中，手动「检查更新」走的是 `updateService.toErrorMessage`，它把 Tauri updater（reqwest）抛出的原始 `error.message` 原样透传给界面，而 ISS-72 的本地化文案只覆盖了下载路径（`AppLayout.toUpdateErrorMessage`），两条路径各维护一份错误映射逻辑。现在抽取共享的 `categorizeUpdateError`（手动检查 / 自动检查 / 后台下载三条路径共用），并扩展正则以识别 reqwest 的 `error sending request for url (...)` / `request failed` / `trying to connect` / `dns` 等传输层错误文案（旧正则不含这些关键词，会落到 generic 分支把英文原文嵌入 `更新失败：{message}`）。检查失败统一映射为中文「检查更新失败：无法连接更新服务器，请检查网络后重试。」（网络/超时）或「检查更新失败，请稍后重试。」（其它），中 / 英 / 日三语，绝不再向用户暴露 `error sending request` 原文；「检查更新」按钮本身即重试入口。新增 `categorizeUpdateError` 单测（含 #84 的精确 reqwest 错误串）与 `AboutSection` 行为回归测试（点击真实按钮 + 喂入 issue 原始错误串，断言中文文案出现、英文原文不出现）。
