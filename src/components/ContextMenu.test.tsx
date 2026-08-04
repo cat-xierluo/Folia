@@ -90,34 +90,34 @@ describe('ContextMenu 占位标签', () => {
   });
 });
 
-describe('ContextMenu 在访达中显示（reveal in finder）', () => {
+describe('ContextMenu 在文件管理器中显示（reveal in file manager）', () => {
   beforeEach(() => {
     localStorage.clear();
   });
 
-  it('canRevealFile=true 时在关闭项之前渲染「在访达中显示」并加分隔线', () => {
+  it('canRevealFile=true 时在关闭项之前渲染「在文件管理器中显示」并加分隔线', () => {
     const html = render({ ...handlers, x: 10, y: 10, canRevealFile: true, onRevealInFinder: noop });
-    expect(html).toContain('在访达中显示');
+    expect(html).toContain('在文件管理器中显示');
     expect(html).toContain('<hr');
-    expect(html.indexOf('在访达中显示')).toBeLessThan(html.indexOf('关闭'));
+    expect(html.indexOf('在文件管理器中显示')).toBeLessThan(html.indexOf('关闭'));
   });
 
   it('未传 canRevealFile 时不渲染 reveal 项与分隔线（保持原有关闭菜单）', () => {
     const html = render({ ...handlers, x: 10, y: 10 });
-    expect(html).not.toContain('在访达中显示');
+    expect(html).not.toContain('在文件管理器中显示');
     expect(html).not.toContain('<hr');
   });
 
   it('en-US locale 渲染英文 reveal 文案', () => {
     localStorage.setItem('folia-settings', JSON.stringify({ locale: 'en-US' }));
     const html = render({ ...handlers, x: 10, y: 10, canRevealFile: true, onRevealInFinder: noop });
-    expect(html).toContain('Reveal in Finder');
+    expect(html).toContain('Reveal in File Manager');
   });
 
   it('ja-JP locale 渲染日文 reveal 文案', () => {
     localStorage.setItem('folia-settings', JSON.stringify({ locale: 'ja-JP' }));
     const html = render({ ...handlers, x: 10, y: 10, canRevealFile: true, onRevealInFinder: noop });
-    expect(html).toContain('Finder で表示');
+    expect(html).toContain('ファイルマネージャで表示');
   });
 
   it('点击 reveal 项触发 onRevealInFinder 并关闭菜单，菜单共 5 项', () => {

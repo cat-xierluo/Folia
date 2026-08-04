@@ -33,4 +33,18 @@ describe('revealPathInFileExplorer', () => {
     expect(revealItemInDirMock).not.toHaveBeenCalled();
     expect(warnSpy).toHaveBeenCalled();
   });
+
+  it('revealItemInDir reject（如文件已被删除的竞态）时不抛出 unhandled rejection，仅 warn', async () => {
+    vi.doMock('@tauri-apps/api/core', () => ({}));
+    vi.doMock('@tauri-apps/plugin-opener', () => ({
+      revealItemInDir: revealItemInDirMock.mockRejectedValue(new Error('path not found')),
+    }));
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const { revealPathInFileExplorer } = await import('./fileLocationService');
+    await expect(revealPathInFileExplorer('/gone/file.md')).resolves.toBeUndefined();
+
+    expect(revealItemInDirMock).toHaveBeenCalledWith('/gone/file.md');
+    expect(warnSpy).toHaveBeenCalled();
+  });
 });
