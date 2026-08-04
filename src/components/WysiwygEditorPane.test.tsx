@@ -31,10 +31,14 @@ type VditorInstanceOptions = Record<string, unknown> & {
 type VditorConstructorCall = {
   host: HTMLElement;
   options: VditorInstanceOptions;
+  // ISS-94：暴露 mock 实例让测试可以断言 focus 是否被调用
+  instance: { focus: () => void };
 };
 
 const vditorCalls: VditorConstructorCall[] = [];
 const setValueCalls: string[] = [];
+// ISS-94：记录每个 Vditor mock 实例的 focus 调用次数，与 vditorCalls 一一对应
+const focusCalls: number[] = [];
 
 /** Minimal Vditor mock: 构造时往 host 注入一个真实可操作的 .vditor-ir pre，
  *  让 sanitizeIrDom 能在真实 DOM 子树上工作（保留 sanitizeForVditor 的
@@ -54,9 +58,13 @@ vi.mock('vditor', () => {
     public vditor: {
       ir: { element: HTMLElement };
     };
+    private readonly index: number;
 
     constructor(host: HTMLElement, options: VditorInstanceOptions) {
-      vditorCalls.push({ host, options });
+      const index = vditorCalls.length;
+      this.index = index;
+      focusCalls.push(0);
+      vditorCalls.push({ host, options, instance: this });
       const ir = document.createElement('div');
       ir.className = 'vditor-ir';
       const pre = document.createElement('pre');
@@ -65,6 +73,11 @@ vi.mock('vditor', () => {
       ir.appendChild(pre);
       host.appendChild(ir);
       this.vditor = { ir: { element: pre } };
+    }
+
+    // ISS-94：记录 focus 调用次数，让测试断言 auto-focus 行为
+    public focus(): void {
+      focusCalls[this.index] += 1;
     }
 
     public getValue(): string {
@@ -143,6 +156,7 @@ describe('WysiwygEditorPane 内联 SVG 显示 + sanitize (ISS-168 编辑器部�
   beforeEach(() => {
     vditorCalls.length = 0;
     setValueCalls.length = 0;
+    focusCalls.length = 0;
     host = document.createElement('div');
     document.body.append(host);
   });
@@ -1034,6 +1048,157 @@ describe('WysiwygEditorPane 内联 SVG 显示 + sanitize (ISS-168 编辑器部�
       await act(async () => {
         root?.unmount();
       });
+    });
+  });
+});
+
+describe('WysiwygEditorPane 自动聚焦 (ISS-94)', () => {
+  let host: HTMLDivElement;
+
+  beforeEach(() => {
+    vditorCalls.length = 0;
+    setValueCalls.length = 0;
+    focusCalls.length = 0;
+    host = document.createElement('div');
+    document.body.append(host);
+  });
+
+  afterEach(() => {
+    host.remove();
+    vi.clearAllMocks();
+  });
+
+  it('空内容（新建空白文件）after() 后调用 editor.focus()', async () => {
+    let root: Root | null = null;
+
+    await act(async () => {
+      root = createRoot(host);
+      root.render(
+        renderWithProvider(
+          React.createElement(WysiwygEditorPane, {
+            source: '',
+            onChange: () => undefined,
+          }),
+        ),
+      );
+      await flushMicrotasks();
+    });
+
+    expect(vditorCalls).toHaveLength(1);
+    const call = vditorCalls[0];
+
+    await act(async () => {
+      call.options.after?.();
+      await flushMicrotasks();
+      await flushFrames();
+    });
+
+    // ISS-94：空内容时应 auto-focus 一次
+    expect(focusCalls[0]).toBe(1);
+
+    await act(async () => {
+      root?.unmount();
+    });
+  });
+
+  it('仅含空白的 source 也视为空内容，after() 后调用 editor.focus()', async () => {
+    let root: Root | null = null;
+
+    await act(async () => {
+      root = createRoot(host);
+      root.render(
+        renderWithProvider(
+          React.createElement(WysiwygEditorPane, {
+            source: '   \n  \t ',
+            onChange: () => undefined,
+          }),
+        ),
+      );
+      await flushMicrotasks();
+    });
+
+    const call = vditorCalls[0];
+    await act(async () => {
+      call.options.after?.();
+      await flushMicrotasks();
+      await flushFrames();
+    });
+
+    // trim 后为空 → 视为新建空白文件
+    expect(focusCalls[0]).toBe(1);
+
+    await act(async () => {
+      root?.unmount();
+    });
+  });
+
+  it('非空内容 after() 后不调用 editor.focus()（不抢焦点）', async () => {
+    let root: Root | null = null;
+
+    await act(async () => {
+      root = createRoot(host);
+      root.render(
+        renderWithProvider(
+          React.createElement(WysiwygEditorPane, {
+            source: '# 已有标题\n\n正文内容',
+            onChange: () => undefined,
+          }),
+        ),
+      );
+      await flushMicrotasks();
+    });
+
+    const call = vditorCalls[0];
+    await act(async () => {
+      call.options.after?.();
+      await flushMicrotasks();
+      await flushFrames();
+    });
+
+    // ISS-94：打开已有文档不应抢焦点
+    expect(focusCalls[0]).toBe(0);
+
+    await act(async () => {
+      root?.unmount();
+    });
+  });
+
+  it('focusedOnceRef guard：after() 重入不重复 focus', async () => {
+    let root: Root | null = null;
+
+    await act(async () => {
+      root = createRoot(host);
+      root.render(
+        renderWithProvider(
+          React.createElement(WysiwygEditorPane, {
+            source: '',
+            onChange: () => undefined,
+          }),
+        ),
+      );
+      await flushMicrotasks();
+    });
+
+    const call = vditorCalls[0];
+
+    // 第一次 after() → focus
+    await act(async () => {
+      call.options.after?.();
+      await flushMicrotasks();
+      await flushFrames();
+    });
+    expect(focusCalls[0]).toBe(1);
+
+    // 再次触发 after()（模拟重入 / 重渲染）→ guard 拦截，不重复 focus
+    await act(async () => {
+      call.options.after?.();
+      await flushMicrotasks();
+      await flushFrames();
+    });
+    expect(focusCalls[0]).toBe(1);
+
+    await act(async () => {
+      root?.unmount();
     });
   });
 });

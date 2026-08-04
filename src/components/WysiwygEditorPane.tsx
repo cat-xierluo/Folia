@@ -554,6 +554,10 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
   const sanitizingRef = useRef(false);
   const initializingRef = useRef(false);
   const userInteractedRef = useRef(false);
+  // ISS-94：新建空白文件时编辑器初始化完成后自动 focus 一次。
+  // ref 标记「已 focus 过一次」，避免 after() 重入或组件重渲染时反复抢焦点。
+  // Vditor 按 filePath 变化销毁重建（init effect cleanup），cleanup 中重置为 false。
+  const focusedOnceRef = useRef(false);
   const [phase, setPhase] = useState<EditorPhase>('loading');
   const [imageDiagnostics, setImageDiagnostics] = useState<RenderDiagnostic[]>([]);
   // retryKey 递增时强制重新初始化 Vditor
@@ -909,6 +913,21 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
               });
             }
           }
+
+          // ISS-94：新建空白文件时自动聚焦编辑器，光标直接进入可键盘输入。
+          // 仅当内容为空（去除空白后）时触发——打开已有文档不抢焦点，让用户
+          // 先浏览内容。用 focusedOnceRef 标记已 focus 过一次，防止 after()
+          // 重入或后续重渲染反复抢焦点。注意：此时 cancelled 仍未翻转（本回调
+          // 在 cancelled 检查之后进入），editor 已就绪，focus 是安全同步调用。
+          if (!focusedOnceRef.current && latestSource.current.trim() === '') {
+            focusedOnceRef.current = true;
+            try {
+              editor.focus();
+            } catch (error) {
+              // focus 失败不应阻塞编辑器正常工作，静默降级
+              console.error('[Folia] after() editor.focus 失败:', error);
+            }
+          }
         },
         input(value) {
           if (initializingRef.current || applyingExternalValue.current || sanitizingRef.current) return;
@@ -1075,6 +1094,8 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
       pendingSourceRef.current = null;
       initializingRef.current = false;
       userInteractedRef.current = false;
+      // ISS-94：Vditor 按 filePath 变化销毁重建，重置 focus 标记让新空白文件可再次 auto-focus
+      focusedOnceRef.current = false;
     };
   }, [filePath, lockComplexTables, emitEditorValueIfChanged, onChange, retryKey, handleImageFiles, handleTextPaste]);
 
