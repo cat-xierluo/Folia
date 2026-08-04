@@ -47,6 +47,8 @@ export function bootstrapSessionForWindow(
 
 export type SessionAction =
   | { type: 'openInNewTab'; file: OpenedFile }
+  // ISS-88：TabBar「+」专用——新增一个占位标签（欢迎页状态），不携带文件。
+  | { type: 'newBlankTab' }
   | { type: 'switchTab'; id: string }
   | { type: 'closeTab'; id: string; confirmed: boolean }
   | { type: 'closeOthers'; id: string }
@@ -84,6 +86,20 @@ export function sessionReducer(state: SessionState, action: SessionAction): Sess
         tabs = tabs.filter((_, i) => i !== idx);
       }
       return { ...state, tabs, activeTabId: newTab.id };
+    }
+    case 'newBlankTab': {
+      // ISS-88：TabBar「+」= 新增一个占位标签（欢迎页状态），不替换当前 placeholder。
+      // 与 openInNewTab（打开文件 / 欢迎页「新建」进入编辑器）刻意区分：后者在 active
+      // 为干净占位时会替换之以避免占位累积；而「+」是「新建标签页」容器操作，消费掉
+      // 当前欢迎页会把它退化成无内容的空白编辑器，失去「新增」对窗口的意义。
+      const placeholder = makeTabFromFile(createEmptyFile(), true);
+      let tabs = [...state.tabs, placeholder];
+      while (tabs.length > MAX_TABS) {
+        const idx = tabs.findIndex((t) => t.id !== placeholder.id && !t.file.dirty);
+        if (idx === -1) break;
+        tabs = tabs.filter((_, i) => i !== idx);
+      }
+      return { ...state, tabs, activeTabId: placeholder.id };
     }
     case 'switchTab':
       return state.tabs.some((t) => t.id === action.id) ? { ...state, activeTabId: action.id } : state;

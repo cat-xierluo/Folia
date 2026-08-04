@@ -2,7 +2,9 @@ import { expect, type Page, test } from '@playwright/test';
 
 async function openEditor(page: Page): Promise<void> {
   if (await page.locator('.recent-page').isVisible()) {
-    await page.getByRole('button', { name: '新建文件' }).click();
+    // ISS-88：TabBar「+」（aria-label「新建文件」）改为新增占位标签，仍停留在欢迎页；
+    // 从欢迎页进入编辑器改点欢迎页内的「新建」按钮（.recent-page-secondary）。
+    await page.locator('.recent-page-secondary').click();
   }
   const sourceEditor = page.locator('.cm-editor');
   await expect(page.locator('.cm-editor, .wysiwyg-editor-pane').first()).toBeVisible();

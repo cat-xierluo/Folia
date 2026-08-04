@@ -133,6 +133,42 @@ describe('sessionReducer.openInNewTab', () => {
   });
 });
 
+describe('sessionReducer.newBlankTab', () => {
+  it('新增一个占位标签（isPlaceholder=true）并激活，不替换当前标签', () => {
+    const start = stateWith([makeTabFromFile(file('a.md', 'A'))]);
+    const next = sessionReducer(start, { type: 'newBlankTab' });
+    expect(next.tabs).toHaveLength(2);
+    expect(next.tabs[1].isPlaceholder).toBe(true);
+    expect(next.activeTabId).toBe(next.tabs[1].id);
+    // 原标签原样保留，未被消费
+    expect(next.tabs[0].file.name).toBe('a.md');
+    expect(next.tabs[0].isPlaceholder).toBe(false);
+  });
+
+  it('当前 active 为占位标签时也新增而非替换（保留欢迎页可达性，ISS-88）', () => {
+    const placeholder = makeTabFromFile(createEmptyFile(), true);
+    const start = stateWith([placeholder]);
+    expect(start.tabs[0].isPlaceholder).toBe(true);
+    const next = sessionReducer(start, { type: 'newBlankTab' });
+    expect(next.tabs).toHaveLength(2);
+    // 关键：原占位标签保留，不会被消费成空白编辑器
+    expect(next.tabs[0].isPlaceholder).toBe(true);
+    expect(next.tabs[1].isPlaceholder).toBe(true);
+    expect(next.activeTabId).toBe(next.tabs[1].id);
+  });
+
+  it('超 MAX_TABS 时 LRU 关闭最旧非 dirty 标签，保留新占位', () => {
+    let s: SessionState = { tabs: [], activeTabId: '', recentFiles: [] };
+    for (let i = 0; i < MAX_TABS; i++) {
+      s = sessionReducer(s, { type: 'openInNewTab', file: file(`f${i}.md`, `c${i}`) });
+    }
+    const next = sessionReducer(s, { type: 'newBlankTab' });
+    expect(next.tabs).toHaveLength(MAX_TABS);
+    expect(next.tabs[next.tabs.length - 1].isPlaceholder).toBe(true);
+    expect(next.activeTabId).toBe(next.tabs[next.tabs.length - 1].id);
+  });
+});
+
 describe('sessionReducer.switchTab', () => {
   it('切换激活标签', () => {
     const t1 = makeTabFromFile(file('a.md'));
