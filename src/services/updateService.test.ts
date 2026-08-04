@@ -2,6 +2,7 @@ import type { DownloadEvent, Update } from '@tauri-apps/plugin-updater';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   FALLBACK_APP_VERSION,
+  categorizeUpdateError,
   checkForAppUpdate,
   downloadAppUpdate,
   getCurrentAppVersion,
@@ -61,6 +62,42 @@ describe('updateService', () => {
     expect(install).toHaveBeenCalledTimes(1);
     expect(processMock.relaunch).toHaveBeenCalledTimes(1);
     expect(progress).toEqual(['installing', 'relaunching']);
+  });
+
+  // ISS-84：检查更新失败时，Tauri updater（reqwest）抛出的底层英文错误
+  // "error sending request for url (...)" 必须被归类为 network，绝不能落到 generic
+  // 分支把英文原文透传给界面。
+  describe('categorizeUpdateError', () => {
+    it('classifies the reqwest transport error as network', () => {
+      const err = new Error('error sending request for url (https://github.com/cat-xierluo/Folia/releases/latest/download/latest.json)');
+      expect(categorizeUpdateError(err)).toBe('network');
+    });
+
+    it('classifies timeout phrases as timeout (preserves ISS-72 download-timeout mapping)', () => {
+      expect(categorizeUpdateError(new Error('download-timeout'))).toBe('timeout');
+      expect(categorizeUpdateError(new Error('operation timed out'))).toBe('timeout');
+    });
+
+    it('classifies network unreachable as network (preserves ISS-72 mapping)', () => {
+      expect(categorizeUpdateError(new Error('network unreachable'))).toBe('network');
+    });
+
+    // ISS-84 review：旧正则有裸 `connection`，重构时一度收窄成 `connection refused`，
+    // 会让 "connection reset by peer" / "connection closed" 等落到 generic。已补回。
+    it('classifies bare connection errors as network (regression guard)', () => {
+      expect(categorizeUpdateError(new Error('connection reset by peer'))).toBe('network');
+      expect(categorizeUpdateError(new Error('connection closed before message completed'))).toBe('network');
+    });
+
+    it('classifies signature / checksum errors', () => {
+      expect(categorizeUpdateError(new Error('signature verification failed'))).toBe('signature');
+    });
+
+    it('falls back to generic for unknown errors and empty values', () => {
+      expect(categorizeUpdateError(new Error('something unexpected'))).toBe('generic');
+      expect(categorizeUpdateError(undefined)).toBe('generic');
+      expect(categorizeUpdateError('')).toBe('generic');
+    });
   });
 
   // ISS-72：Rust 端下载抛错时，Promise 必须原样 reject，错误 message 透传，

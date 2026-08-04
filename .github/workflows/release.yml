@@ -203,11 +203,16 @@ jobs:
 
           echo "Gitee release sync complete"
 
-      # ISS-72：把最新的 latest.json 同步推到一个固定的 "latest" tag，让
-      # tauri.conf.json 里的 Gitee fallback endpoint
-      # (https://gitee.com/cat-xierluo/Folia/releases/latest/download/latest.json)
-      # 能稳定返回最新 manifest（Gitee 没有 GitHub 那种 /releases/latest alias，
-      # 必须在某个固定 tag 下挂文件）。
+      # ISS-72 / ISS-84：把最新的 latest.json 同步推到一个固定的 "latest" tag，
+      # 让 tauri.conf.json 里的 Gitee fallback endpoint 能稳定返回最新 manifest。
+      #
+      # 关键（ISS-84 根因）：Gitee 的 release 资产直链形式是
+      #   /releases/download/{tag}/{file}     （download 在 tag 之前）
+      # 而不是 GitHub 的关键字别名 /releases/latest/download/{file}（latest 在 download
+      # 之前，Gitee 不解析这条路径）。ISS-72 当初误以为「建一个名为 latest 的 tag」就能
+      # 让 /releases/latest/download/ 生效——实际不行，端点一直 404。ISS-84 把客户端
+      # endpoint 改成正确的 /releases/download/latest/latest.json；本步骤上传逻辑不变
+      # （仍把 latest-gitee.json 以 latest.json 名义挂到 latest tag 下）。
       - name: Sync latest manifest to fixed Gitee tag
         if: env.GITEE_TOKEN != '' && env.GITEE_OWNER != ''
         continue-on-error: true
