@@ -78,7 +78,8 @@ export function WechatPreviewPane({ source, fileName = 'document.md', onClose, f
         onClose();
       }
     };
-    handleResize();
+    // ISS-92 review R1：mount 时不立即检查——用户在窄视口主动打开时应允许当次使用
+    //（否则点开即秒关，窄屏永远用不了这个面板）。仅在后续 resize（窗口继续缩窄）时才自动收起。
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, [onClose]);
