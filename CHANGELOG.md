@@ -8,6 +8,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **修复自动更新下载超时后点击「重试」时进度交错回退（如 `1% → 22% → 2% → 23%`）的问题**（ISS-99）：根因是 Tauri updater 的 `update.download(onEvent)` **没有取消参数**，超时/重试后旧下载尝试的 `onProgress` 回调仍挂在跑着的 Rust 下载流上，继续往同一个 `downloading` state 写进度；而 ISS-72 引入的三道守卫（abort 信号 / phase / version）在同版本重试时**全部失效**——旧尝试的 `AbortController` 在 `.finally` 里被置 null 后重试无法 abort、重试把 phase 重置回 `downloading`、version 守卫无法区分同版本（如 0.6.5）的两次尝试。现引入**单调递增的 per-attempt 令牌**（`updateAttemptRef`），新尝试（含重试）`++` 使旧令牌失效，旧尝试的 `onProgress` / `.then` / `.catch` 见到令牌不再匹配即丢弃事件，UI 只展示当前有效尝试的单调进度。新增 1 项 AppLayout 集成回归测试：mock 两次 `downloadAppUpdate`（attempt#1 发 10% 后挂起、attempt#2 发 1%/2%），超时 → 重试后故意触发 attempt#1 的陈旧 22% 事件，断言界面仍为「下载中 2%」且不出现「下载中 22%」（修复前该断言失败）。**已知残留**：Tauri 插件 API 不支持中途取消 `update.download()`，且重试复用同一 `Update` 对象（`close()` 会连带废掉重试），故旧 Rust 下载流会静默跑到自然结束、有短暂额外带宽，但不影响 UI 正确性；彻底取消需重试时重新 `check()` + close 旧 Update，属更大改动，本期不做。真机精确复现需可控的下载中途超时 + 待下载更新源（当前已处于目标版本），无法稳定触发，行为以集成测试为准（见 `project-folia-realapp-verify`：Folia WKWebView 交互无法用 orca click 驱动，web 交互走真实组件单测）。
+
 ## [0.6.5] - 2026-08-04
 
 ### Added

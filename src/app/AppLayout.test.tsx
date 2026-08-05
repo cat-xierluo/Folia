@@ -3,7 +3,7 @@ import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppLayout } from './AppLayout';
-import type { UpdateCheckResult } from '../services/updateService';
+import type { UpdateCheckResult, UpdateProgress } from '../services/updateService';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -262,6 +262,95 @@ describe('AppLayout update flow', () => {
     expect(host.textContent).toContain('重试下载');
     // 防止 leak
     resolveDownload();
+  });
+
+  // ISS-99：超时后点重试,旧下载尝试的 onProgress 仍挂在跑着的 Rust 下载流上
+  // (Tauri updater 的 update.download 无法中途取消),会继续往同一个 downloading
+  // state 写进度。版本守卫无法区分同版本的两次尝试,导致进度交错回退(1%→22%→2%→23%)。
+  // per-attempt token 守卫后,旧尝试的陈旧进度事件必须被忽略。
+  it('ignores stale progress from the previous attempt after a timeout retry', async () => {
+    let attempt1OnProgress: (p: UpdateProgress) => void = () => {};
+    let attempt2OnProgress: (p: UpdateProgress) => void = () => {};
+    let resolveAttempt1: () => void = () => {};
+    let resolveAttempt2: () => void = () => {};
+    let downloadCallCount = 0;
+    const availableUpdate = {
+      status: 'available',
+      version: '0.6.5',
+      update: {},
+    } as Extract<UpdateCheckResult, { status: 'available' }>;
+    updateServiceMock.checkForAppUpdate.mockResolvedValue(availableUpdate);
+    updateServiceMock.downloadAppUpdate.mockImplementation(async (_update, onProgress) => {
+      downloadCallCount += 1;
+      if (downloadCallCount === 1) {
+        attempt1OnProgress = onProgress!;
+        onProgress?.({ status: 'downloading', downloadedBytes: 10, totalBytes: 100, percent: 10 });
+        await new Promise<void>((resolve) => { resolveAttempt1 = resolve; });
+        return;
+      }
+      attempt2OnProgress = onProgress!;
+      onProgress?.({ status: 'downloading', downloadedBytes: 1, totalBytes: 100, percent: 1 });
+      await new Promise<void>((resolve) => { resolveAttempt2 = resolve; });
+    });
+
+    await act(async () => {
+      root.render(<AppLayout />);
+      await flushPromises();
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(2600);
+      await flushPromises();
+    });
+
+    // attempt#1 已发 10%
+    expect(updateServiceMock.downloadAppUpdate).toHaveBeenCalledTimes(1);
+    expect(host.textContent).toContain('下载中 10%');
+
+    // 5 分钟超时 → error 态 + 「重试下载」按钮
+    await act(async () => {
+      vi.advanceTimersByTime(5 * 60 * 1000);
+      await flushPromises();
+    });
+    expect(host.textContent).toContain('重试下载');
+
+    // 点重试 → attempt#2 启动,发 1%
+    const retryButton = host.querySelector<HTMLButtonElement>('button.toolbar-update-button.error');
+    expect(retryButton).toBeTruthy();
+    await act(async () => {
+      retryButton!.click();
+      await flushPromises();
+    });
+    expect(updateServiceMock.downloadAppUpdate).toHaveBeenCalledTimes(2);
+    expect(host.textContent).toContain('下载中 1%');
+
+    // attempt#2 正常单调推进到 2%
+    await act(async () => {
+      attempt2OnProgress({ status: 'downloading', downloadedBytes: 2, totalBytes: 100, percent: 2 });
+      await flushPromises();
+    });
+    expect(host.textContent).toContain('下载中 2%');
+
+    // BUG 条件:attempt#1 那条仍跑着的 Rust 下载流发来陈旧进度(22%)—— 必须被忽略,不回退
+    await act(async () => {
+      attempt1OnProgress({ status: 'downloading', downloadedBytes: 22, totalBytes: 100, percent: 22 });
+      await flushPromises();
+    });
+    expect(host.textContent).toContain('下载中 2%');
+    expect(host.textContent).not.toContain('下载中 22%');
+
+    // 旧流最终 Finished 时,downloadAppUpdate 内部会发 status:'ready'(percent:100)。
+    // 这同样是陈旧事件,必须被 attempt 令牌拦截——不能把界面翻成「下载中 100%」。
+    await act(async () => {
+      attempt1OnProgress({ status: 'ready', downloadedBytes: 100, totalBytes: 100, percent: 100 });
+      await flushPromises();
+    });
+    expect(host.textContent).toContain('下载中 2%');
+    expect(host.textContent).not.toContain('下载中 100%');
+
+    // 防 leak:放行两个挂起的下载 promise
+    resolveAttempt1();
+    resolveAttempt2();
   });
 
   // ISS-72：Rust 端抛网络错误应显示本地化文案（而非英文原文）。

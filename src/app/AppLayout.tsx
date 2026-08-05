@@ -171,6 +171,11 @@ export function AppLayout() {
   // ref 在 effect 依赖里不会触发重渲染，开关切回 on 时 useEffect 不会重跑。
   const [autoUpdateCheckStarted, setAutoUpdateCheckStarted] = useState(false);
   const updateDownloadVersionRef = useRef<string | null>(null);
+  // ISS-99：per-attempt 单调令牌。Tauri updater 的 update.download 无法中途取消,
+  // 超时/重试后旧尝试的 onProgress 仍挂在跑着的 Rust 下载流上,会继续发 Progress。
+  // version 守卫无法区分同版本的两次尝试,故用 attempt 令牌标识「当前有效尝试」,
+  // 新尝试开始后旧尝试的回调一律忽略事件,避免进度交错回退(1%→22%→2%→23%)。
+  const updateAttemptRef = useRef(0);
   // ISS-72：当前下载的取消句柄（虽然 Tauri JS SDK 不支持 abort，仅用于防御性
   // 重入 + 在 finally 中清理 ref，避免 stale controller 残留）。
   const downloadAbortRef = useRef<AbortController | null>(null);
@@ -482,6 +487,9 @@ export function AppLayout() {
     downloadAbortRef.current?.abort();
     const abort = new AbortController();
     downloadAbortRef.current = abort;
+    // ISS-99：本次尝试的令牌。新尝试(含重试)会 ++ 使旧令牌失效,
+    // 旧尝试的 onProgress/then/catch 见到 attemptId 不再匹配即丢弃事件。
+    const attemptId = ++updateAttemptRef.current;
     updateDownloadVersionRef.current = update.version;
     setUpdateState({ phase: 'downloading', source, update, percent: 0 });
 
@@ -493,7 +501,9 @@ export function AppLayout() {
     Promise.race([
       downloadAppUpdate(update.update, (p) => {
         if (abort.signal.aborted) return;
+        if (updateAttemptRef.current !== attemptId) return;
         setUpdateState((current) => {
+          if (updateAttemptRef.current !== attemptId) return current;
           if (current.phase !== 'downloading') return current;
           if (current.update.version !== update.version) return current;
           return { phase: 'downloading', source, update, percent: p.percent ?? current.percent ?? 0 };
@@ -503,7 +513,9 @@ export function AppLayout() {
     ])
       .then(() => {
         if (abort.signal.aborted) return;
+        if (updateAttemptRef.current !== attemptId) return;
         setUpdateState((current) => {
+          if (updateAttemptRef.current !== attemptId) return current;
           if (current.phase !== 'downloading') return current;
           if (current.update.version !== update.version) return current;
           return { phase: 'ready', source, update };
@@ -511,6 +523,9 @@ export function AppLayout() {
       })
       .catch((error) => {
         if (abort.signal.aborted) return;
+        // ISS-99：旧尝试的迟到错误不得覆盖新尝试的状态；此 return 必须早于下面
+        // updateDownloadVersionRef.current = null，否则会清掉当前有效尝试的去重守卫。
+        if (updateAttemptRef.current !== attemptId) return;
         updateDownloadVersionRef.current = null;
         setUpdateState({
           phase: 'error',
