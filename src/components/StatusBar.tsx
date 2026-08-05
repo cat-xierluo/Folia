@@ -90,7 +90,7 @@ export function StatusBar({ filePath, dirty, draftPersisted, pathInvalid, reload
         // 显示可能是折叠后的短形式，title 始终给出完整路径。
         title={hasPath ? (canCopy ? `${filePath}\n${t('statusBarCopyHint')}` : filePath) : undefined}
         style={
-          hasPath ? { cursor: 'text', userSelect: 'text' } : undefined
+          hasPath ? { cursor: canCopy ? 'text' : 'default', userSelect: canCopy ? 'text' : 'none' } : undefined
         }
       >
         {hasPath ? formatDisplayPath(filePath) : t('statusBarNoFile')}

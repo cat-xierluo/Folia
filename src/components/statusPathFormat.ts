@@ -6,6 +6,11 @@ const PATH_TAIL_SEGMENTS = 2;
 const PATH_HEAD_SEGMENTS = 2;
 const PATH_ELLIPSIS = '…';
 
+/** 尾部省略：保留 path 前 (maxLength - 省略号宽) 个字符 + …。Math.max 防 maxLength 过小的边界。 */
+function truncateTail(path: string, maxLength: number): string {
+  return `${path.slice(0, Math.max(0, maxLength - PATH_ELLIPSIS.length))}${PATH_ELLIPSIS}`;
+}
+
 /**
  * ISS-90：把过长的绝对路径折叠成 `/Users/maoking/…/notes/2026-08-04.md` 形式。
  * 路径首尾识别价值最高（根目录 / 用户名 + 文件名），因此折叠中段而非尾部。
@@ -20,12 +25,12 @@ export function formatDisplayPath(path: string, maxLength = PATH_DISPLAY_MAX_LEN
   const headCount = segments[0] === '' ? PATH_HEAD_SEGMENTS + 1 : PATH_HEAD_SEGMENTS;
   // 头尾片段之间至少要有一段可折叠，否则没有中段可省，退化为尾部省略。
   if (segments.length <= headCount + PATH_TAIL_SEGMENTS) {
-    return `${path.slice(0, maxLength - 1)}${PATH_ELLIPSIS}`;
+    return truncateTail(path, maxLength);
   }
 
   const tail = segments.slice(-PATH_TAIL_SEGMENTS).join(separator);
   const head = segments.slice(0, headCount).join(separator);
   const folded = `${head}${separator}${PATH_ELLIPSIS}${separator}${tail}`;
   // 折叠后仍超长（例如文件名本身极长）时，退化为尾部省略保证不撑破布局。
-  return folded.length <= maxLength ? folded : `${path.slice(0, maxLength - 1)}${PATH_ELLIPSIS}`;
+  return folded.length <= maxLength ? folded : truncateTail(path, maxLength);
 }

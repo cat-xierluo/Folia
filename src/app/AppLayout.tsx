@@ -1107,6 +1107,7 @@ export function AppLayout() {
         {rightPanel}
       </div>
       <StatusBar
+        key={activeTabId}
         filePath={file.path}
         dirty={file.dirty}
         draftPersisted={session.activeTab?.draftPersisted}
