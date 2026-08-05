@@ -427,7 +427,7 @@ describe('WechatPreviewPane', () => {
     await expect(exportedBlobs[0].text()).resolves.toContain('rgb(12, 88, 44)');
   });
 
-  it('auto-closes when the viewport is narrower than MIN_VIEWPORT (850px)', async () => {
+  it('does NOT auto-close on mount at narrow viewport (ISS-92 review R1：用户主动打开豁免当次)', async () => {
     const originalWidth = window.innerWidth;
     Object.defineProperty(window, 'innerWidth', {
       configurable: true,
@@ -441,7 +441,8 @@ describe('WechatPreviewPane', () => {
       await flushPromises();
     });
 
-    expect(onClose).toHaveBeenCalledTimes(1);
+    // 窄屏 mount 不立即关——用户主动打开应允许当次使用（原先 mount 即秒关，窄屏永远打不开）
+    expect(onClose).not.toHaveBeenCalled();
 
     Object.defineProperty(window, 'innerWidth', {
       configurable: true,

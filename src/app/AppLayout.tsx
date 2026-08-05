@@ -966,6 +966,7 @@ export function AppLayout() {
     <Suspense fallback={<div className="editor-pane lazy-pane"><span>源码编辑器加载中</span></div>}>
       <EditorPane
         source={file.content}
+        autoFocusKey={activeTabId}
         onChange={handleContentChange}
         headingScrollRequest={sourceHeadingScrollRequest}
       />
