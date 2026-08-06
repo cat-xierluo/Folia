@@ -1255,7 +1255,11 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 .wysiwyg-editor-pane .vditor-wysiwyg .vditor-wysiwyg__preview table {
   width: 100%;
   max-width: 100%;
-  table-layout: fixed;
+  /* table-layout: auto：让列宽按内容自适应（内容密集列获得更多宽度，短列收窄），
+     避免 fixed 把所有列强制等宽、长内容列被挤到极窄导致行高过高。
+     溢出防护仍在单元格的 word-break / overflow-wrap（见下方 th/td 规则），
+     CJK 与超长 token 会换行，表格不会横向超出 100%。 */
+  table-layout: auto;
   border-collapse: collapse;
 }
 
@@ -1266,8 +1270,14 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 .wysiwyg-editor-pane .vditor-wysiwyg .vditor-wysiwyg__preview th,
 .wysiwyg-editor-pane .vditor-wysiwyg .vditor-wysiwyg__preview td {
   white-space: normal;
-  word-break: break-word;
-  overflow-wrap: anywhere;
+  /* word-break: normal + overflow-wrap: break-word（而非 anywhere）：
+     anywhere 会把单元格 min-content 降到 1 字符，table-layout:auto 协商时
+     让长内容兄弟列吞掉几乎所有宽度、把本列挤成逐字竖排（legal-skills README
+     的 Skill 列 `multica-skill-update` 曾因此变成 m/u/l/t/i/c/a...）。
+     break-word 保持 min-content = 最长词宽度，列不会被挤到 1 字宽；
+     超长 token 在真的放不下时仍会断行。CJK 由 normal 在任意两字间断行。 */
+  word-break: normal;
+  overflow-wrap: break-word;
 }
 
 .wysiwyg-editor-pane .folia-ir-svg-fragment-hidden {
