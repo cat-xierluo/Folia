@@ -8,6 +8,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **修复 Markdown 表格列宽被强制等分、长内容列把短内容列挤成逐字竖排导致行高过高的问题**：根因是编辑器（`src/styles/app.css`）与阅读预览（`src/styles/preview.css`）的表格规则同时设了 `table-layout: fixed`，而单元格用 `overflow-wrap: anywhere`——`fixed` 把所有列强制等宽（无视内容），`anywhere` 又把单元格最小宽度降到 1 字符。在「某一列内容远多于其它」的表格上（典型：`legal-skills/README.md` 的「最近更新的 Skill」表，5 列里「更新要点」内容极长），布局协商时长内容列吞掉几乎所有宽度，把短内容列（如 Skill 列的 `multica-skill-update`）挤成逐字竖排（`m/u/l/t/i/c/a...`），行高极高。改为 `table-layout: auto`（列宽按内容自适应，长内容列获得更多宽度）+ 单元格 `overflow-wrap: break-word`、`word-break: normal`（最小宽度回到「最长词」，不再塌缩到 1 字宽；CJK 由 `normal` 在任意两字间断行，超长 token 真放不下时仍会断行）。真机验证（`tauri dev` + orca computer-use 驱动 WKWebView，详见 [DEC-131](docs/DECISIONS.md)）：同一张「最近更新的 Skill」表，Skill 列链接由逐字竖排恢复为横向一行显示，「更新要点」列合理最宽（约 40-50%），行高正常。Word 纸张预览（`.word-paper-content table`，ISS-182 保真面）与微信预览（`wechatPreviewService` 注入 CSS）存在同根因，但属不同保真面、各有保真测试，本期未改，留作后续。同一次排查的另外两个问题（`<details>` 折叠失效、二维码不渲染）结论见 [DEC-131](docs/DECISIONS.md)：前者为 Vditor IR 已知限制（记为限制不强行修），后者在当前 main 已正常渲染（用户报告大概率来自早于 v0.6.3 的旧发布版）。
+
 ## [0.6.6] - 2026-08-05
 
 ### Added

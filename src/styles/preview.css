@@ -180,14 +180,17 @@
   color: var(--fg);
 }
 
-/* Tables - compact legal-document layout, overriding Vditor nowrap defaults */
+/* Tables - legal-document layout, overriding Vditor nowrap defaults.
+   table-layout: auto 让列宽按内容自适应（内容密集列获得更多宽度），避免 fixed
+   把所有列强制等宽、长内容列被挤到极窄导致行高过高。溢出仍由下方 th/td 的
+   word-break / overflow-wrap 兜底（超长 token 放不下时断行），表格不会横向超出 100%。 */
 .preview-content.vditor-reset table,
 .preview-content table {
   width: 100% !important;
   max-width: 100% !important;
   min-width: 0 !important;
   border-collapse: collapse;
-  table-layout: fixed !important;
+  table-layout: auto !important;
   margin: 16px 0;
   font-size: 14px;
   word-break: normal !important;
@@ -201,16 +204,17 @@
   padding: 8px 12px;
   vertical-align: top;
   white-space: normal !important;
-  word-break: break-word !important;
-  overflow-wrap: anywhere !important;
-  min-width: 0 !important;
+  /* break-word（非 anywhere）保持 min-content=最长词宽度，避免 auto 布局下
+     长内容列吞光宽度、把本列挤成逐字竖排。CJK 由 normal 在任意两字间断行。 */
+  word-break: normal !important;
+  overflow-wrap: break-word !important;
   max-width: 100%;
 }
 
 .preview-content.vditor-reset td *,
 .preview-content.vditor-reset th * {
   white-space: normal !important;
-  overflow-wrap: anywhere !important;
+  overflow-wrap: break-word !important;
 }
 
 .preview-content th {
