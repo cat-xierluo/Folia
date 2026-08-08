@@ -1202,3 +1202,156 @@ describe('WysiwygEditorPane 自动聚焦 (ISS-94)', () => {
     });
   });
 });
+
+describe('WysiwygEditorPane 标题光标漂移 + 复制残留 marker (ISS-106 / ISS-107)', () => {
+  let host: HTMLDivElement;
+
+  beforeEach(() => {
+    vditorCalls.length = 0;
+    setValueCalls.length = 0;
+    focusCalls.length = 0;
+    host = document.createElement('div');
+    document.body.append(host);
+  });
+
+  afterEach(() => {
+    host.remove();
+    vi.clearAllMocks();
+  });
+
+  it('ISS-106: 标题节点被加 --expand 时 MutationObserver 立即移除（方向键不再触发 marker 渐变漂移）', async () => {
+    let root: Root | null = null;
+    const source = '# 标题\n';
+
+    await act(async () => {
+      root = createRoot(host);
+      root.render(
+        renderWithProvider(
+          React.createElement(WysiwygEditorPane, { source, onChange: () => undefined }),
+        ),
+      );
+      // 让 init effect 的 Promise.all(.then) 跑完 → setupHeadingExpandGuard 挂载
+      await flushMicrotasks();
+      await flushFrames();
+    });
+
+    expect(vditorCalls).toHaveLength(1);
+    const call = vditorCalls[0];
+    const ir = call.host.querySelector<HTMLElement>('.vditor-ir pre');
+    expect(ir).not.toBeNull();
+    // 模拟 Vditor 渲染：标题节点 + 加粗节点（各自带 marker）
+    ir!.innerHTML = [
+      '<h1 class="vditor-ir__node" data-block="0">',
+      '<span class="vditor-ir__marker vditor-ir__marker--heading"># </span>',
+      '<span data-type="text">标题</span>',
+      '</h1>',
+      '<p data-block="0">',
+      '<em class="vditor-ir__node" data-marker="**">',
+      '<span class="vditor-ir__marker vditor-ir__marker--bi">**</span>',
+      '<strong>AA</strong>',
+      '<span class="vditor-ir__marker vditor-ir__marker--bi">**</span>',
+      '</em>',
+      '</p>',
+    ].join('');
+
+    const heading = ir!.querySelector('h1')!;
+    const bold = ir!.querySelector('em')!;
+
+    // 复现 ISS-106：Vditor 在异步 selectionchange 里给当前标题加 --expand
+    heading.classList.add('vditor-ir__node--expand');
+    // MutationObserver 回调是 microtask；flushMicrotasks 让其在「下一帧绘制前」执行
+    await act(async () => {
+      await flushMicrotasks();
+    });
+    // 标题 --expand 已被守卫撤掉（marker 不会经历 150ms 渐变 → 光标不漂移）
+    expect(heading.classList.contains('vditor-ir__node--expand')).toBe(false);
+
+    // 守卫只针对标题节点：粗体/斜体的 --expand 必须保留（保留输入 ** 时短暂看到 ** 的 UX）
+    bold.classList.add('vditor-ir__node--expand');
+    await act(async () => {
+      await flushMicrotasks();
+    });
+    expect(bold.classList.contains('vditor-ir__node--expand')).toBe(true);
+
+    await act(async () => {
+      root?.unmount();
+    });
+  });
+
+  it('ISS-107: 复制加粗文本时 text/plain 剔除 ** 残留，text/html 保留 strong 语义', async () => {
+    let root: Root | null = null;
+
+    await act(async () => {
+      root = createRoot(host);
+      root.render(
+        renderWithProvider(
+          React.createElement(WysiwygEditorPane, { source: '**AA**', onChange: () => undefined }),
+        ),
+      );
+      await flushMicrotasks();
+      await flushFrames();
+    });
+
+    expect(vditorCalls).toHaveLength(1);
+    const call = vditorCalls[0];
+    const ir = call.host.querySelector<HTMLElement>('.vditor-ir pre');
+    expect(ir).not.toBeNull();
+    // 模拟 Vditor IR 加粗结构：两侧 marker（width:0 视觉隐藏，DOM 文本 `**` 仍在）
+    ir!.innerHTML = '<em class="vditor-ir__node" data-marker="**">'
+      + '<span class="vditor-ir__marker vditor-ir__marker--bi">**</span>'
+      + '<strong>AA</strong>'
+      + '<span class="vditor-ir__marker vditor-ir__marker--bi">**</span>'
+      + '</em>';
+
+    await act(async () => {
+      call.options.after?.();
+      await flushMicrotasks();
+      await flushFrames();
+    });
+
+    // 选中整个 em（含两侧 marker），模拟用户拖选加粗词
+    const em = ir!.querySelector('em')!;
+    const range = document.createRange();
+    range.selectNodeContents(em);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+
+    // 构造 copy 事件，注入 mock clipboardData（jsdom 不支持自定义剪贴板数据）
+    const setCalls: Record<string, string> = {};
+    const mockClipboardData = {
+      setData: vi.fn((type: string, value: string) => {
+        setCalls[type] = value;
+      }),
+      getData: vi.fn(() => ''),
+      types: [] as string[],
+    };
+    // jsdom 未把 ClipboardEvent 暴露为全局；handler 只依赖 clipboardData + preventDefault，
+    // 用 Event + defineProperty 注入 clipboardData 即可覆盖复制路径。
+    // jsdom 未把 ClipboardEvent 暴露为全局；handler 只依赖 clipboardData + preventDefault，
+    // 用 Event + defineProperty 注入 clipboardData 即可覆盖复制路径。
+    // cancelable: true 让 preventDefault 生效（真实 ClipboardEvent 默认可取消）
+    const event = new Event('copy', { bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'clipboardData', {
+      value: mockClipboardData,
+      configurable: true,
+    });
+
+    await act(async () => {
+      ir!.dispatchEvent(event);
+      await flushMicrotasks();
+    });
+
+    // 默认行为被拦截（用我们重写的数据）
+    expect(event.defaultPrevented).toBe(true);
+    // text/plain 干净：无字面量 `**`
+    expect(setCalls['text/plain']).toBe('AA');
+    // text/html 保留加粗语义，且不含 marker
+    expect(setCalls['text/html']).toContain('<strong>AA</strong>');
+    expect(setCalls['text/html']).not.toContain('vditor-ir__marker');
+
+    await act(async () => {
+      root?.unmount();
+    });
+  });
+});

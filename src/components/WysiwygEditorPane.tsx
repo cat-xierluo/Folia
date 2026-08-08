@@ -73,6 +73,39 @@ function extractPlainText(event: ClipboardEvent): string | null {
   return text.length > 0 ? text : null;
 }
 
+/**
+ * ISS-107：复制时剔除 Vditor IR 的 markdown marker 文本。
+ *
+ * 背景：Vditor IR 模式把 `**` / `# ` / `[]()` 等 markdown 语法标记渲染成
+ * `.vditor-ir__marker` span，用 `width:0;display:inline-block;overflow:hidden`
+ * 视觉隐藏（非 display:none，见 vditor dist/index.css:1523）——DOM 文本 `**`
+ * 始终存在。复制时浏览器把选区序列化为 text/plain，Selection/Range.toString()
+ * 会把这种「视觉隐藏但非 display:none」的文本带进纯文本，粘贴到外部编辑器残留
+ * 字面量 `**`。marker 是否被选区边界覆盖取决于复制瞬间的选区几何（零宽 marker
+ * 的边界吸附），故表现为间歇性：同一内容有时得到 `AA`、有时得到 `**AA`。
+ *
+ * 修法：对当前选区 range.cloneContents() 得到 DocumentFragment，移除其中所有
+ * `.vditor-ir__marker`（保留 strong/em/a/code 等语义标签），用清理后 fragment 的
+ * textContent 作 text/plain、序列化作 text/html——纯文本干净，富文本保留加粗/
+ * 斜体/链接语义，契合「纯文本 fallback 只含可见文字、富格式走 HTML」的期望。
+ *
+ * 返回 null 表示选区无可见文本，调用方应放行默认 copy。
+ */
+function serializeSelectionForClipboard(range: Range): { plain: string; html: string } | null {
+  const fragment = range.cloneContents();
+  // 移除所有 marker：加粗 `**`、斜体 `*/_`、标题 `#`、链接 `[]()`、代码 `` ` `` 等
+  fragment.querySelectorAll('.vditor-ir__marker').forEach((marker) => marker.remove());
+  const plain = fragment.textContent ?? '';
+  if (plain.length === 0) return null;
+  // text/html：保留语义标签（strong/em/a/code/...），仅去掉了 marker span。
+  // 用临时容器序列化 fragment，避免污染活动 DOM。Vditor 特有的 class/data
+  // 属性对外部编辑器无害（被忽略），可接受。
+  const doc = range.commonAncestorContainer.ownerDocument ?? document;
+  const container = doc.createElement('div');
+  container.appendChild(fragment);
+  return { plain, html: container.innerHTML };
+}
+
 function collapseExpandedMarkers(editor: import('vditor').default | null): void {
   if (!editor) return;
   const ir = getIrElement(editor);
@@ -135,6 +168,60 @@ function scheduleImmediateHeadingCollapse(
       node.classList.remove('vditor-ir__node--expand');
     });
   });
+}
+
+/**
+ * ISS-106：标题节点方向键光标漂移的根治守卫。
+ *
+ * 背景：scheduleImmediateHeadingCollapse 用 RAF 在 keydown/input 后的下一帧
+ * 移除标题节点的 vditor-ir__node--expand。但方向键移动光标时，Vditor 是在
+ * keydown 之后的「异步 selectionchange」里才给新光标所在标题节点加 --expand
+ * （不同于 input 路径：input 时 Vditor 同步移除/加回 --expand，RAF 能稳定捕捉）。
+ * RAF 注册于 keydown 同步路径，往往跑在异步 selectionchange 之前——此时标题
+ * 节点尚未被加 --expand，RAF 的 querySelectorAll 查不到，移除了个寂寞；随后
+ * selectionchange 才给标题加 --expand，marker `# ` 经 CSS 150ms transition
+ * （vditor index.css:1528）从 0 宽渐变到可见宽，整段标题文本向右偏移，光标视觉
+ * 向后漂移一格再复位（ISS-106 用户报告的瞬时跳动）。
+ *
+ * 修法：用 MutationObserver 监听 IR DOM 的 class 变化，一旦标题节点（h1-h6）
+ * 被加上 vditor-ir__node--expand，立即移除。Observer 回调在 microtask 里执行，
+ * 在「加 --expand 的那个 task」结束后、浏览器下一次渲染前跑——无论 Vditor 是在
+ * 同步路径还是异步 selectionchange 里加 --expand，都能在用户看到这一帧之前把
+ * --expand 撤掉。加/移发生在同一渲染帧内、中间无 paint，CSS transition 根本不
+ * 触发，marker 压根没展开过。时序无关，不再依赖「RAF 必须晚于 selectionchange」
+ * 的脆弱假设。
+ *
+ * 与 scheduleImmediateHeadingCollapse / collapseTimerRef（220ms）并存：后两者
+ * 继续负责粗体/斜体等 marker 的展开→折叠 UX（marker 在文本两侧，展开不造成光标
+ * 位移），本守卫只针对标题节点（标题 marker `# ` 在文本之前，展开只会造成漂移，
+ * 无 UX 价值）。移除 --expand 会触发新的 class mutation，但回调里
+ * classList.contains 检查保证不会无限循环（同一节点移除后不再命中）。
+ *
+ * 返回 disconnect 函数：init effect cleanup 调用，避免 editor.destroy 后操作
+ * 已分离的 DOM。
+ */
+function setupHeadingExpandGuard(ir: HTMLElement): () => void {
+  const HEADING_EXPAND_SELECTOR =
+    'h1.vditor-ir__node--expand, h2.vditor-ir__node--expand, h3.vditor-ir__node--expand, '
+    + 'h4.vditor-ir__node--expand, h5.vditor-ir__node--expand, h6.vditor-ir__node--expand';
+  const observer = new MutationObserver((mutations) => {
+    for (const mutation of mutations) {
+      if (mutation.type !== 'attributes' || mutation.attributeName !== 'class') continue;
+      const el = mutation.target;
+      if (!(el instanceof Element)) continue;
+      // 仅处理标题节点：tagName H1-H6 且当前带 --expand
+      if (!/^H[1-6]$/.test(el.tagName)) continue;
+      if (el.classList.contains('vditor-ir__node--expand')) {
+        el.classList.remove('vditor-ir__node--expand');
+      }
+    }
+  });
+  observer.observe(ir, { subtree: true, attributes: true, attributeFilter: ['class'] });
+  // 挂载时同步清理一次已有 --expand（防御性，覆盖编辑器重建时残留的展开态）
+  ir.querySelectorAll(HEADING_EXPAND_SELECTOR).forEach((node) => {
+    node.classList.remove('vditor-ir__node--expand');
+  });
+  return () => observer.disconnect();
 }
 
 function editorHasFocus(editor: import('vditor').default): boolean {
@@ -548,6 +635,10 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
   const applyingExternalValue = useRef(false);
   const latestSource = useRef(source);
   const collapseTimerRef = useRef<number | null>(null);
+  // ISS-106：setupHeadingExpandGuard 返回的 disconnect 函数；init effect
+  // cleanup 调用。用 ref 而非局部变量：Vditor 在 .then 异步初始化，组件可能
+  // 在初始化完成前卸载，cleanup 跑时 ref 仍为初始 null，判空调用即可。
+  const disconnectHeadingGuardRef = useRef<(() => void) | null>(null);
   const lastComplexBlocksRef = useRef<HtmlTableBlock[]>([]);
   // ISS-168 编辑器部分：sanitize 写入 innerHTML 会触发 Vditor 自身的
   // 渲染回调，需要此 guard 防止 setValue -> sanitize -> input 死循环。
@@ -801,8 +892,29 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
     const dropHandler = (event: Event) => {
       void handleImageFiles(event as DragEvent);
     };
+    // ISS-107：拦截复制，剔除 Vditor IR 的 markdown marker（`**`/`#`/`[]()` 等），
+    // 避免 text/plain 残留字面量标记；text/html 保留 strong/em/a 语义。仅处理
+    // 编辑器内选区，编辑器外复制放行默认。cut 不在本次范围（preventDefault 会
+    // 阻止默认删除，需另接删除路径，风险与收益另议）。
+    const copyHandler = (event: ClipboardEvent) => {
+      const editor = editorRef.current;
+      if (!editor) return;
+      const ir = getIrElement(editor);
+      if (!ir || !event.clipboardData) return;
+      const selection = typeof window !== 'undefined' ? window.getSelection() : null;
+      if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return;
+      const range = selection.getRangeAt(0);
+      // 选区不在 IR 子树内（如用户选了别的面板）→ 放行默认 copy
+      if (!ir.contains(range.commonAncestorContainer)) return;
+      const serialized = serializeSelectionForClipboard(range);
+      if (!serialized) return;
+      event.preventDefault();
+      event.clipboardData.setData('text/plain', serialized.plain);
+      event.clipboardData.setData('text/html', serialized.html);
+    };
     host.addEventListener('paste', pasteHandler);
     host.addEventListener('drop', dropHandler);
+    host.addEventListener('copy', copyHandler);
 
     void Promise.all([
       import('vditor/dist/index.css'),
@@ -1069,6 +1181,10 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
       });
 
       editorRef.current = editor;
+      // ISS-106：标题方向键光标漂移根治——MutationObserver 守卫，覆盖 RAF
+      // 无法稳定捕捉的异步 selectionchange 路径（见 setupHeadingExpandGuard）。
+      const irEl = getIrElement(editor);
+      disconnectHeadingGuardRef.current = irEl ? setupHeadingExpandGuard(irEl) : null;
     }).catch((error) => {
       console.error('[Folia] Vditor 初始化失败:', error);
       initializingRef.current = false;
@@ -1084,9 +1200,15 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
       host.removeEventListener('drop', markUserInteracted, true);
       host.removeEventListener('paste', pasteHandler);
       host.removeEventListener('drop', dropHandler);
+      host.removeEventListener('copy', copyHandler);
       if (collapseTimerRef.current !== null) {
         window.clearTimeout(collapseTimerRef.current);
         collapseTimerRef.current = null;
+      }
+      // ISS-106：先断开标题 --expand 守卫，避免 destroy 触发的 DOM 变化被 observer 捕捉
+      if (disconnectHeadingGuardRef.current) {
+        disconnectHeadingGuardRef.current();
+        disconnectHeadingGuardRef.current = null;
       }
       editorRef.current?.destroy();
       editorRef.current = null;
