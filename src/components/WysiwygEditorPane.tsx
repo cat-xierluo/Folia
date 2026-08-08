@@ -191,11 +191,13 @@ function scheduleImmediateHeadingCollapse(
  * 触发，marker 压根没展开过。时序无关，不再依赖「RAF 必须晚于 selectionchange」
  * 的脆弱假设。
  *
- * 与 scheduleImmediateHeadingCollapse / collapseTimerRef（220ms）并存：后两者
- * 继续负责粗体/斜体等 marker 的展开→折叠 UX（marker 在文本两侧，展开不造成光标
- * 位移），本守卫只针对标题节点（标题 marker `# ` 在文本之前，展开只会造成漂移，
- * 无 UX 价值）。移除 --expand 会触发新的 class mutation，但回调里
- * classList.contains 检查保证不会无限循环（同一节点移除后不再命中）。
+ * 与现有折叠机制并存：collapseTimerRef（220ms，collapseExpandedMarkers 折叠所有
+ * --expand 节点）继续负责粗体/斜体等 marker 的展开→折叠 UX（marker 在文本两侧，
+ * 展开不造成光标位移）；scheduleImmediateHeadingCollapse（RAF，querySelectorAll 仅
+ * h1-h6）现作为本守卫的次级兜底保留——observer 在 microtask 移除必先于 RAF 的下一帧，
+ * 多数情况 RAF 的 query 已查不到 --expand。本守卫只针对标题节点（标题 marker `# `
+ * 在文本之前，展开只会造成漂移，无 UX 价值）。移除 --expand 会触发新的 class mutation，
+ * 但回调里 classList.contains 检查保证不会无限循环（同一节点移除后不再命中）。
  *
  * 返回 disconnect 函数：init effect cleanup 调用，避免 editor.destroy 后操作
  * 已分离的 DOM。

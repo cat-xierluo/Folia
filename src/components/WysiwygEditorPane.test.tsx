@@ -1328,8 +1328,6 @@ describe('WysiwygEditorPane 标题光标漂移 + 复制残留 marker (ISS-106 / 
     };
     // jsdom 未把 ClipboardEvent 暴露为全局；handler 只依赖 clipboardData + preventDefault，
     // 用 Event + defineProperty 注入 clipboardData 即可覆盖复制路径。
-    // jsdom 未把 ClipboardEvent 暴露为全局；handler 只依赖 clipboardData + preventDefault，
-    // 用 Event + defineProperty 注入 clipboardData 即可覆盖复制路径。
     // cancelable: true 让 preventDefault 生效（真实 ClipboardEvent 默认可取消）
     const event = new Event('copy', { bubbles: true, cancelable: true });
     Object.defineProperty(event, 'clipboardData', {
@@ -1349,6 +1347,116 @@ describe('WysiwygEditorPane 标题光标漂移 + 复制残留 marker (ISS-106 / 
     // text/html 保留加粗语义，且不含 marker
     expect(setCalls['text/html']).toContain('<strong>AA</strong>');
     expect(setCalls['text/html']).not.toContain('vditor-ir__marker');
+
+    await act(async () => {
+      root?.unmount();
+    });
+  });
+
+  it('ISS-107 守卫：选区在编辑器外时放行默认 copy（不 preventDefault、不重写剪贴板）', async () => {
+    let root: Root | null = null;
+    await act(async () => {
+      root = createRoot(host);
+      root.render(
+        renderWithProvider(
+          React.createElement(WysiwygEditorPane, { source: '正文', onChange: () => undefined }),
+        ),
+      );
+      await flushMicrotasks();
+      await flushFrames();
+    });
+    const call = vditorCalls[0];
+    const ir = call.host.querySelector<HTMLElement>('.vditor-ir pre')!;
+    ir.innerHTML = '<p data-block="0"><span data-type="text">正文</span></p>';
+    await act(async () => {
+      call.options.after?.();
+      await flushMicrotasks();
+      await flushFrames();
+    });
+
+    // 在 host 之外建选区（模拟用户选了别的面板），dispatch copy 仍冒泡到 host
+    const outside = document.createElement('div');
+    outside.textContent = '外部文本';
+    document.body.append(outside);
+    const range = document.createRange();
+    range.selectNodeContents(outside);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+
+    const setCalls: Record<string, string> = {};
+    const mockClipboardData = {
+      setData: vi.fn((type: string, value: string) => {
+        setCalls[type] = value;
+      }),
+      getData: vi.fn(() => ''),
+      types: [] as string[],
+    };
+    const event = new Event('copy', { bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'clipboardData', { value: mockClipboardData, configurable: true });
+
+    await act(async () => {
+      ir.dispatchEvent(event);
+      await flushMicrotasks();
+    });
+    // 选区不在 IR 子树 → 放行默认，不 preventDefault、不重写剪贴板
+    expect(event.defaultPrevented).toBe(false);
+    expect(Object.keys(setCalls)).toHaveLength(0);
+
+    outside.remove();
+    await act(async () => {
+      root?.unmount();
+    });
+  });
+
+  it('ISS-107 守卫：折叠选区（光标 caret）时放行默认 copy', async () => {
+    let root: Root | null = null;
+    await act(async () => {
+      root = createRoot(host);
+      root.render(
+        renderWithProvider(
+          React.createElement(WysiwygEditorPane, { source: '正文', onChange: () => undefined }),
+        ),
+      );
+      await flushMicrotasks();
+      await flushFrames();
+    });
+    const call = vditorCalls[0];
+    const ir = call.host.querySelector<HTMLElement>('.vditor-ir pre')!;
+    ir.innerHTML = '<p data-block="0"><span data-type="text">正文</span></p>';
+    await act(async () => {
+      call.options.after?.();
+      await flushMicrotasks();
+      await flushFrames();
+    });
+
+    // 在 IR 内建 collapsed range（光标，非选区）
+    const textNode = ir.querySelector('span')!.firstChild!;
+    const range = document.createRange();
+    range.setStart(textNode, 0);
+    range.collapse(true);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+
+    const setCalls: Record<string, string> = {};
+    const mockClipboardData = {
+      setData: vi.fn((type: string, value: string) => {
+        setCalls[type] = value;
+      }),
+      getData: vi.fn(() => ''),
+      types: [] as string[],
+    };
+    const event = new Event('copy', { bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'clipboardData', { value: mockClipboardData, configurable: true });
+
+    await act(async () => {
+      ir.dispatchEvent(event);
+      await flushMicrotasks();
+    });
+    // collapsed 选区无内容 → 放行默认
+    expect(event.defaultPrevented).toBe(false);
+    expect(Object.keys(setCalls)).toHaveLength(0);
 
     await act(async () => {
       root?.unmount();
