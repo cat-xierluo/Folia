@@ -41,6 +41,14 @@ describe('Tauri capabilities', () => {
     expect(csp).toContain("connect-src 'self'");
   });
 
+  it('allows WKWebView to load external HTTP images via App Transport Security (ISS-110)', () => {
+    // CSP 放开 img/media 的 http: 后，macOS ATS 默认仍会拦截外部 http 图片；
+    // 自定义 src-tauri/Info.plist 由 Tauri 合并进 bundle，放行 WKWebView 的 http。
+    const plist = readFileSync(join(process.cwd(), 'src-tauri/Info.plist'), 'utf8');
+    expect(plist).toContain('<key>NSAppTransportSecurity</key>');
+    expect(plist).toContain('<key>NSAllowsArbitraryLoadsInWebContent</key>');
+  });
+
   it('declares desktop file associations for documents Folia can open directly', () => {
     const config = JSON.parse(
       readFileSync(join(process.cwd(), 'src-tauri/tauri.conf.json'), 'utf8'),

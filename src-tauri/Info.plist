@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	ISS-110: 放开 macOS App Transport Security (ATS)，让 WKWebView 能加载
+	外部 http 图片（如 RSS 文章经 http:// 镜像代理的图床）。
+
+	CSP（tauri.conf.json）已在 WebView 层精确限制：仅 img-src / media-src 放开
+	http:，script-src / connect-src / frame-src / font-src 仍严守 'self'/https。
+	故此处 ATS 放行 WKWebView 的 http 不会引入脚本/连接类风险——脚本注入与
+	ajax 仍被 CSP 拦在 https/self。
+
+	- NSAllowsArbitraryLoadsInWebContent: 专项豁免 WKWebView 的 ATS，是新版
+	  macOS（10.12+，folia 最低 10.13）上让 webview 加载 http 内容的关键键。
+	- NSAllowsArbitraryLoads: 兜底全域。folia 无非 webview 的 http 网络请求
+	  （updater 走 https、asset 为本地文件），全域放开实际只作用于 webview，
+	  无额外安全影响。两者并存确保 http 图片在各类 macOS 版本都能加载。
+	-->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+		<key>NSAllowsArbitraryLoadsInWebContent</key>
+		<true/>
+	</dict>
+</dict>
+</plist>
