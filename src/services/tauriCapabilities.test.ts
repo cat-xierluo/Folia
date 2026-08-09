@@ -32,6 +32,11 @@ describe('Tauri capabilities', () => {
     // CSP. connect-src / frame-src / font-src remain restrictive on purpose.
     expect(csp).toMatch(/img-src [^;]*\bhttps:/);
     expect(csp).toMatch(/media-src [^;]*\bhttps:/);
+    // ISS-110: img-src / media-src 必须含独立的 http: token，让 HTTP 图片
+    // （如 RSS 文章经 http:// 镜像图床代理）不被 CSP 拦截。
+    // connect-src / script-src / frame-src / font-src 仍保持严格、不放 http。
+    expect(csp).toMatch(/img-src [^;]*\bhttp: /);
+    expect(csp).toMatch(/media-src [^;]*\bhttp: /);
     expect(csp).toContain("frame-src 'self' data: blob:");
     expect(csp).toContain("connect-src 'self'");
   });
