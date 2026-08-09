@@ -793,13 +793,16 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
     const classifyError = (img: HTMLImageElement, error: boolean): RenderDiagnostic | null => {
       const src = img.currentSrc || img.src || '';
       if (!src) return null;
+      // CSP 不再拦截 http: 图片（ISS-110 放开 img-src/media-src 的 http:），
+      // http 图片失败只可能是 DNS/网络/404/解码，按 not-found/decode-failed 归类，
+      // 不再误报「图片协议被阻止」。
       const code: RenderDiagnostic['code'] = error
-        ? (src.startsWith('http://') ? 'blocked-scheme' : src.startsWith('asset:') || src.startsWith('data:') ? 'decode-failed' : 'not-found')
+        ? (src.startsWith('asset:') || src.startsWith('data:') ? 'decode-failed' : 'not-found')
         : 'decode-failed';
       return {
         code,
         message: error
-          ? (code === 'blocked-scheme' ? '图片协议被阻止' : code === 'not-found' ? '找不到图片' : '图片数据损坏')
+          ? (code === 'not-found' ? '找不到图片' : '图片数据损坏')
           : '图片加载失败',
         language: img.alt ?? undefined,
       };
