@@ -1986,7 +1986,14 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 .word-paper-content table {
   width: 100%;
   max-width: 100%;
-  table-layout: fixed;
+  /* ISS-105: table-layout: auto（原为 fixed）：与 PR #104 对主编辑器/阅读预览的
+     修复保持一致。fixed + 单元格 overflow-wrap:anywhere 会把长内容列的 min-content
+     降到 1 字符，auto 协商时长内容列吞掉几乎所有宽度、短列被挤成逐字竖排
+     （Skill 列 multica-skill-update 竖排、版本/日期列塌缩）。改为 auto 让列宽
+     按内容自适应。保真取舍：真实 Word/DOCX 偏固定网格，但 fixed 在本预览面板
+     的实际效果是列宽失真，失真比重更大；真实 DOCX 导出的列宽由 table-handler.ts
+     按网格独立计算，不受本规则影响。 */
+  table-layout: auto;
   border-collapse: collapse;
   margin: 0.8em var(--word-table-margin-right) 0.8em var(--word-table-margin-left);
   font-size: var(--word-table-font-size);
@@ -1995,7 +2002,7 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   color: var(--word-table-body-color);
   text-align: left;
   /* ISS-182: Vditor 的 .vditor-reset table{display:block}（node_modules/vditor/dist/index.css）
-     会把表格变成 block 流，撑大视觉宽度并破坏 table-layout:fixed 的列宽计算。
+     会把表格变成 block 流，撑大视觉宽度并破坏表格布局的列宽计算。
      Vditor CSS 运行时动态注入且与这里同特异性，需 !important 压过（与 preview.css
      的表格 !important 模式一致）。 */
   display: table !important;
@@ -2013,8 +2020,13 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   border: var(--word-table-border-width) solid var(--word-table-border-color);
   padding: var(--word-table-cell-padding);
   white-space: normal !important;
-  word-break: break-word !important;
-  overflow-wrap: anywhere !important;
+  /* ISS-105: word-break: normal + overflow-wrap: break-word（原为 break-word +
+     anywhere，与 PR #104 的主编辑器修复对齐）：anywhere 会把单元格 min-content
+     降到 1 字符，table-layout:auto 协商时让长内容兄弟列吞掉几乎所有宽度、把
+     本列挤成逐字竖排。break-word 保持 min-content = 最长词宽度，列不会被挤到
+     1 字宽；超长 token 在真的放不下时仍会断行。CJK 由 normal 在任意两字间断行。 */
+  word-break: normal !important;
+  overflow-wrap: break-word !important;
   vertical-align: var(--word-table-vertical-align);
 }
 

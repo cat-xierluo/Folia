@@ -80,7 +80,7 @@ export const DEFAULT_WECHAT_CSS = `
   width: 100%;
   margin: 1em 0;
   border-collapse: collapse;
-  table-layout: fixed;
+  table-layout: auto;
   font-size: 0.94em;
 }
 .${WECHAT_ARTICLE_CLASS} th,
@@ -88,7 +88,8 @@ export const DEFAULT_WECHAT_CSS = `
   padding: 0.5em 0.65em;
   border: 1px solid #ddd6cb;
   vertical-align: top;
-  overflow-wrap: anywhere;
+  word-break: normal;
+  overflow-wrap: break-word;
 }
 .${WECHAT_ARTICLE_CLASS} th {
   background: #f8f4ec;
@@ -284,11 +285,11 @@ export const DEFAULT_INLINE_STYLE_RULES: InlineStyleRule[] = [
   },
   {
     selectors: [`.${WECHAT_ARTICLE_CLASS} table`],
-    declarations: 'width: 100%; margin: 1em 0; border-collapse: collapse; table-layout: fixed; font-size: 0.94em',
+    declarations: 'width: 100%; margin: 1em 0; border-collapse: collapse; table-layout: auto; font-size: 0.94em',
   },
   {
     selectors: [`.${WECHAT_ARTICLE_CLASS} th`, `.${WECHAT_ARTICLE_CLASS} td`],
-    declarations: 'padding: 0.5em 0.65em; border: 1px solid #ddd6cb; vertical-align: top; overflow-wrap: anywhere',
+    declarations: 'padding: 0.5em 0.65em; border: 1px solid #ddd6cb; vertical-align: top; word-break: normal; overflow-wrap: break-word',
   },
   {
     selectors: [`.${WECHAT_ARTICLE_CLASS} th`],
