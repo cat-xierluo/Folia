@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { createEmptyFile, type TocItem } from '../types/document';
@@ -131,6 +131,34 @@ const UPDATE_DOWNLOAD_TIMEOUT_MS = 5 * 60 * 1000;
 // 故把 TOC 刷新防抖到输入停顿后执行（ISS-159）。文件内容本身仍每键同步落盘/保存。
 const TOC_REFRESH_DEBOUNCE_MS = 150;
 
+// ISS-112：切回文档时恢复滚动位置的重试次数。编辑器（CodeMirror / Vditor）在
+// tab 切换或从欢迎页切回时会重建滚动容器，内容渲染到 scrollHeight 足以容纳目标
+// scrollTop 可能需要数帧（Vditor 异步初始化 + 动态 import）。20 帧 ≈ 330ms @60fps
+// 覆盖典型初始化耗时；超出后放弃恢复，避免无限重试。
+const SCROLL_RESTORE_MAX_ATTEMPTS = 20;
+// 恢复精度容差（px）：当 |scrollTop - target| <= 此值时视为恢复成功。浏览器可能
+// 将 scrollTop 量化到设备像素边界，精确比较会误判失败。
+const SCROLL_RESTORE_TOLERANCE_PX = 4;
+
+/**
+ * ISS-112：查找主内容区当前编辑器的实际滚动容器。
+ *
+ * - 源码模式：CodeMirror 6 的 `.cm-scroller`（唯一、稳定）。
+ * - 所见即所得模式：Vditor IR 模式 `.vditor-ir > .vditor-reset`（`<pre>` 元素，
+ *   Vditor 自带 CSS 给它 `height:100%; overflow:auto`）。不用泛化的
+ *   `.vditor-reset`——Vditor 内部还有 SV 模式 / preview 面板的 `.vditor-reset`，
+ *   会匹配到错误元素。
+ *
+ * 返回 null 表示编辑器尚未挂载（如正在加载 lazy chunk 或停在欢迎页）。
+ */
+function findEditorScroller(root: HTMLElement): HTMLElement | null {
+  const cmScroller = root.querySelector<HTMLElement>('.cm-scroller');
+  if (cmScroller) return cmScroller;
+  const irScroller = root.querySelector<HTMLElement>('.vditor-ir > .vditor-reset');
+  if (irScroller) return irScroller;
+  return null;
+}
+
 // ISS-72 / ISS-84：把 Rust 端原始错误分类映射到本地化文案。fallback 仍展示原文便于排查。
 // 归类逻辑与检查更新路径共用 updateService.categorizeUpdateError（#84 要求三条路径共用一套）。
 function toUpdateErrorMessage(
@@ -182,6 +210,15 @@ export function AppLayout() {
   const mainContentRef = useRef<HTMLDivElement>(null);
   // 防抖挂起的 TOC 刷新定时器；卸载时清掉，避免 stale setToc（ISS-159）。
   const tocRefreshTimerRef = useRef<number | null>(null);
+  // ISS-112：per-tab scrollTop 缓存（tabId → scrollTop）。不持久化——仅运行期
+  // 在当前窗口内有效，重启 / 跨窗口 tear-off 不传递（跨窗口 scroll 恢复属后续增强）。
+  const scrollPositionsRef = useRef<Map<string, number>>(new Map());
+  // 当前正在跟踪滚动位置的 tabId（通常 = activeTabId，但放在 ref 中让 scroll
+  // 监听器——只绑定一次——始终读到最新值，无需随 tab 切换重新 add/remove listener）。
+  const trackedTabIdRef = useRef<string>('');
+  // 恢复期间抑制 scroll 事件写回缓存。编辑器在 tab 切换时会通过 setValue / 重建
+  // 触发 scrollTop 归零的 scroll 事件，若不抑制会把目标 tab 的缓存覆盖为 0。
+  const suppressScrollSaveRef = useRef(false);
   // 取消挂起的 TOC 防抖刷新：打开新文件 / 卸载时调用，避免上一个文件的过期 setToc 覆盖新文件大纲（ISS-159）。
   const cancelPendingTocRefresh = useCallback(() => {
     if (tocRefreshTimerRef.current !== null) {
@@ -295,6 +332,111 @@ export function AppLayout() {
   useEffect(() => {
     cancelPendingTocRefresh();
   }, [activeTabId, cancelPendingTocRefresh]);
+
+  // ISS-112：在 useLayoutEffect（早于任何 useEffect）中同步更新 trackedTabIdRef
+  // 并抑制 scroll 写回。关键时序：子组件（EditorPane / WysiwygEditorPane）的
+  // [source] / [filePath] useEffect 会调用 setValue / 重建 Vditor，使 scrollTop
+  // 归零。useLayoutEffect 在所有 useEffect 之前跑（React 保证 layout effect 先于
+  // passive effect），故 suppress 会在 setValue 的 scroll-to-0 事件之前生效。
+  useLayoutEffect(() => {
+    if (!activeTabId) return;
+    const isInitial = trackedTabIdRef.current === '';
+    trackedTabIdRef.current = activeTabId;
+    // 首次挂载无 scroll 位置可恢复，不需要抑制；只在 tab 切换时抑制。
+    if (!isInitial) {
+      suppressScrollSaveRef.current = true;
+    }
+  }, [activeTabId]);
+
+  // ISS-112：编辑器滚动位置的 per-tab 持续跟踪。
+  // 在 mainContentRef 上以 capture 阶段监听 scroll 事件（scroll 事件不冒泡，但 capture
+  // 阶段可以在祖先上捕获后代 scroller 的事件）。监听器只绑定一次（空依赖），通过 ref
+  // 读取最新的 trackedTabId，避免随 tab 切换反复 add/remove listener。
+  useEffect(() => {
+    const root = mainContentRef.current;
+    if (!root) return;
+
+    const handleScroll = () => {
+      if (suppressScrollSaveRef.current) return;
+      const scroller = findEditorScroller(root);
+      if (!scroller) return;
+      scrollPositionsRef.current.set(trackedTabIdRef.current, scroller.scrollTop);
+    };
+
+    root.addEventListener('scroll', handleScroll, { capture: true, passive: true });
+    return () => root.removeEventListener('scroll', handleScroll, { capture: true as const });
+  }, []);
+
+  // ISS-112：tab 切换时恢复目标 tab 的滚动位置。
+  // 时序要点：
+  //   1. render 阶段（上方 if 分支）已把 trackedTabIdRef 更新为新 activeTabId 并把
+  //      suppressScrollSaveRef 设为 true——这一步早于任何 useEffect，确保子组件
+  //      [source] / [filePath] effect 中 setValue 触发的 scroll-to-0 事件不会污染缓存。
+  //   2. 本 effect deps=[activeTabId]，在子组件 effect 之后跑（React 保证子 effect
+  //      先于父 effect），此时编辑器已对新内容执行 setValue / 重建，scrollTop 已归零。
+  //   3. 滚动容器可能尚未就绪（编辑器从欢迎页切回时是重新挂载，lazy chunk 需要几帧
+  //      加载），故用 rAF 重试直到 scrollTop 生效或超出 SCROLL_RESTORE_MAX_ATTEMPTS。
+  useEffect(() => {
+    const targetTop = scrollPositionsRef.current.get(activeTabId) ?? 0;
+
+    // 无缓存（首次打开该 tab）或目标本就是顶部 → 无需恢复，直接放行 scroll 监听。
+    if (targetTop === 0) {
+      suppressScrollSaveRef.current = false;
+      return;
+    }
+
+    let cancelled = false;
+    let rafId = 0;
+    let attempts = 0;
+
+    const tryRestore = () => {
+      if (cancelled) return;
+      const root = mainContentRef.current;
+      if (!root) {
+        if (++attempts < SCROLL_RESTORE_MAX_ATTEMPTS) {
+          rafId = window.requestAnimationFrame(tryRestore);
+        } else {
+          suppressScrollSaveRef.current = false;
+        }
+        return;
+      }
+      const scroller = findEditorScroller(root);
+      if (!scroller) {
+        // 编辑器尚未挂载（lazy chunk 加载中 / 欢迎页占位）。重试。
+        if (++attempts < SCROLL_RESTORE_MAX_ATTEMPTS) {
+          rafId = window.requestAnimationFrame(tryRestore);
+        } else {
+          suppressScrollSaveRef.current = false;
+        }
+        return;
+      }
+      scroller.scrollTop = targetTop;
+      // 检查是否生效。内容尚未渲染到足够 scrollHeight 时 scrollTop 会被钳制在
+      // maxScroll 以下，需重试直到内容渲染完成。
+      if (Math.abs(scroller.scrollTop - targetTop) <= SCROLL_RESTORE_TOLERANCE_PX) {
+        suppressScrollSaveRef.current = false;
+        return;
+      }
+      if (++attempts >= SCROLL_RESTORE_MAX_ATTEMPTS) {
+        suppressScrollSaveRef.current = false;
+        return;
+      }
+      rafId = window.requestAnimationFrame(tryRestore);
+    };
+
+    rafId = window.requestAnimationFrame(tryRestore);
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(rafId);
+      // 注意：此处不释放 suppressScrollSaveRef。若 tab 快速连切（A→B→C），A 的
+      // effect cleanup 取消 A 的 rAF 后，render 阶段已把 suppress 设为 true（B 的
+      // render 先于本 cleanup）。若 cleanup 释放了 suppress，A→B 之间的 setValue
+      // scroll 事件可能在 B 的 effect body 跑之前被监听器捕获。保持 suppress=true
+      // 直到新 effect body 覆盖它更安全。组件卸载时监听器也一并拆除，suppress
+      // 残留无副作用。
+    };
+  }, [activeTabId]);
 
   useEffect(() => {
     /* ISS-180 闭合：SettingsPage 外壳已静态导入。挂载时仅预热 7 个非默认
