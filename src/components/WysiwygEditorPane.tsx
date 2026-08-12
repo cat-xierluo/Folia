@@ -921,6 +921,58 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
     host.addEventListener('drop', dropHandler);
     host.addEventListener('copy', copyHandler);
 
+    // #113：双击选词失效修复。Vditor IR 的 click handler 在每次 click 时通过
+    // expandMarker → setSelectionFocus(range) 把 selection 重置为 click 时刻
+    // 的 collapsed 光标，浏览器原生「dblclick 选词」被覆盖。后果：用户视觉上
+    // 看到词被选中，JS 选区却为空；按 Backspace 时 Vditor 把 BS 当作光标前向
+    // 删除（且因 cursor 落在 </p> 末尾，第一次 BS 完全没有可见效果），造成
+    // 「选词后第一次删除无反应，第二次才生效」的体感。
+    //
+    // 在 host 上挂一个 capture-phase dblclick 监听：用 caretRangeFromPoint
+    // 反推 click 时刻所在的 text node + 字符偏移，在该 text node 上人工算
+    // 词边界（中文按 \S / \s 切）并把 selection 设到「词首到词尾」。这样
+    // 后续 Backspace 走的就是有 selection 的删除路径。注意：
+    // 1) target 可能是 <pre> / <p> 等 element（target.firstChild 不是 text
+    //    node），不能依赖 target.nodeType === 3；改用 caretRangeFromPoint 的
+    //    startContainer 作为 text node。
+    // 2) 不调 preventDefault——浏览器默认 dblclick 选词是有效的，prevent
+    //    反而会让 BS 走不到「删除选区」分支。
+    const dblClickWordSelect = (event: MouseEvent) => {
+      const irEl = editorRef.current?.vditor.ir?.element;
+      if (!irEl) return;
+      const target = event.target as Node | null;
+      if (!target || !irEl.contains(target)) return;
+
+      const doc = (irEl.ownerDocument ?? document);
+      const caretRange = (doc as Document & { caretRangeFromPoint?: (x: number, y: number) => Range | null })
+        .caretRangeFromPoint?.(event.clientX, event.clientY);
+      if (!caretRange) return;
+      const textNode = caretRange.startContainer;
+      if (!textNode || textNode.nodeType !== 3) return;
+      // 仅当 caret 落在 IR 子树内的 text node
+      if (!irEl.contains(textNode)) return;
+
+      const text = (textNode as Text).data ?? '';
+      const offset = caretRange.startOffset;
+      // 词边界：非空白 / 空白切换点
+      const isWordChar = (ch: string) => /\S/.test(ch);
+      let start = offset;
+      while (start > 0 && isWordChar(text[start - 1])) start--;
+      let end = offset;
+      while (end < text.length && isWordChar(text[end])) end++;
+      // 仅当确实有可见词（避免在空白处误建空 selection）
+      if (start === end) return;
+
+      const newRange = doc.createRange();
+      newRange.setStart(textNode, start);
+      newRange.setEnd(textNode, end);
+      const sel = (doc.defaultView ?? window).getSelection();
+      if (!sel) return;
+      sel.removeAllRanges();
+      sel.addRange(newRange);
+    };
+    host.addEventListener('dblclick', dblClickWordSelect, true);
+
     void Promise.all([
       import('vditor/dist/index.css'),
       import('vditor'),
@@ -1206,6 +1258,7 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
       host.removeEventListener('paste', pasteHandler);
       host.removeEventListener('drop', dropHandler);
       host.removeEventListener('copy', copyHandler);
+      host.removeEventListener('dblclick', dblClickWordSelect, true);
       if (collapseTimerRef.current !== null) {
         window.clearTimeout(collapseTimerRef.current);
         collapseTimerRef.current = null;
