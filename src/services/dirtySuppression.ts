@@ -45,29 +45,24 @@ export function isSuppressed(): boolean {
 }
 
 /**
- * 在 callback 执行前后置位抑制窗口。
+ * 在 callback 执行前置位抑制窗口，让其自然按时间过期。
  *
  * 时序：
- *   1. 立即置位 suppressedUntil = now + windowMs（让 callback 内部
- *      setValue 同步派发的 input/markdownUpdated 已被窗口覆盖）。
+ *   1. 立即置位 suppressedUntil = now + windowMs。
  *   2. callback 同步执行（setValue 调用、Vditor render 等）。
- *   3. queueMicrotask 把「窗口结束时间」顺延一帧——某些实现里 setValue
- *      在 microtask 才派发回调（Vditor preview 渲染），不延一帧会让
- *      窗口太短覆盖不到后续事件。
+ *   3. 窗口按 suppressedUntil 时间戳自然过期——**不在 finally 里提前清旗标**。
+ *      关键：Vditor `markdownUpdated` 有 200ms 防抖，其派发的 input 回调
+ *      在 setValue 后约 200ms 才到达；窗口必须持续到那之后（350ms > 200ms）
+ *      才能命中。早期实现用 queueMicrotask 在 finally 立刻清旗标，microtask
+ *      远早于 200ms 跑，导致窗口实际只覆盖同步回调，200ms 后的防抖回调
+ *      到达时 isSuppressed() 已为 false——与设计意图不符。
  *
  * 返回 callback 的返回值，原样透传。
  */
 export function withSuppression<T>(callback: () => T): T {
-  const before = suppressedUntil;
   const now = window.performance.now();
   suppressedUntil = Math.max(suppressedUntil, now) + currentWindowMs;
-  try {
-    return callback();
-  } finally {
-    queueMicrotask(() => {
-      suppressedUntil = before;
-    });
-  }
+  return callback();
 }
 
 /**

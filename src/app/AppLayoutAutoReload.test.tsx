@@ -463,7 +463,12 @@ describe('AppLayout ISS-189 dirty 抑制窗口集成', () => {
     __resetFileWatchServiceForTests();
   });
 
-  it('自动 reload 完成后 — 重新读盘内容被写入，但走抑制窗口不会因 input 回调误触发 dirty', async () => {
+  it('自动 reload 完成后 — 重新读盘内容被写入当前 tab，dirty 保持 false', async () => {
+    // 注：本测试不验证 dirtySuppression 抑制路径本身——WysiwygEditorPane 被 mock
+    // 为 null（见 vi.mock），[source] effect 不执行 setValue，onChange 路径不触发。
+    // 抑制窗口的正确性由 dirtySuppression.test.ts（含 200ms 防抖覆盖测试）+
+    // WysiwygEditorPane 的 setValue 包 applyWithSuppression 保证。本测试只验证
+    // AppLayout 编排层：自动 reload 写入磁盘内容、dirty 由 openPath 返回值决定。
     activateTab('/Users/demo/rel.md', false);
 
     await act(async () => {
@@ -484,12 +489,50 @@ describe('AppLayout ISS-189 dirty 抑制窗口集成', () => {
 
     // openPath 被调
     expect(fileServiceMock.openPath).toHaveBeenCalledWith('/Users/demo/rel.md', expect.any(String));
-    // 此时 updateActiveFile 会被调（走 dirtySuppression 抑制窗口后续由 [source] 路径走 setValue）
     expect(sessionState.updateCount).toBeGreaterThanOrEqual(1);
 
-    // tab 应已写入新磁盘内容，且 dirty 仍为 false（openPath 返回 dirty=false）
+    // tab 应已写入新磁盘内容，且 dirty 为 false（openPath 返回 dirty=false）
     const tab = sessionState.tabs.find((t) => t.id === 'tab-1');
     expect(tab?.file.content).toBe('新磁盘内容');
     expect(tab?.file.dirty).toBe(false);
+  });
+
+  it('MAJOR-2 回归：reload 的 await 期间切走 tab → 不把内容写到新 tab', async () => {
+    activateTab('/Users/demo/a.md', false);
+
+    await act(async () => {
+      root.render(<AppLayout />);
+      await flushPromises();
+    });
+    await act(async () => {
+      await flushPromises();
+    });
+
+    // 让 openPath 异步挂起，便于在 await 期间切 tab
+    let resolveOpen: (v: { path: string; name: string; content: string; dirty: boolean; lastSavedContent: string; fileType: string }) => void = () => {};
+    fileServiceMock.openPath.mockImplementationOnce(() => new Promise((r) => { resolveOpen = r; }));
+
+    const handler = getWatchChangedHandler();
+    await act(async () => {
+      handler({ payload: { path: '/Users/demo/a.md', kind: 'modify' } });
+      vi.advanceTimersByTime(160);
+      await flushPromises();
+    });
+
+    // reload 已发起但 openPath 挂起中。切到另一个 tab（新 activeTabId）。
+    activateTab('/Users/demo/b.md', false);
+    await act(async () => {
+      await flushPromises();
+    });
+
+    // 让挂起的 openPath resolve
+    await act(async () => {
+      resolveOpen({ path: '/Users/demo/a.md', name: 'a.md', content: 'A 新内容', dirty: false, lastSavedContent: 'A 新内容', fileType: 'markdown' });
+      await flushPromises();
+    });
+
+    // MAJOR-2：切走后 reload 应被丢弃——b.md 不应被写成 a.md 的内容
+    const tabB = sessionState.tabs.find((t) => t.file.path === '/Users/demo/b.md');
+    expect(tabB?.file.content).not.toBe('A 新内容');
   });
 });

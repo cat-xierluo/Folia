@@ -240,6 +240,12 @@ export function AppLayout() {
     updateActiveTabMeta,
     tearOffViaDrag,
   } = session;
+  // ISS-188 MAJOR-2：跟踪最新 activeTabId，让异步 reload（await openPath）后
+  // 能校验「期间用户是否切走了 tab」，避免把 tab-A 的磁盘内容写到 tab-B。
+  const activeTabIdRef = useRef(activeTabId);
+  useEffect(() => {
+    activeTabIdRef.current = activeTabId;
+  }, [activeTabId]);
   // Issue #68：保存确认对话框挂载状态。resolve 由 confirmCloseDirty 触发——
   // 它返回一个 Promise，把 resolve 回调暂存到 state，用户点按钮时回调兑现。
   const [pendingClose, setPendingClose] = useState<{
@@ -974,17 +980,18 @@ export function AppLayout() {
     const performReload = async () => {
       if (pendingReloadRef.current) return;
       pendingReloadRef.current = true;
+      // MAJOR-2：捕获启动 reload 时的 tabId，await openPath 后校验期间是否切走。
+      const targetTabId = session.activeTabId;
       try {
-        // 通过闭包外的 session / settings 重新读取最新值；这里只用 activeTab 自身
-        // 的 path 作为标识（event.path 已验证匹配）。读盘通过 fileService.openPath。
         const { openPath } = await import('../services/fileService');
         const targetPath = (() => {
-          // 取最新 active tab 的 path。闭包值可能 stale；用 ref 读取。
-          const cur = session.tabs.find((t) => t.id === session.activeTabId);
+          const cur = session.tabs.find((t) => t.id === targetTabId);
           return cur?.file.path ?? null;
         })();
         if (!targetPath) return;
         const opened = await openPath(targetPath, settings.defaultEncoding);
+        // await 期间用户切走了 tab → 丢弃这次 reload，避免把 tab-A 内容写到 tab-B。
+        if (activeTabIdRef.current !== targetTabId) return;
         // updateActiveFile 走 reducer：dirty=false（磁盘内容与文件一致），lastSavedContent
         // 同步更新。后续 [source] effect → setValue 包在 ISS-189 抑制窗口内。
         updateActiveFile(() => opened);
@@ -1071,11 +1078,14 @@ export function AppLayout() {
   const handleExternalChangeReload = useCallback(async () => {
     // 用户主动「放弃本地并重载」—— read 盘内容覆盖当前 tab 的 content，
     // dirty 重置为 false。后续 [source] effect → setValue 走抑制窗口。
-    const cur = session.tabs.find((t) => t.id === activeTabId);
+    const targetTabId = activeTabId;
+    const cur = session.tabs.find((t) => t.id === targetTabId);
     if (!cur || !cur.file.path) return;
     try {
       const { openPath } = await import('../services/fileService');
       const opened = await openPath(cur.file.path, settings.defaultEncoding);
+      // MAJOR-2：await 期间用户切走了 tab → 丢弃，避免写错 tab。
+      if (activeTabIdRef.current !== targetTabId) return;
       updateActiveFile(() => opened);
       externalChangeBlockedRef.current = false;
       setExternalChangeBlocked(false);
