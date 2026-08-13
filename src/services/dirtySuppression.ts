@@ -14,9 +14,9 @@
 //     就不会写入 dirty=true）
 //
 // 窗口期长度 350ms > Vditor IR `markdownUpdated` 200ms 防抖，足够
-// 覆盖 Lute 异步反序列化 + render 周期。窗口以 microtask 起算（同步
-// setValue 触发的 input 回调在下一个 microtask 跑），让 setValue 本
-// 帧内的事件就已处于窗口期。
+// 覆盖 Lute 异步反序列化 + render 周期。窗口以 `performance.now()` 绝对
+// 时间戳起算，setValue 当帧 + 200ms 防抖回调都落在窗口内（自然过期，不在
+// microtask 提前清零——见 withSuppression 注释）。
 //
 // 暴露的 API：
 //   - isSuppressed(): boolean — 调用方在写入判定前查询

@@ -497,8 +497,30 @@ describe('AppLayout ISS-189 dirty 抑制窗口集成', () => {
     expect(tab?.file.dirty).toBe(false);
   });
 
-  it('MAJOR-2 回归：reload 的 await 期间切走 tab → 不把内容写到新 tab', async () => {
-    activateTab('/Users/demo/a.md', false);
+  it('MAJOR-2 回归：reload 的 await 期间切走 tab → updateActiveFile 不被调用，不写错 tab', async () => {
+    // 真正触发修复路径：tab-1(a.md) 收到 modify → performReload 启动（targetTabId=tab-1，
+    // openPath 挂起）→ switchTab 到 tab-2(b.md) 并 re-render 让 activeTabIdRef 更新为 tab-2
+    // → resolve openPath → race check（tab-2 !== tab-1）命中 → updateActiveFile 不调。
+    // 旧实现（无 race check）会让 updateActiveFile 把 a.md 内容写进 tab-2（reducer 按
+    // activeTabId 写），updateCount 增加。本测试断言 updateCount 不增加。
+    const mkTab = (id: string, path: string): Tab => ({
+      id,
+      editorMode: 'wysiwyg',
+      rightPanelMode: 'none',
+      draftPersisted: true,
+      isPlaceholder: false,
+      file: {
+        path,
+        name: path.split('/').pop() ?? 'demo.md',
+        content: `${id} 初始`,
+        dirty: false,
+        lastSavedContent: `${id} 初始`,
+        fileType: 'markdown',
+      },
+    });
+    sessionState.tabs = [mkTab('tab-1', '/Users/demo/a.md'), mkTab('tab-2', '/Users/demo/b.md')];
+    sessionState.activeTabId = 'tab-1';
+    sessionState.updateCount = 0;
 
     await act(async () => {
       root.render(<AppLayout />);
@@ -508,31 +530,45 @@ describe('AppLayout ISS-189 dirty 抑制窗口集成', () => {
       await flushPromises();
     });
 
-    // 让 openPath 异步挂起，便于在 await 期间切 tab
+    // openPath 异步挂起，便于在 await 期间切 tab
     let resolveOpen: (v: { path: string; name: string; content: string; dirty: boolean; lastSavedContent: string; fileType: string }) => void = () => {};
     fileServiceMock.openPath.mockImplementationOnce(() => new Promise((r) => { resolveOpen = r; }));
 
     const handler = getWatchChangedHandler();
     await act(async () => {
       handler({ payload: { path: '/Users/demo/a.md', kind: 'modify' } });
-      vi.advanceTimersByTime(160);
+      vi.advanceTimersByTime(160); // 越过 150ms debounce，performReload 启动
       await flushPromises();
     });
 
-    // reload 已发起但 openPath 挂起中。切到另一个 tab（新 activeTabId）。
-    activateTab('/Users/demo/b.md', false);
+    const updateCountBeforeResolve = sessionState.updateCount;
+
+    // reload 已发起、openPath 挂起中。切到 tab-2 并 re-render 让 activeTabIdRef 更新。
+    sessionState.activeTabId = 'tab-2';
+    await act(async () => {
+      root.render(<AppLayout />);
+      await flushPromises();
+    });
     await act(async () => {
       await flushPromises();
     });
 
-    // 让挂起的 openPath resolve
+    // 让挂起的 openPath resolve —— 此时 activeTabIdRef.current 应为 tab-2（≠ targetTabId tab-1）
     await act(async () => {
       resolveOpen({ path: '/Users/demo/a.md', name: 'a.md', content: 'A 新内容', dirty: false, lastSavedContent: 'A 新内容', fileType: 'markdown' });
       await flushPromises();
     });
+    await act(async () => {
+      await flushPromises();
+    });
 
-    // MAJOR-2：切走后 reload 应被丢弃——b.md 不应被写成 a.md 的内容
-    const tabB = sessionState.tabs.find((t) => t.file.path === '/Users/demo/b.md');
-    expect(tabB?.file.content).not.toBe('A 新内容');
+    // MAJOR-2：race check 命中 → updateActiveFile 不被调用 → updateCount 不增加
+    expect(sessionState.updateCount).toBe(updateCountBeforeResolve);
+    // tab-2 内容未被 a.md 覆盖
+    const tab2 = sessionState.tabs.find((t) => t.id === 'tab-2');
+    expect(tab2?.file.content).toBe('tab-2 初始');
+    // tab-1 也未被写入（reload 被丢弃，不会写回 tab-1）
+    const tab1 = sessionState.tabs.find((t) => t.id === 'tab-1');
+    expect(tab1?.file.content).toBe('tab-1 初始');
   });
 });
