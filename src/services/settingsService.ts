@@ -31,10 +31,19 @@ import {
   activateBetaLicenseCode,
   getLicenseCustomExportPresetLimit,
   getLicenseCustomHtmlExportPresetLimit,
+  getLicenseCustomThemePresetLimit,
   normalizeLicenseState,
   type LicenseActivationResult,
   type LicenseState,
 } from './licenseService';
+import {
+  DEFAULT_THEME_ID,
+  hasThemePreset,
+  isThemePresetId,
+  listThemePresets,
+  normalizeCustomThemePresets,
+  type CustomThemePreset,
+} from './themePresets';
 
 const STORAGE_KEY = 'folia-settings';
 const LEGACY_KEY = 'folia-export-settings';
@@ -48,6 +57,9 @@ export const CUSTOM_EXPORT_PRESET_LIMIT_MESSAGE =
 export const STANDARD_CUSTOM_HTML_EXPORT_PRESET_LIMIT = STANDARD_PRESET_SLOT_LIMIT;
 export const CUSTOM_HTML_EXPORT_PRESET_LIMIT_MESSAGE =
   '当前 HTML 自定义槽位已用完。可在授权页面输入内测码获得更多自定义槽位。';
+export const STANDARD_CUSTOM_THEME_PRESET_LIMIT = STANDARD_PRESET_SLOT_LIMIT;
+export const CUSTOM_THEME_PRESET_LIMIT_MESSAGE =
+  '当前主题自定义槽位已用完。可在授权页面输入内测码获得更多自定义槽位。';
 
 export class CustomExportPresetLimitError extends Error {
   constructor() {
@@ -60,6 +72,13 @@ export class CustomHtmlExportPresetLimitError extends Error {
   constructor() {
     super(CUSTOM_HTML_EXPORT_PRESET_LIMIT_MESSAGE);
     this.name = 'CustomHtmlExportPresetLimitError';
+  }
+}
+
+export class CustomThemePresetLimitError extends Error {
+  constructor() {
+    super(CUSTOM_THEME_PRESET_LIMIT_MESSAGE);
+    this.name = 'CustomThemePresetLimitError';
   }
 }
 
@@ -202,6 +221,12 @@ export interface AppSettings {
   tocAlwaysPinned: boolean;
   // 外观
   theme: 'light' | 'dark';
+  /** ISS-191：当前主题 id（'builtin:light' / 'builtin:sepia' / ... / 'custom:<slug>'）。 */
+  themeId: string;
+  /** ISS-191：用户导入的自定义主题（CSS 字符串，导入时经 sanitizeThemeCss 清洗）。 */
+  customThemePresets: CustomThemePreset[];
+  /** ISS-191：已停用的自定义主题 id（内置主题不允许停用）。 */
+  disabledThemePresetIds: string[];
   zoomLevel: number;
 }
 
@@ -239,6 +264,9 @@ const defaults: AppSettings = {
   fontDefaultsVersion: FONT_DEFAULTS_VERSION,
   tocAlwaysPinned: false,
   theme: 'light',
+  themeId: DEFAULT_THEME_ID,
+  customThemePresets: [],
+  disabledThemePresetIds: [],
   zoomLevel: 100,
 };
 
@@ -492,6 +520,46 @@ function normalizeDisabledHtmlExportPresetIds(
   return disabled.filter((id) => id !== DEFAULT_HTML_EXPORT_PRESET_ID);
 }
 
+function normalizeDisabledThemePresetIds(
+  value: unknown,
+  customThemePresets: CustomThemePreset[],
+): string[] {
+  if (!Array.isArray(value)) return [];
+
+  const customIds = new Set<string>(customThemePresets.map((preset) => preset.id));
+  const seen = new Set<string>();
+  const disabled = value.flatMap((id) => {
+    if (typeof id !== 'string' || !customIds.has(id) || seen.has(id)) return [];
+    seen.add(id);
+    return [id];
+  });
+
+  return disabled;
+}
+
+function firstEnabledThemeId(customThemePresets: CustomThemePreset[]): string {
+  return listThemePresets({ customThemePresets }).find((preset) => isThemePresetId(preset.id))
+    ? listThemePresets({ customThemePresets })[0]?.id ?? DEFAULT_THEME_ID
+    : DEFAULT_THEME_ID;
+}
+
+function normalizeThemeId(
+  id: string | undefined,
+  customThemePresets: CustomThemePreset[],
+  disabledThemePresetIds: readonly string[],
+): string {
+  if (
+    typeof id === 'string'
+    && isThemePresetId(id)
+    && hasThemePreset(id, { customThemePresets, disabledThemePresetIds })
+    && !disabledThemePresetIds.includes(id)
+  ) {
+    return id;
+  }
+
+  return firstEnabledThemeId(customThemePresets);
+}
+
 function firstEnabledPresetId(
   customExportPresets: CustomPresetRegistry,
   disabledExportPresetIds: readonly PresetId[],
@@ -639,6 +707,12 @@ function migrateLegacySettings(stored: Partial<AppSettings>): Partial<AppSetting
     }
   }
 
+  // ISS-191：旧 theme: 'light'|'dark' → themeId: 'builtin:light'|'builtin:dark'。
+  // 只在缺省 themeId 时迁移一次；后续 themeId 是权威字段。
+  if (typeof next.themeId !== 'string' || !next.themeId) {
+    next.themeId = next.theme === 'dark' ? 'builtin:dark' : DEFAULT_THEME_ID;
+  }
+
   return next;
 }
 
@@ -669,6 +743,12 @@ export function getSettings(): AppSettings {
       customHtmlExportPresets,
       disabledHtmlExportPresetIds,
     );
+    const customThemePresets = normalizeCustomThemePresets(stored.customThemePresets);
+    const disabledThemePresetIds = normalizeDisabledThemePresetIds(
+      stored.disabledThemePresetIds,
+      customThemePresets,
+    );
+    const themeId = normalizeThemeId(stored.themeId, customThemePresets, disabledThemePresetIds);
     const license = normalizeLicenseState(stored.license);
 
     return {
@@ -681,6 +761,9 @@ export function getSettings(): AppSettings {
       htmlExportPresetId,
       customHtmlExportPresets,
       disabledHtmlExportPresetIds,
+      customThemePresets,
+      disabledThemePresetIds,
+      themeId,
       license,
       wechatCustomCss: normalizeWechatCustomCss(stored.wechatCustomCss),
       previewFontFamily: normalizePreviewFontFamily(stored.previewFontFamily),
@@ -713,6 +796,14 @@ export function updateSettings(patch: Partial<AppSettings>): AppSettings {
     customHtmlExportPresets,
   );
   const requestedHtmlExportPresetId = patch.htmlExportPresetId ?? current.htmlExportPresetId;
+  const customThemePresets = normalizeCustomThemePresets(
+    patch.customThemePresets ?? current.customThemePresets,
+  );
+  const disabledThemePresetIds = normalizeDisabledThemePresetIds(
+    patch.disabledThemePresetIds ?? current.disabledThemePresetIds,
+    customThemePresets,
+  );
+  const requestedThemeId = patch.themeId ?? current.themeId;
   const license = normalizeLicenseState(patch.license ?? current.license);
   const merged = {
     ...current,
@@ -749,6 +840,9 @@ export function updateSettings(patch: Partial<AppSettings>): AppSettings {
       customHtmlExportPresets,
       disabledHtmlExportPresetIds,
     ),
+    customThemePresets,
+    disabledThemePresetIds,
+    themeId: normalizeThemeId(requestedThemeId, customThemePresets, disabledThemePresetIds),
     license,
     tocAlwaysPinned: (patch.tocAlwaysPinned ?? current.tocAlwaysPinned) === true,
   };
@@ -977,6 +1071,68 @@ export function removeHtmlExportPreset(id: HtmlExportPresetId): AppSettings {
   }
 
   return getSettings();
+}
+
+export function getCustomThemePresetCount(settings: AppSettings = getSettings()): number {
+  return settings.customThemePresets.length;
+}
+
+export function getCustomThemePresetLimit(settings: AppSettings = getSettings()): number {
+  return getLicenseCustomThemePresetLimit(settings.license);
+}
+
+export function canAddCustomThemePreset(
+  id: string,
+  settings: AppSettings = getSettings(),
+): boolean {
+  const custom = settings.customThemePresets.some((preset) => preset.id === id);
+  if (custom) return true;
+  return getCustomThemePresetCount(settings) < getCustomThemePresetLimit(settings);
+}
+
+export function addCustomThemePreset(preset: CustomThemePreset): AppSettings {
+  const settings = getSettings();
+  if (!canAddCustomThemePreset(preset.id, settings)) {
+    throw new CustomThemePresetLimitError();
+  }
+
+  const nextCustomThemePresets = settings.customThemePresets.some((p) => p.id === preset.id)
+    ? settings.customThemePresets.map((p) => (p.id === preset.id ? preset : p))
+    : [...settings.customThemePresets, preset];
+
+  return updateSettings({
+    customThemePresets: nextCustomThemePresets,
+    disabledThemePresetIds: settings.disabledThemePresetIds.filter((disabledId) => disabledId !== preset.id),
+    themeId: preset.id,
+  });
+}
+
+export function removeCustomThemePreset(id: string): AppSettings {
+  const settings = getSettings();
+  const next = settings.customThemePresets.filter((preset) => preset.id !== id);
+  return updateSettings({
+    customThemePresets: next,
+    disabledThemePresetIds: settings.disabledThemePresetIds.filter((disabledId) => disabledId !== id),
+    themeId: settings.themeId === id ? DEFAULT_THEME_ID : settings.themeId,
+  });
+}
+
+export function setCustomThemePresetEnabled(id: string, enabled: boolean): AppSettings {
+  const settings = getSettings();
+  const exists = settings.customThemePresets.some((preset) => preset.id === id);
+  if (!exists) return settings;
+
+  const disabledSet = new Set(settings.disabledThemePresetIds);
+  if (enabled) {
+    disabledSet.delete(id);
+  } else {
+    disabledSet.add(id);
+  }
+
+  return updateSettings({
+    disabledThemePresetIds: Array.from(disabledSet),
+    themeId: settings.themeId,
+  });
 }
 
 export function activateLicenseCode(code: string): LicenseActivationResult {

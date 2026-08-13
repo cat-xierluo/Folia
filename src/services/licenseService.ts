@@ -9,6 +9,7 @@ export interface LicenseState {
   expiresAt: string | null;
   customExportPresetLimit: number;
   customHtmlExportPresetLimit: number;
+  customThemePresetLimit: number;
 }
 
 export type LicenseActivationResult =
@@ -25,12 +26,14 @@ export const DEFAULT_LICENSE_STATE: LicenseState = {
   expiresAt: null,
   customExportPresetLimit: STANDARD_PRESET_SLOT_LIMIT,
   customHtmlExportPresetLimit: STANDARD_PRESET_SLOT_LIMIT,
+  customThemePresetLimit: STANDARD_PRESET_SLOT_LIMIT,
 };
 
-const LOCAL_BETA_CODES: Record<string, Pick<LicenseState, 'customExportPresetLimit' | 'customHtmlExportPresetLimit' | 'expiresAt'>> = {
+const LOCAL_BETA_CODES: Record<string, Pick<LicenseState, 'customExportPresetLimit' | 'customHtmlExportPresetLimit' | 'customThemePresetLimit' | 'expiresAt'>> = {
   YWXLAW: {
     customExportPresetLimit: 8,
     customHtmlExportPresetLimit: 8,
+    customThemePresetLimit: 8,
     expiresAt: null,
   },
 };
@@ -64,6 +67,7 @@ export function normalizeLicenseState(value: unknown): LicenseState {
     expiresAt: beta.expiresAt,
     customExportPresetLimit: beta.customExportPresetLimit,
     customHtmlExportPresetLimit: beta.customHtmlExportPresetLimit,
+    customThemePresetLimit: beta.customThemePresetLimit,
   };
 }
 
@@ -87,6 +91,7 @@ export function activateBetaLicenseCode(rawCode: string, now: Date = new Date())
     expiresAt: beta.expiresAt,
     customExportPresetLimit: beta.customExportPresetLimit,
     customHtmlExportPresetLimit: beta.customHtmlExportPresetLimit,
+    customThemePresetLimit: beta.customThemePresetLimit,
   };
 
   return {
@@ -102,4 +107,8 @@ export function getLicenseCustomExportPresetLimit(license: LicenseState): number
 
 export function getLicenseCustomHtmlExportPresetLimit(license: LicenseState): number {
   return normalizeLicenseState(license).customHtmlExportPresetLimit;
+}
+
+export function getLicenseCustomThemePresetLimit(license: LicenseState): number {
+  return normalizeLicenseState(license).customThemePresetLimit;
 }

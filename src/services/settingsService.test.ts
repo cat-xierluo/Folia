@@ -3,21 +3,27 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   addCustomExportPreset,
   addCustomHtmlExportPreset,
+  addCustomThemePreset,
   activateLicenseCode,
   clearLicense,
   canAddCustomExportPreset,
   canAddCustomHtmlExportPreset,
+  canAddCustomThemePreset,
   CUSTOM_EXPORT_PRESET_LIMIT_MESSAGE,
   CUSTOM_HTML_EXPORT_PRESET_LIMIT_MESSAGE,
-  getExportPreset,
-  getExportPresetConfig,
+  CUSTOM_THEME_PRESET_LIMIT_MESSAGE,
   getCustomExportPresetLimit,
   getCustomHtmlExportPresetLimit,
+  getCustomThemePresetCount,
+  getCustomThemePresetLimit,
+  getExportPreset,
+  getExportPresetConfig,
   getHtmlExportPreset,
   getHtmlExportPresetConfig,
   getSettings,
   listEnabledExportPresets,
   listEnabledHtmlExportPresets,
+  removeCustomThemePreset,
   removeExportPreset,
   removeCustomExportPreset,
   removeCustomHtmlExportPreset,
@@ -25,6 +31,7 @@ import {
   resolvePreviewHeadingFontFamily,
   resolvePreviewChineseFontFamily,
   resolvePreviewLatinFontFamily,
+  setCustomThemePresetEnabled,
   setExportPreset,
   setExportPresetEnabled,
   setHtmlExportPreset,
@@ -32,6 +39,7 @@ import {
   updateSettings,
 } from './settingsService';
 import type { CustomHtmlExportPresetId, HtmlExportPreset } from './htmlExportPresets';
+import type { CustomThemePreset } from './themePresets';
 import { importPresetFromJson, listPresets, type CustomPresetId, type PresetConfig } from './word';
 
 function customPreset(id: string, name: string) {
@@ -58,6 +66,15 @@ function customHtmlPreset(id: string, name: string): { id: CustomHtmlExportPrese
       kind: 'custom',
       base: 'html-wechat-style',
     },
+  };
+}
+
+function customThemePreset(id: string, name: string): CustomThemePreset {
+  return {
+    id: `custom:${id}` as CustomThemePreset['id'],
+    name,
+    css: `.preview-content { background: rgb(1, 2, 3); }`,
+    createdAt: '2026-08-14T00:00:00.000Z',
   };
 }
 
@@ -571,5 +588,131 @@ describe('settingsService', () => {
     expect(getSettings().customExportPresets['custom:team-brief']).toBeUndefined();
     expect(getSettings().disabledExportPresetIds).toContain('report');
     expect(listEnabledExportPresets().map((preset) => preset.id)).not.toContain('report');
+  });
+
+  describe('themes (ISS-191)', () => {
+    it('defaults themeId to builtin:light with empty custom theme presets', () => {
+      const settings = getSettings();
+      expect(settings.themeId).toBe('builtin:light');
+      expect(settings.customThemePresets).toEqual([]);
+      expect(settings.disabledThemePresetIds).toEqual([]);
+      expect(getCustomThemePresetCount()).toBe(0);
+      expect(getCustomThemePresetLimit()).toBe(2);
+    });
+
+    it('migrates legacy theme:dark to themeId:builtin:dark', () => {
+      localStorage.setItem('folia-settings', JSON.stringify({ theme: 'dark' }));
+      expect(getSettings().themeId).toBe('builtin:dark');
+      expect(getSettings().theme).toBe('dark');
+    });
+
+    it('migrates missing legacy theme to builtin:light', () => {
+      localStorage.setItem('folia-settings', JSON.stringify({}));
+      expect(getSettings().themeId).toBe('builtin:light');
+    });
+
+    it('keeps themeId as authoritative when both legacy and new fields coexist', () => {
+      localStorage.setItem('folia-settings', JSON.stringify({
+        theme: 'dark',
+        themeId: 'builtin:sepia',
+      }));
+      expect(getSettings().themeId).toBe('builtin:sepia');
+    });
+
+    it('falls back to builtin:light when themeId points at a missing custom theme', () => {
+      localStorage.setItem('folia-settings', JSON.stringify({
+        themeId: 'custom:gone',
+      }));
+      expect(getSettings().themeId).toBe('builtin:light');
+    });
+
+    it('limits standard users to two custom theme preset slots and throws on overflow', () => {
+      const first = customThemePreset('team-a', '主题 A');
+      const second = customThemePreset('team-b', '主题 B');
+      const third = customThemePreset('team-c', '主题 C');
+
+      addCustomThemePreset(first);
+      addCustomThemePreset(second);
+      expect(getCustomThemePresetCount()).toBe(2);
+      expect(canAddCustomThemePreset(third.id)).toBe(false);
+
+      expect(() => addCustomThemePreset(third)).toThrow(CUSTOM_THEME_PRESET_LIMIT_MESSAGE);
+      expect(getSettings().themeId).toBe(second.id);
+    });
+
+    it('lets the same id overwrite the existing entry without consuming a new slot', () => {
+      const first = customThemePreset('team-a', '主题 A');
+      const second = customThemePreset('team-a', '主题 A 修订');
+
+      addCustomThemePreset(first);
+      expect(() => addCustomThemePreset(second)).not.toThrow();
+      expect(getCustomThemePresetCount()).toBe(1);
+      expect(getSettings().customThemePresets[0].name).toBe('主题 A 修订');
+    });
+
+    it('activates beta license code and raises the custom theme slot limit to 8', () => {
+      const first = customThemePreset('team-a', '主题 A');
+      const second = customThemePreset('team-b', '主题 B');
+      const third = customThemePreset('team-c', '主题 C');
+      addCustomThemePreset(first);
+      addCustomThemePreset(second);
+      expect(() => addCustomThemePreset(third)).toThrow(CUSTOM_THEME_PRESET_LIMIT_MESSAGE);
+
+      const result = activateLicenseCode('ywxlaw');
+      expect(result.ok).toBe(true);
+      expect(getCustomThemePresetLimit()).toBe(8);
+      expect(canAddCustomThemePreset(third.id)).toBe(true);
+
+      addCustomThemePreset(third);
+      expect(getSettings().customThemePresets.find((p) => p.id === third.id)).toBeDefined();
+    });
+
+    it('removes a custom theme and falls back to builtin:light when it was active', () => {
+      const preset = customThemePreset('team-a', '主题 A');
+      addCustomThemePreset(preset);
+      expect(getSettings().themeId).toBe(preset.id);
+
+      removeCustomThemePreset(preset.id);
+      expect(getSettings().themeId).toBe('builtin:light');
+      expect(getSettings().customThemePresets).toEqual([]);
+    });
+
+    it('preserves the active theme when removing a different custom theme', () => {
+      const a = customThemePreset('team-a', '主题 A');
+      const b = customThemePreset('team-b', '主题 B');
+      addCustomThemePreset(a);
+      addCustomThemePreset(b);
+      removeCustomThemePreset(a.id);
+      expect(getSettings().themeId).toBe(b.id);
+    });
+
+    it('disables and re-enables custom themes via the enabled flag', () => {
+      const preset = customThemePreset('team-a', '主题 A');
+      addCustomThemePreset(preset);
+      setCustomThemePresetEnabled(preset.id, false);
+      expect(getSettings().disabledThemePresetIds).toContain(preset.id);
+      expect(getSettings().themeId).toBe('builtin:light');
+
+      setCustomThemePresetEnabled(preset.id, true);
+      expect(getSettings().disabledThemePresetIds).not.toContain(preset.id);
+    });
+
+    it('normalizes non-array custom theme presets and drops invalid entries', () => {
+      localStorage.setItem('folia-settings', JSON.stringify({
+        themeId: 'custom:persisted',
+        customThemePresets: [
+          { id: 'custom:persisted', name: '已存主题', css: '.a{}', createdAt: '2026-08-14T00:00:00Z' },
+          { id: 'builtin:light', name: 'x', css: 'y', createdAt: 'z' },
+          { id: 'custom:bad', css: 'no name', createdAt: '2026-08-14T00:00:00Z' },
+          'oops',
+          null,
+        ],
+      }));
+
+      const settings = getSettings();
+      expect(settings.customThemePresets).toHaveLength(1);
+      expect(settings.customThemePresets[0].id).toBe('custom:persisted');
+      expect(settings.themeId).toBe('custom:persisted');
+    });
   });
 });

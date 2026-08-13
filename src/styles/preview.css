@@ -148,22 +148,23 @@
 .preview-content blockquote {
   margin: 12px 0;
   padding: 8px 0 8px 16px;
-  border-left: 2px solid var(--accent);
+  border-left: 2px solid var(--blockquote-border);
+  background: var(--blockquote-bg);
   color: var(--muted);
   font-style: italic;
 }
 
 .preview-content code {
-  background: var(--border);
+  background: var(--code-bg);
   padding: 1px 5px;
   border-radius: 2px;
   font-family: var(--font-mono);
   font-size: 12px;
-  color: var(--fg);
+  color: var(--code-block-text);
 }
 
 .preview-content pre {
-  background: var(--surface);
+  background: var(--code-block-bg);
   border: 1px solid var(--border);
   padding: 16px;
   border-radius: 3px;
@@ -172,6 +173,7 @@
   font-family: var(--font-mono);
   font-size: 13px;
   line-height: 1.6;
+  color: var(--code-block-text);
 }
 
 .preview-content pre code {
@@ -218,7 +220,7 @@
 }
 
 .preview-content th {
-  background: var(--surface);
+  background: var(--table-header-bg);
   text-align: center;
   font-weight: 500;
   font-size: 12px;
@@ -227,15 +229,24 @@
 }
 
 .preview-content td[colspan] {
-  background: var(--surface);
+  background: var(--table-header-bg);
   font-weight: 500;
   color: var(--fg);
 }
 
 .preview-content a {
-  color: var(--accent);
+  color: var(--link);
   text-decoration: none;
   border-bottom: 1px solid oklch(58% 0.16 35 / 0.3);
+}
+
+.preview-content ::selection {
+  background: var(--selection-bg);
+}
+
+.preview-content mark {
+  background: var(--highlight-bg);
+  color: inherit;
 }
 
 .preview-content a:hover {
