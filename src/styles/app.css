@@ -3357,6 +3357,22 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   opacity: 0.55;
 }
 
+/* ISS-192：设为默认 Markdown 应用行 —— 左侧信息列撑满，按钮贴右。 */
+.settings-default-app-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.settings-default-app-message {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.settings-default-app-message.error {
+  color: var(--danger, #c0392b);
+}
+
 .primary-action-button {
   border-color: var(--accent);
   background: var(--accent);
