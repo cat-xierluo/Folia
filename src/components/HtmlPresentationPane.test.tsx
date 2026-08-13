@@ -107,7 +107,7 @@ describe('HtmlPresentationPane', () => {
     expect(iframeAfter?.getAttribute('allow')).toBe('fullscreen');
   });
 
-  it('全屏按钮优先调用 iframe contentWindow.requestFullscreen', async () => {
+  it('全屏按钮调用 iframe 元素的 requestFullscreen（非 contentWindow）', async () => {
     await act(async () => {
       root.render(
         <HtmlPresentationPane
@@ -119,12 +119,10 @@ describe('HtmlPresentationPane', () => {
       await flushPromises();
     });
 
+    // Fullscreen API 定义在 Element 上，对 iframe 元素调用（contentWindow 无此方法）。
     const iframe = host.querySelector<HTMLIFrameElement>('iframe[title="HTML 演示预览"]')!;
-    const contentWindow = iframe.contentWindow as (Window & {
-      requestFullscreen?: () => Promise<void>;
-    }) | null;
     const frameFullscreen = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(contentWindow, 'requestFullscreen', {
+    Object.defineProperty(iframe, 'requestFullscreen', {
       value: frameFullscreen,
       configurable: true,
       writable: true,
@@ -138,7 +136,7 @@ describe('HtmlPresentationPane', () => {
     expect(frameFullscreen).toHaveBeenCalledTimes(1);
   });
 
-  it('contentWindow.requestFullscreen 缺失时回退到父容器 requestFullscreen', async () => {
+  it('iframe.requestFullscreen 缺失时回退到父容器 requestFullscreen', async () => {
     await act(async () => {
       root.render(
         <HtmlPresentationPane
@@ -150,7 +148,7 @@ describe('HtmlPresentationPane', () => {
       await flushPromises();
     });
 
-    // jsdom 默认 contentWindow 无 requestFullscreen，无需手动移除。
+    // jsdom 的 Element 默认未实现 requestFullscreen，iframe 主路径会跳过走到父容器回退。
     const pane = host.querySelector<HTMLDivElement>('.html-presentation-pane')!;
     const paneFullscreen = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(pane, 'requestFullscreen', {

@@ -96,15 +96,14 @@ export function HtmlPresentationPane({ source, filePath, onBack }: HtmlPresentat
 
   const handleFullscreen = async () => {
     const iframe = iframeRef.current;
-    const frameWindow = iframe?.contentWindow as (Window & {
-      requestFullscreen?: () => Promise<void>;
-    }) | null;
-    if (frameWindow && typeof frameWindow.requestFullscreen === 'function') {
+    // Fullscreen API 定义在 Element 上，不在 Window 上：contentWindow 无此方法，
+    // 故直接对 iframe 元素调用。全屏 iframe 本体（仅幻灯片区域，工具栏在 iframe 外不进入）。
+    if (iframe) {
       try {
-        await frameWindow.requestFullscreen();
+        await iframe.requestFullscreen();
         return;
       } catch {
-        // 进入全屏失败则回退到父容器
+        // iframe 进入全屏失败则回退到父容器
       }
     }
     const pane = paneRef.current;
