@@ -77,4 +77,91 @@ describe('HtmlPresentationPane', () => {
     );
     expect(onBack).toHaveBeenCalledTimes(1);
   });
+
+  it('刷新按钮重新构建 srcDoc 并重新挂载 iframe', async () => {
+    await act(async () => {
+      root.render(
+        <HtmlPresentationPane
+          source="<h1>Slide</h1>"
+          filePath="/Users/demo/deck/index.html"
+          onBack={vi.fn()}
+        />,
+      );
+      await flushPromises();
+    });
+
+    const iframeBefore = host.querySelector<HTMLIFrameElement>('iframe[title="HTML 演示预览"]');
+    expect(iframeBefore).not.toBeNull();
+    expect(iframeBefore?.srcdoc).toContain('<h1>Slide</h1>');
+
+    await act(async () => {
+      queryButton(host, '刷新').click();
+      await flushPromises();
+    });
+
+    // iframe key 变化触发重新挂载，节点应为新实例，内容仍由 buildHtmlPresentationSrcDoc 重建。
+    const iframeAfter = host.querySelector<HTMLIFrameElement>('iframe[title="HTML 演示预览"]');
+    expect(iframeAfter).not.toBeNull();
+    expect(iframeAfter).not.toBe(iframeBefore);
+    expect(iframeAfter?.srcdoc).toContain('<h1>Slide</h1>');
+    expect(iframeAfter?.getAttribute('allow')).toBe('fullscreen');
+  });
+
+  it('全屏按钮调用 iframe 元素的 requestFullscreen（非 contentWindow）', async () => {
+    await act(async () => {
+      root.render(
+        <HtmlPresentationPane
+          source="<h1>Slide</h1>"
+          filePath="/Users/demo/deck/index.html"
+          onBack={vi.fn()}
+        />,
+      );
+      await flushPromises();
+    });
+
+    // Fullscreen API 定义在 Element 上，对 iframe 元素调用（contentWindow 无此方法）。
+    const iframe = host.querySelector<HTMLIFrameElement>('iframe[title="HTML 演示预览"]')!;
+    const frameFullscreen = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(iframe, 'requestFullscreen', {
+      value: frameFullscreen,
+      configurable: true,
+      writable: true,
+    });
+
+    await act(async () => {
+      queryButton(host, '全屏').click();
+      await flushPromises();
+    });
+
+    expect(frameFullscreen).toHaveBeenCalledTimes(1);
+  });
+
+  it('iframe.requestFullscreen 缺失时回退到父容器 requestFullscreen', async () => {
+    await act(async () => {
+      root.render(
+        <HtmlPresentationPane
+          source="<h1>Slide</h1>"
+          filePath="/Users/demo/deck/index.html"
+          onBack={vi.fn()}
+        />,
+      );
+      await flushPromises();
+    });
+
+    // jsdom 的 Element 默认未实现 requestFullscreen，iframe 主路径会跳过走到父容器回退。
+    const pane = host.querySelector<HTMLDivElement>('.html-presentation-pane')!;
+    const paneFullscreen = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(pane, 'requestFullscreen', {
+      value: paneFullscreen,
+      configurable: true,
+      writable: true,
+    });
+
+    await act(async () => {
+      queryButton(host, '全屏').click();
+      await flushPromises();
+    });
+
+    expect(paneFullscreen).toHaveBeenCalledTimes(1);
+  });
 });

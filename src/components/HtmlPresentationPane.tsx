@@ -25,14 +25,18 @@ function focusPresentationFrame(iframe: HTMLIFrameElement) {
 
 export function HtmlPresentationPane({ source, filePath, onBack }: HtmlPresentationPaneProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const paneRef = useRef<HTMLDivElement>(null);
   const settings = useSettings();
   const t = (key: Parameters<typeof translate>[1]) => translate(settings.locale, key);
+  const [refreshToken, setRefreshToken] = useState(0);
   const srcDoc = useMemo(
     () => buildHtmlPresentationSrcDoc(source, filePath),
-    [filePath, source],
+    // refreshToken 是刻意的刷新信号：即便 source/filePath 不变，刷新时也要重建 srcDoc。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [filePath, source, refreshToken],
   );
   const shouldInlineLocalResources = Boolean(filePath && '__TAURI_INTERNALS__' in window);
-  const srcDocKey = `${filePath ?? ''}\u0000${source}`;
+  const srcDocKey = `${filePath ?? ''}\u0000${source}\u0000${refreshToken}`;
   const [inlinedSrcDoc, setInlinedSrcDoc] = useState<{ key: string; doc: string } | null>(null);
   const effectiveSrcDoc = shouldInlineLocalResources && inlinedSrcDoc?.key !== srcDocKey
     ? EMPTY_PRESENTATION_DOCUMENT
@@ -83,8 +87,37 @@ export function HtmlPresentationPane({ source, filePath, onBack }: HtmlPresentat
     }
   };
 
+  const handleRefresh = () => {
+    // 重置内联缓存，使本地资源路径重新走 createHtmlPresentationDocumentWithLocalResources；
+    // refreshToken 变化会触发 srcDoc 重新构建、srcDocKey 失配回填空文档占位、iframe key 变化重新挂载。
+    setInlinedSrcDoc(null);
+    setRefreshToken((value) => value + 1);
+  };
+
+  const handleFullscreen = async () => {
+    const iframe = iframeRef.current;
+    // Fullscreen API 定义在 Element 上，不在 Window 上：contentWindow 无此方法，
+    // 故直接对 iframe 元素调用。全屏 iframe 本体（仅幻灯片区域，工具栏在 iframe 外不进入）。
+    if (iframe) {
+      try {
+        await iframe.requestFullscreen();
+        return;
+      } catch {
+        // iframe 进入全屏失败则回退到父容器
+      }
+    }
+    const pane = paneRef.current;
+    if (pane?.requestFullscreen) {
+      try {
+        await pane.requestFullscreen();
+      } catch (error) {
+        console.warn('Failed to enter fullscreen for HTML presentation:', error);
+      }
+    }
+  };
+
   return (
-    <div className="html-presentation-pane" aria-label={t('htmlPresentationAria')}>
+    <div className="html-presentation-pane" aria-label={t('htmlPresentationAria')} ref={paneRef}>
       <div className="html-presentation-toolbar">
         <div className="html-presentation-heading">
           <span>{t('htmlPresentationTitle')}</span>
@@ -110,6 +143,22 @@ export function HtmlPresentationPane({ source, filePath, onBack }: HtmlPresentat
           <button
             type="button"
             className="settings-action-button"
+            aria-label={t('htmlPresentationRefreshLabel')}
+            onClick={handleRefresh}
+          >
+            {t('htmlPresentationRefreshLabel')}
+          </button>
+          <button
+            type="button"
+            className="settings-action-button"
+            aria-label={t('htmlPresentationFullscreenLabel')}
+            onClick={handleFullscreen}
+          >
+            {t('htmlPresentationFullscreenLabel')}
+          </button>
+          <button
+            type="button"
+            className="settings-action-button"
             aria-label={t('htmlPresentationBackLabel')}
             onClick={onBack}
           >
@@ -118,10 +167,12 @@ export function HtmlPresentationPane({ source, filePath, onBack }: HtmlPresentat
         </div>
       </div>
       <iframe
+        key={`html-presentation-frame-${refreshToken}`}
         ref={iframeRef}
         className="html-presentation-frame"
         title={t('htmlPresentationFrameTitle')}
         sandbox="allow-scripts allow-forms allow-modals allow-pointer-lock allow-popups allow-presentation"
+        allow="fullscreen"
         srcDoc={effectiveSrcDoc}
       />
     </div>
