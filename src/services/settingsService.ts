@@ -163,6 +163,9 @@ export interface AppSettings {
   autoUpdateCheck: boolean;
   defaultEncoding: DefaultEncoding;
   reopenLastFile: boolean;
+  /** ISS-188：磁盘文件外部修改时是否自动重新加载编辑器。默认开启；
+   *  当前 tab 处于 dirty 时（用户有未保存改动）自动降级为提示，绝不静默覆盖。 */
+  autoReloadExternalChanges: boolean;
   locale: AppLocale;
   // 导出
   exportPresetId: PresetId;
@@ -207,6 +210,7 @@ const defaults: AppSettings = {
   autoUpdateCheck: true,
   defaultEncoding: 'UTF-8',
   reopenLastFile: true,
+  autoReloadExternalChanges: true,
   locale: 'zh-CN',
   exportPresetId: 'legal',
   customExportPresets: {} as CustomPresetRegistry,

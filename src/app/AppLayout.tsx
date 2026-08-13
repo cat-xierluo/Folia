@@ -28,6 +28,8 @@ import {
 import { scheduleDelayedAutoUpdateCheck } from '../services/autoUpdateScheduler';
 import { translate } from '../services/i18n';
 import { revealPathInFileExplorer } from '../services/fileLocationService';
+import { isSuppressed } from '../services/dirtySuppression';
+import { onWatchChanged, watchFile, unwatchFile } from '../services/fileWatchService';
 import type { HtmlTableBlock } from '../services/htmlTableBlockService';
 import { ImageAssetStoreProvider } from '../context/ImageAssetStoreProvider';
 import { ImageAssetStore } from '../services/imageAssetService';
@@ -555,6 +557,9 @@ export function AppLayout() {
   }, [file]);
 
   const handleContentChange = useCallback((value: string) => {
+    // ISS-189：抑制窗口期内的 onChange（程序性 setValue 后的 input/markdownUpdated
+    // 防抖回调）直接吞掉，不更新 content / dirty。窗口期外的「真正用户编辑」走原路径。
+    if (isSuppressed()) return;
     updateActiveFile((prev) => ({
       ...prev,
       content: value,
@@ -935,6 +940,155 @@ export function AppLayout() {
     return () => window.clearTimeout(timeout);
   }, [file, settings.autoSave, updateActiveFile]);
 
+  // ISS-188：监听文件外部修改 → 自动 reload / 提示手动 reload。
+  //
+  // 数据流：Rust notify::recommended_watcher → src-tauri/src/lib.rs 发出
+  // `watch:changed` 事件（带 atomic-replace 补偿 + last_event 去重）→
+  // fileWatchService 转发到 onWatchChanged → 本 effect。
+  //
+  // 安全门：当前 tab 处于 dirty 时，外部修改不得静默覆盖。把路径
+  // 放进 `externalChangeBlocked` 让 StatusBar 显示「外部修改」提示 +
+  // 「放弃本地并重载」按钮（用户主动决定）。非 dirty 路径直接
+  // openPath 重新读盘，updateActiveFile 触发 [source] effect →
+  // WysiwygEditorPane setValue；setValue 包在 ISS-189 的抑制窗口内，
+  // 不会污染 dirty。
+  //
+  // 防抖：150ms——atomic-replace 期间可能连发多事件，前端合并为一次 reload。
+  // 串行：reload 进行中（pendingReloadRef）忽略新事件，避免并发读盘。
+  const [externalChangeBlocked, setExternalChangeBlocked] = useState(false);
+  const externalChangeBlockedRef = useRef(false);
+  const debounceRef = useRef<number | null>(null);
+  const pendingReloadRef = useRef(false);
+
+  useEffect(() => {
+    if (!isTauriRuntime) return;
+    if (!settings.autoReloadExternalChanges) return;
+
+    const clearDebounce = () => {
+      if (debounceRef.current !== null) {
+        window.clearTimeout(debounceRef.current);
+        debounceRef.current = null;
+      }
+    };
+
+    const performReload = async () => {
+      if (pendingReloadRef.current) return;
+      pendingReloadRef.current = true;
+      try {
+        // 通过闭包外的 session / settings 重新读取最新值；这里只用 activeTab 自身
+        // 的 path 作为标识（event.path 已验证匹配）。读盘通过 fileService.openPath。
+        const { openPath } = await import('../services/fileService');
+        const targetPath = (() => {
+          // 取最新 active tab 的 path。闭包值可能 stale；用 ref 读取。
+          const cur = session.tabs.find((t) => t.id === session.activeTabId);
+          return cur?.file.path ?? null;
+        })();
+        if (!targetPath) return;
+        const opened = await openPath(targetPath, settings.defaultEncoding);
+        // updateActiveFile 走 reducer：dirty=false（磁盘内容与文件一致），lastSavedContent
+        // 同步更新。后续 [source] effect → setValue 包在 ISS-189 抑制窗口内。
+        updateActiveFile(() => opened);
+      } catch (error) {
+        console.warn('[Folia] 自动重新加载失败:', error);
+      } finally {
+        pendingReloadRef.current = false;
+      }
+    };
+
+    const off = onWatchChanged((event) => {
+      if (event.kind !== 'modify') return; // create/remove 不自动 reload（用户需手动）
+      // 通过 ref 读取最新 active tab；闭包值在 settings 改变后会 stale。
+      const active = session.tabs.find((t) => t.id === session.activeTabId);
+      if (!active || !active.file.path || active.file.path !== event.path) return;
+
+      if (active.file.dirty) {
+        // 安全门：dirty 时仅设置提示，不静默覆盖。
+        if (!externalChangeBlockedRef.current) {
+          externalChangeBlockedRef.current = true;
+          setExternalChangeBlocked(true);
+        }
+        return;
+      }
+
+      clearDebounce();
+      debounceRef.current = window.setTimeout(() => {
+        debounceRef.current = null;
+        void performReload();
+      }, 150);
+    });
+
+    return () => {
+      off();
+      clearDebounce();
+      pendingReloadRef.current = false;
+    };
+  }, [
+    isTauriRuntime,
+    settings.autoReloadExternalChanges,
+    settings.defaultEncoding,
+    session.tabs,
+    session.activeTabId,
+    updateActiveFile,
+  ]);
+
+  // ISS-188：切换 tab 时清掉 externalChangeBlocked 提示（提示与具体 tab 绑定）。
+  // 这是 React 认可的「reset derived state on prop/state change」模式：提示属于
+  // 上一个 tab，activeTabId 变化即过期，必须在挂载新 tab 前清空 ref+state。
+  useEffect(() => {
+    externalChangeBlockedRef.current = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setExternalChangeBlocked(false);
+  }, [activeTabId]);
+
+  // ISS-188：tab 路径变化时挂载/卸载文件 watcher。每次 activeTab.path 改变
+  // 先 unwatch 旧路径（防泄漏），再 watch 新路径。activeTab 为 null 时 unwatch
+  // 当前 path。watchFile / unwatchFile 内部对非 Tauri 运行时做 no-op，单测与
+  // 浏览器预览不需要特殊处理。
+  const watchedPathRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!isTauriRuntime) return;
+    const newPath = activeTab?.file.path ?? null;
+    if (newPath === watchedPathRef.current) return;
+    const previous = watchedPathRef.current;
+    if (previous) {
+      void unwatchFile(previous);
+    }
+    watchedPathRef.current = newPath;
+    if (newPath) {
+      void watchFile(newPath).catch((error) => {
+        console.warn('[Folia] watch_path 失败:', error);
+      });
+    }
+    return () => {
+      // 仅在 effect 真正清理时 unwatch；避免快速切换 tab 时误 unwatch 新挂载的。
+      if (newPath && watchedPathRef.current === newPath) {
+        void unwatchFile(newPath);
+        watchedPathRef.current = null;
+      }
+    };
+  }, [activeTab?.file.path, isTauriRuntime]);
+
+  const handleExternalChangeReload = useCallback(async () => {
+    // 用户主动「放弃本地并重载」—— read 盘内容覆盖当前 tab 的 content，
+    // dirty 重置为 false。后续 [source] effect → setValue 走抑制窗口。
+    const cur = session.tabs.find((t) => t.id === activeTabId);
+    if (!cur || !cur.file.path) return;
+    try {
+      const { openPath } = await import('../services/fileService');
+      const opened = await openPath(cur.file.path, settings.defaultEncoding);
+      updateActiveFile(() => opened);
+      externalChangeBlockedRef.current = false;
+      setExternalChangeBlocked(false);
+    } catch (error) {
+      console.warn('[Folia] 外部修改重载失败:', error);
+    }
+  }, [activeTabId, session.tabs, settings.defaultEncoding, updateActiveFile]);
+
+  const handleExternalChangeDismiss = useCallback(() => {
+    externalChangeBlockedRef.current = false;
+    setExternalChangeBlocked(false);
+  }, []);
+
   // 大文件降级 tab（draftPersisted=false 且 content 被清空）：激活时从磁盘重读内容，
   // 修复降级重启后空白编辑器。失败（文件被删/移）标记 pathInvalid 并提示另存为（ISS-42）。
   // reloading 由 activeTab 派生（draftPersisted=false + content 空 = 重读中），避免 effect 内 set state。
@@ -1270,6 +1424,9 @@ export function AppLayout() {
         draftPersisted={session.activeTab?.draftPersisted}
         pathInvalid={session.activeTab?.pathInvalid}
         reloading={reloading}
+        externalChangeBlocked={externalChangeBlocked}
+        onExternalChangeReload={handleExternalChangeReload}
+        onExternalChangeDismiss={handleExternalChangeDismiss}
         onSaveAs={() => { void handleSaveAs(); }}
       />
       {contextMenu && (

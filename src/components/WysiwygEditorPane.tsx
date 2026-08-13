@@ -18,6 +18,7 @@ import {
   pickImageFiles,
   registerImageAssetFromFile,
 } from '../services/mediaInsertionService';
+import { applyWithSuppression } from '../services/dirtySuppression';
 
 type WysiwygEditorPaneProps = {
   source: string;
@@ -1063,7 +1064,11 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
             if (currentValue !== pending) {
               applyingExternalValue.current = true;
               lastComplexBlocksRef.current = classifyHtmlTableBlocks(pending).complex;
-              editor.setValue(pending, true);
+              // ISS-189：包抑制窗口让 Vditor 的 markdownUpdated 防抖（200ms）
+              // 后续派发的 input 回调不触发父组件 onChange → dirty 不误亮。
+              applyWithSuppression(() => {
+                editor.setValue(pending, true);
+              });
               window.requestAnimationFrame(() => {
                 // ISS-170 review follow-up：卸载竞态——cleanup 已
                 // `editorRef.current?.destroy()` 并将 cancelled 置 true，
@@ -1190,7 +1195,12 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
 
           if (touched) {
             applyingExternalValue.current = true;
-            editor.setValue(restored, true);
+            // ISS-189：input() 复杂表 round-trip restore 写入属于「程序性写入」，
+            // 应当走抑制窗口，避免被 markdownUpdated 200ms 防抖再次派发的 input
+            // 回调误判为用户编辑、触发 dirty 误亮/自动保存误触发。
+            applyWithSuppression(() => {
+              editor.setValue(restored, true);
+            });
             window.requestAnimationFrame(() => {
               // 卸载竞态：cleanup 已 destroy editor，cancelled=true 时直接返回。
               if (cancelled) return;
@@ -1297,7 +1307,12 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
 
     applyingExternalValue.current = true;
     lastComplexBlocksRef.current = classifyHtmlTableBlocks(source).complex;
-    editor.setValue(source, true);
+    // ISS-189：外部 source 更新走抑制窗口（ISS-188 的自动 reload 也命中此路径）。
+    // 350ms > Vditor markdownUpdated 200ms 防抖，让 reload → setValue → input
+    // 反馈环路不把 reload 内容标记为 dirty。
+    applyWithSuppression(() => {
+      editor.setValue(source, true);
+    });
     window.requestAnimationFrame(() => {
       // ISS-170 review follow-up：卸载竞态 + sanitize 异常双重防护。
       // 注意：本 effect 不持有 Vditor init effect 的 `cancelled` 闭包，改用
