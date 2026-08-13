@@ -1463,3 +1463,115 @@ describe('WysiwygEditorPane 标题光标漂移 + 复制残留 marker (ISS-106 / 
     });
   });
 });
+
+describe('WysiwygEditorPane 代码块复制按钮 (ISS-190)', () => {
+  let host: HTMLDivElement;
+
+  beforeEach(() => {
+    vditorCalls.length = 0;
+    setValueCalls.length = 0;
+    focusCalls.length = 0;
+    host = document.createElement('div');
+    document.body.append(host);
+  });
+
+  afterEach(() => {
+    host.remove();
+    vi.clearAllMocks();
+  });
+
+  /** jsdom 的 getBoundingClientRect 全零返回，会让 service 的「滚出可视区」判定误隐藏按钮。
+   *  这里给指定元素挂一个落在可视区内的固定矩形。 */
+  function mockRect(el: Element, rect: { top: number; bottom: number; left: number; right: number }): void {
+    el.getBoundingClientRect = () => ({
+      top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right,
+      width: rect.right - rect.left, height: rect.bottom - rect.top,
+      x: rect.left, y: rect.top, toJSON: () => {},
+    });
+  }
+
+  it('hover 主 IR 内代码块 → overlay 出现 is-visible 复制按钮，按钮不进入 IR DOM', async () => {
+    let root: Root | null = null;
+    await act(async () => {
+      root = createRoot(host);
+      root.render(
+        renderWithProvider(
+          React.createElement(WysiwygEditorPane, { source: '', onChange: () => undefined }),
+        ),
+      );
+      await flushMicrotasks();
+      await flushFrames();
+    });
+
+    const call = vditorCalls[0];
+    // overlay 是 host 的同级元素（.wysiwyg-editor-pane 的子节点），按钮会 append 到此
+    const pane = call.host.parentElement as HTMLElement;
+    const overlay = pane.querySelector<HTMLElement>('.folia-code-copy-overlay');
+    expect(overlay).not.toBeNull();
+    mockRect(overlay!, { top: 0, left: 0, right: 800, bottom: 600 });
+
+    // 在 IR DOM 注入一个普通代码块
+    const ir = call.host.querySelector<HTMLElement>('.vditor-ir pre')!;
+    const codePre = document.createElement('pre');
+    codePre.innerHTML = '<code class="language-js">const z = 3;</code>';
+    ir.appendChild(codePre);
+    mockRect(codePre, { top: 100, left: 40, right: 760, bottom: 220 });
+
+    await act(async () => {
+      codePre.querySelector('code')!.dispatchEvent(
+        new MouseEvent('mouseover', { bubbles: true }),
+      );
+      await flushMicrotasks();
+    });
+
+    const button = overlay!.querySelector<HTMLButtonElement>('.folia-code-copy-trigger');
+    expect(button).not.toBeNull();
+    expect(button!.classList.contains('is-visible')).toBe(true);
+    // 铁律：按钮在 overlay 内，绝不残留在 IR DOM（不污染 getValue / sanitize）
+    expect(ir.querySelector('.folia-code-copy-trigger')).toBeNull();
+    expect(call.host.querySelector('.folia-code-copy-trigger')).toBeNull();
+
+    await act(async () => {
+      root?.unmount();
+    });
+  });
+
+  it('hover mermaid 块 → 按钮不显示（异步渲染语言被排除）', async () => {
+    let root: Root | null = null;
+    await act(async () => {
+      root = createRoot(host);
+      root.render(
+        renderWithProvider(
+          React.createElement(WysiwygEditorPane, { source: '', onChange: () => undefined }),
+        ),
+      );
+      await flushMicrotasks();
+      await flushFrames();
+    });
+
+    const call = vditorCalls[0];
+    const pane = call.host.parentElement as HTMLElement;
+    const overlay = pane.querySelector<HTMLElement>('.folia-code-copy-overlay')!;
+    mockRect(overlay, { top: 0, left: 0, right: 800, bottom: 600 });
+
+    const ir = call.host.querySelector<HTMLElement>('.vditor-ir pre')!;
+    const codePre = document.createElement('pre');
+    codePre.innerHTML = '<code class="language-mermaid">graph TD\nA-->B</code>';
+    ir.appendChild(codePre);
+    mockRect(codePre, { top: 100, left: 40, right: 760, bottom: 220 });
+
+    await act(async () => {
+      codePre.querySelector('code')!.dispatchEvent(
+        new MouseEvent('mouseover', { bubbles: true }),
+      );
+      await flushMicrotasks();
+    });
+
+    const button = overlay.querySelector<HTMLButtonElement>('.folia-code-copy-trigger');
+    expect(button?.classList.contains('is-visible')).toBe(false);
+
+    await act(async () => {
+      root?.unmount();
+    });
+  });
+});

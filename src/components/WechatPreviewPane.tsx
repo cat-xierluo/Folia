@@ -19,6 +19,7 @@ import type { HtmlExportPresetId } from '../services/htmlExportPresets';
 import { resolveLocalImages } from '../services/localImageResolver';
 import { prepareMarkdownForVditorPreview } from '../services/markdownSvgPreviewService';
 import { createRenderCoordinator, type RenderDiagnostic } from '../services/renderCoordinator';
+import { attachCodeBlockCopy, type CodeCopyLabels } from '../services/codeBlockCopyService';
 import { MediaPlaceholder } from './MediaPlaceholder';
 
 type WechatPreviewPaneProps = {
@@ -39,6 +40,11 @@ export function WechatPreviewPane({ source, fileName = 'document.md', onClose, f
   const t = (key: Parameters<typeof translate>[1]) => translate(settings.locale, key);
   const deferredSource = useDeferredValue(source);
   const renderRef = useRef<HTMLDivElement>(null);
+  // ISS-190：代码块复制按钮。scrollRef 为事件委托 + scroll 跟随根；
+  // codeCopyOverlayRef 是与 article-shell 同级的 overlay 层（按钮 append 入此，
+  // 不进入 article-shell 的 dangerouslySetInnerHTML，避免被重渲染清掉）。
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const codeCopyOverlayRef = useRef<HTMLDivElement>(null);
   const renderIdRef = useRef(0);
   const [previewResult, setPreviewResult] = useState<WechatPreviewResult | null>(null);
   const [actionStatus, setActionStatus] = useState<ActionStatus | null>(null);
@@ -153,6 +159,29 @@ export function WechatPreviewPane({ source, fileName = 'document.md', onClose, f
       abortController.abort();
     };
   }, [deferredSource, fileName, filePath, htmlExportPreset, markdownPreviewInput, renderFeatures.hasHighlightableCode, sourceIsEmpty]);
+
+  /* ISS-190：代码块复制按钮（HTML 预览面）。
+   * 挂载方式铁律：attachCodeBlockCopy 绝不使用 MutationObserver（详见 service 顶部），
+   * 仅 mouseover/mouseout 委托 + scroll(capture) + ResizeObserver 几何跟随。Word 纸张
+   * 预览面不含按钮（仅文本面）。root 为滚动容器，overlay 为与 article-shell 同级的层，
+   * 按钮 append 到 overlay，不进入 article-shell 的 dangerouslySetInnerHTML（重渲染会清空）。*/
+  const codeCopyLabels = useMemo<CodeCopyLabels>(
+    // 直接用 translate + settings.locale 作为依赖，避免依赖本组件内每次渲染都新建的 t 函数
+    // （否则 attach effect 会在每次渲染重跑，反复解绑 / 重绑按钮）。
+    () => ({
+      buttonTitle: translate(settings.locale, 'codeBlockCopyLabel'),
+      defaultText: translate(settings.locale, 'codeBlockCopyDefault'),
+      copiedText: translate(settings.locale, 'codeBlockCopied'),
+      failedText: translate(settings.locale, 'codeBlockCopyFailed'),
+    }),
+    [settings.locale],
+  );
+  useEffect(() => {
+    const root = scrollRef.current;
+    const overlay = codeCopyOverlayRef.current;
+    if (!root || !overlay) return undefined;
+    return attachCodeBlockCopy(root, overlay, codeCopyLabels);
+  }, [codeCopyLabels]);
 
   const effectiveStatus = sourceIsEmpty ? 'empty' : status;
   const effectiveActionStatus = sourceIsEmpty ? null : actionStatus;
@@ -271,7 +300,7 @@ export function WechatPreviewPane({ source, fileName = 'document.md', onClose, f
           </ul>
         </div>
       )}
-      <div className="wechat-preview-scroll">
+      <div ref={scrollRef} className="wechat-preview-scroll">
         {effectiveStatus === 'empty' ? (
           <div className="wechat-preview-empty">{t('wechatPreviewEmpty')}</div>
         ) : effectiveStatus === 'loading' && !previewResult ? (
@@ -302,6 +331,9 @@ export function WechatPreviewPane({ source, fileName = 'document.md', onClose, f
         )}
       </div>
       <div ref={renderRef} className="wechat-preview-render-source" aria-hidden="true" />
+      {/* ISS-190：代码块复制按钮 overlay（pointer-events:none，按钮自身 auto）。
+          不进入 article-shell，避免被 dangerouslySetInnerHTML 重渲染清空。 */}
+      <div ref={codeCopyOverlayRef} className="folia-code-copy-overlay" aria-hidden="true" />
     </aside>
   );
 }

@@ -1,6 +1,12 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+All notable changes of this project will be documented in this file.
+
+## [Unreleased]
+
+### Added
+
+- **代码块复制按钮（ISS-190）**：主编辑器（即时渲染 IR）与 HTML 预览面板的代码块（`<pre><code>`）在鼠标悬停时，右上角淡入「复制」按钮，点击把代码纯文本写入剪贴板，并在 ~1.5s 内显示「已复制」反馈后复位。复制走 `clipboardService.writeText`（`navigator.clipboard.writeText` 优先，失败降级 `document.execCommand('copy')`）。**挂载方式铁律**：新增 `codeBlockCopyService` **绝不使用 MutationObserver**——仅用 `mouseover/mouseout` 事件委托 + `scroll`（capture）+ `ResizeObserver` 按 `getBoundingClientRect` 做几何跟随定位；按钮挂在独立的 overlay 层（与编辑器 host / 预览 article-shell 同级），**绝不进入 Vditor IR DOM**，避免被 `editor.getValue()` 经 Lute 反序列化写回 markdown 污染文档、或被 sanitize 重写。富媒体（mermaid/echarts/math 等异步渲染语言）重渲染把当前代码块替换掉时，下一次几何重算发现 `pre.isConnected === false` 自动隐藏按钮，不残留、不抖动；mermaid 等图表块本身不出复制按钮（避免复制出 SVG 标记）。Word 纸张预览面不含按钮（仅文本面）。新增 `codeBlockCopyService` 14 项单测（hover 出现 / 点击复制 / 反馈复位 / 富媒体重渲染不残留 / 静态断言无 `new MutationObserver`）+ `WysiwygEditorPane` 2 项集成测试。验收门：typecheck / lint / 613 单测 / build 全绿。**真机验证（NOT_VERIFIED）**：WKWebView 内 hover 淡入与几何跟随的真实观感、真实剪贴板写入须在 `tauri dev` 下由真机确认；jsdom 下 `getBoundingClientRect` 全零，单测通过 mock 固定矩形覆盖定位逻辑。
 
 ## [Unreleased]
 

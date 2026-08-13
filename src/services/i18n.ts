@@ -178,6 +178,11 @@ const zhCN = {
   confirmCloseSave: '保存',
   confirmCloseDiscard: '不保存',
   confirmCloseCancel: '取消',
+  // ISS-190：代码块复制按钮（主 IR + HTML 预览，Word 纸张预览不含）
+  codeBlockCopyLabel: '复制代码',
+  codeBlockCopyDefault: '复制',
+  codeBlockCopied: '已复制',
+  codeBlockCopyFailed: '复制失败',
 };
 
 type I18nKey = keyof typeof zhCN;
@@ -354,6 +359,10 @@ const enUS: Record<I18nKey, string> = {
   confirmCloseSave: 'Save',
   confirmCloseDiscard: 'Don’t Save',
   confirmCloseCancel: 'Cancel',
+  codeBlockCopyLabel: 'Copy code',
+  codeBlockCopyDefault: 'Copy',
+  codeBlockCopied: 'Copied',
+  codeBlockCopyFailed: 'Copy failed',
 };
 
 const jaJP: Record<I18nKey, string> = {
@@ -528,6 +537,10 @@ const jaJP: Record<I18nKey, string> = {
   confirmCloseSave: '保存',
   confirmCloseDiscard: '保存しない',
   confirmCloseCancel: 'キャンセル',
+  codeBlockCopyLabel: 'コードをコピー',
+  codeBlockCopyDefault: 'コピー',
+  codeBlockCopied: 'コピー済み',
+  codeBlockCopyFailed: 'コピー失敗',
 };
 
 const dictionaries: Record<AppLocale, Record<I18nKey, string>> = {
