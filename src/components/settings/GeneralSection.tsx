@@ -6,11 +6,13 @@ import { setAsDefaultMarkdownApp } from '../../services/defaultAppService';
 
 const ENCODINGS: DefaultEncoding[] = ['UTF-8', 'GBK', 'GB18030'];
 
-/** ISS-192：设置默认应用按钮的三态结果（success / unsupported / error / 闲置）。 */
+/** ISS-192：设置默认应用按钮的三态结果（success / unsupported / error / 闲置）。
+ *  isError 由后端结果分支显式置位，不靠文案正则判定——否则日文「失敗」/英文错误文案
+ *  不会命中中文「失败」正则，错误样式在 ja/en 下失效。 */
 type SetDefaultAppState =
   | { kind: 'idle' }
   | { kind: 'busy' }
-  | { kind: 'message'; text: string };
+  | { kind: 'message'; text: string; isError?: boolean };
 
 export function GeneralSection() {
   const [settings, setSettings] = useState(() => getSettings());
@@ -36,6 +38,7 @@ export function GeneralSection() {
       setDefaultAppState({
         kind: 'message',
         text: t('setDefaultAppError', { message: result.message }),
+        isError: true,
       });
     }
   };
@@ -105,7 +108,7 @@ export function GeneralSection() {
           {defaultAppState.kind === 'message' && (
             <div
               className={`settings-desc settings-default-app-message${
-                /失败/.test(defaultAppState.text) ? ' error' : ''
+                defaultAppState.isError ? ' error' : ''
               }`}
               role="status"
             >
