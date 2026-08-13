@@ -77,4 +77,93 @@ describe('HtmlPresentationPane', () => {
     );
     expect(onBack).toHaveBeenCalledTimes(1);
   });
+
+  it('刷新按钮重新构建 srcDoc 并重新挂载 iframe', async () => {
+    await act(async () => {
+      root.render(
+        <HtmlPresentationPane
+          source="<h1>Slide</h1>"
+          filePath="/Users/demo/deck/index.html"
+          onBack={vi.fn()}
+        />,
+      );
+      await flushPromises();
+    });
+
+    const iframeBefore = host.querySelector<HTMLIFrameElement>('iframe[title="HTML 演示预览"]');
+    expect(iframeBefore).not.toBeNull();
+    expect(iframeBefore?.srcdoc).toContain('<h1>Slide</h1>');
+
+    await act(async () => {
+      queryButton(host, '刷新').click();
+      await flushPromises();
+    });
+
+    // iframe key 变化触发重新挂载，节点应为新实例，内容仍由 buildHtmlPresentationSrcDoc 重建。
+    const iframeAfter = host.querySelector<HTMLIFrameElement>('iframe[title="HTML 演示预览"]');
+    expect(iframeAfter).not.toBeNull();
+    expect(iframeAfter).not.toBe(iframeBefore);
+    expect(iframeAfter?.srcdoc).toContain('<h1>Slide</h1>');
+    expect(iframeAfter?.getAttribute('allow')).toBe('fullscreen');
+  });
+
+  it('全屏按钮优先调用 iframe contentWindow.requestFullscreen', async () => {
+    await act(async () => {
+      root.render(
+        <HtmlPresentationPane
+          source="<h1>Slide</h1>"
+          filePath="/Users/demo/deck/index.html"
+          onBack={vi.fn()}
+        />,
+      );
+      await flushPromises();
+    });
+
+    const iframe = host.querySelector<HTMLIFrameElement>('iframe[title="HTML 演示预览"]')!;
+    const contentWindow = iframe.contentWindow as (Window & {
+      requestFullscreen?: () => Promise<void>;
+    }) | null;
+    const frameFullscreen = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(contentWindow, 'requestFullscreen', {
+      value: frameFullscreen,
+      configurable: true,
+      writable: true,
+    });
+
+    await act(async () => {
+      queryButton(host, '全屏').click();
+      await flushPromises();
+    });
+
+    expect(frameFullscreen).toHaveBeenCalledTimes(1);
+  });
+
+  it('contentWindow.requestFullscreen 缺失时回退到父容器 requestFullscreen', async () => {
+    await act(async () => {
+      root.render(
+        <HtmlPresentationPane
+          source="<h1>Slide</h1>"
+          filePath="/Users/demo/deck/index.html"
+          onBack={vi.fn()}
+        />,
+      );
+      await flushPromises();
+    });
+
+    // jsdom 默认 contentWindow 无 requestFullscreen，无需手动移除。
+    const pane = host.querySelector<HTMLDivElement>('.html-presentation-pane')!;
+    const paneFullscreen = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(pane, 'requestFullscreen', {
+      value: paneFullscreen,
+      configurable: true,
+      writable: true,
+    });
+
+    await act(async () => {
+      queryButton(host, '全屏').click();
+      await flushPromises();
+    });
+
+    expect(paneFullscreen).toHaveBeenCalledTimes(1);
+  });
 });
