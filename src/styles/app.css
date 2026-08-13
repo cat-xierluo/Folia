@@ -1134,6 +1134,7 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 }
 
 .wysiwyg-editor-pane {
+  position: relative;
   height: 100%;
   min-width: 0;
 }
@@ -1527,6 +1528,86 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
+
+/* ===== ISS-190 代码块复制按钮（主 IR + HTML 预览，Word 纸张预览不含） ===== */
+/* overlay 层：定位锚点 + 鼠标穿透。按钮几何跟随靠 getBoundingClientRect 在
+   JS 里算（mouseover/mouseout + scroll + ResizeObserver），不靠 MutationObserver。*/
+.folia-code-copy-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 6;
+}
+
+.folia-code-copy-trigger {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  /* 默认隐藏：opacity:0 + visibility:hidden + pointer-events:none，
+     不用 display:none —— 这样 hover 淡入的 opacity transition 才能稳定触发。*/
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  box-shadow: 0 1px 4px var(--shadow-soft);
+  transform: translateY(-2px);
+  transition: opacity 0.15s ease, transform 0.15s ease, background-color 0.15s ease,
+    color 0.15s ease, border-color 0.15s ease, visibility 0s linear 0.15s;
+  user-select: none;
+  white-space: nowrap;
+}
+
+/* service 命中可复制代码块后加 is-visible，触发 opacity 0→1 淡入（0.15s） */
+.folia-code-copy-trigger.is-visible {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateY(0);
+  transition: opacity 0.15s ease, transform 0.15s ease, background-color 0.15s ease,
+    color 0.15s ease, border-color 0.15s ease, visibility 0s;
+}
+
+.folia-code-copy-trigger.is-visible:hover {
+  background: var(--accent);
+  color: var(--accent-fg, #fff);
+  border-color: var(--accent);
+}
+
+.folia-code-copy-trigger:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.folia-code-copy-trigger.is-copied {
+  background: color-mix(in oklch, var(--accent) 16%, var(--surface));
+  color: var(--accent);
+  border-color: color-mix(in oklch, var(--accent) 40%, var(--border));
+}
+
+.folia-code-copy-trigger.is-failed {
+  background: color-mix(in oklch, #e5484d 16%, var(--surface));
+  color: #e5484d;
+  border-color: color-mix(in oklch, #e5484d 40%, var(--border));
+}
+
+.folia-code-copy-trigger svg {
+  flex: 0 0 auto;
+}
+
+.folia-code-copy-trigger__text {
+  font-weight: 500;
+}
+
 
 /* ===== On-demand Word Paper Preview ===== */
 
@@ -2086,6 +2167,7 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 /* ===== On-demand HTML Article Preview ===== */
 
 .wechat-preview-panel {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;

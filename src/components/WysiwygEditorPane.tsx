@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MediaPlaceholder } from './MediaPlaceholder';
+import { attachCodeBlockCopy, type CodeCopyLabels } from '../services/codeBlockCopyService';
 import type { RenderDiagnostic } from '../services/renderCoordinator';
 import { VDITOR_PREVIEW_I18N } from '../services/vditorPreviewConfig';
 import {
@@ -633,6 +634,10 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
   );
   const imageAssetStore = useImageAssetStore();
   const hostRef = useRef<HTMLDivElement>(null);
+  // ISS-190：代码块复制按钮 overlay 层（与 host 同级，在 pane 内）。
+  // 按钮由 codeBlockCopyService append 到此 div，**绝不进入 Vditor IR DOM**，
+  // 避免 editor.getValue() 经 Lute 反序列化把按钮写回 markdown 污染文档。
+  const codeCopyOverlayRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<import('vditor').default | null>(null);
   const applyingExternalValue = useRef(false);
   const latestSource = useRef(source);
@@ -1387,6 +1392,32 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
     };
   }, [onViewComplexTable, source, t]);
 
+  /* ISS-190：代码块复制按钮（主 IR）。
+   *
+   * 挂载方式铁律：本 effect 调用的 attachCodeBlockCopy **绝不使用 MutationObserver**，
+   * 仅用 mouseover/mouseout 委托 + scroll(capture) + ResizeObserver 做几何跟随（详见
+   * codeBlockCopyService 顶部说明）。按钮挂在与 host 同级的 overlay 层，不进入 Vditor
+   * IR DOM，避免污染 editor.getValue() 的 Lute 反序列化结果。
+   *
+   * labels 随 locale 变化时重新挂载（cleanup 移除旧按钮 / 监听）。host 与 overlay 均
+   * 由 ref 持有，挂载后稳定；首次 render 后即可 attach——Vditor 未就绪时无 pre>code，
+   * 按钮 simply 永不显示，待 Vditor 渲染出代码块后 mouseover 自动命中。 */
+  const codeCopyLabels = useMemo<CodeCopyLabels>(
+    () => ({
+      buttonTitle: t('codeBlockCopyLabel'),
+      defaultText: t('codeBlockCopyDefault'),
+      copiedText: t('codeBlockCopied'),
+      failedText: t('codeBlockCopyFailed'),
+    }),
+    [t],
+  );
+  useEffect(() => {
+    const host = hostRef.current;
+    const overlay = codeCopyOverlayRef.current;
+    if (!host || !overlay) return undefined;
+    return attachCodeBlockCopy(host, overlay, codeCopyLabels);
+  }, [codeCopyLabels]);
+
   // 错误状态：显示可见的错误信息和重试按钮
   if (phase === 'error') {
     return (
@@ -1422,6 +1453,9 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
         </div>
       )}
       <div ref={hostRef} className="wysiwyg-editor-host" />
+      {/* ISS-190：代码块复制按钮 overlay。pointer-events:none 让鼠标穿透到 IR DOM；
+          按钮自身 pointer-events:auto 由 CSS 控制。绝不进入 host 内的 IR DOM。 */}
+      <div ref={codeCopyOverlayRef} className="folia-code-copy-overlay" aria-hidden="true" />
     </div>
   );
 }
