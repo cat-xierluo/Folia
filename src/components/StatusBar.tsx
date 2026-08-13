@@ -16,6 +16,12 @@ type StatusBarProps = {
   reloading?: boolean;
   /** pathInvalid 时点击「另存为」的回调。 */
   onSaveAs?: () => void;
+  /** ISS-188：磁盘文件外部修改且当前 tab 处于 dirty 时为 true，提示「外部修改」+ 提供「放弃本地并重载」。 */
+  externalChangeBlocked?: boolean;
+  /** ISS-188：「放弃本地并重载」按钮回调——读盘覆盖当前内容。 */
+  onExternalChangeReload?: () => void;
+  /** ISS-188：「忽略」按钮回调——保留本地、不再提示。 */
+  onExternalChangeDismiss?: () => void;
 };
 
 type CopyOutcome = 'copied' | 'failed';
@@ -24,7 +30,17 @@ type NoticeTone = 'info' | 'warn' | 'error';
 
 const COPY_FEEDBACK_RESET_MS = 1200;
 
-export function StatusBar({ filePath, dirty, draftPersisted, pathInvalid, reloading, onSaveAs }: StatusBarProps) {
+export function StatusBar({
+  filePath,
+  dirty,
+  draftPersisted,
+  pathInvalid,
+  reloading,
+  onSaveAs,
+  externalChangeBlocked,
+  onExternalChangeReload,
+  onExternalChangeDismiss,
+}: StatusBarProps) {
   const settings = useSettings();
   const t = (key: Parameters<typeof translate>[1]) => translate(settings.locale, key);
   const hasPath = filePath.length > 0;
@@ -72,14 +88,18 @@ export function StatusBar({ filePath, dirty, draftPersisted, pathInvalid, reload
       ? copyMarker.outcome
       : 'idle';
 
-  // 提示优先级：reloading > pathInvalid > draftPersisted 降级。
-  const notice: { text: string; tone: NoticeTone; action?: boolean } | null = reloading
-    ? { text: t('reloadingLabel'), tone: 'info' }
-    : pathInvalid
-      ? { text: t('fileLostLabel'), tone: 'error', action: true }
-      : draftPersisted === false
-        ? { text: t('draftTooLargeLabel'), tone: 'warn' }
-        : null;
+  // 提示优先级：externalChangeBlocked > reloading > pathInvalid > draftPersisted 降级。
+  // externalChangeBlocked 最高优先：用户有未保存改动且磁盘文件被外部修改，需要立刻
+  // 决定「保留本地」还是「放弃本地并重载」，避免用户继续编辑而不知文件已被覆盖。
+  const notice: { text: string; tone: NoticeTone; action?: boolean; externalChange?: boolean } | null = externalChangeBlocked
+    ? { text: t('externalChangedLabel'), tone: 'warn', externalChange: true }
+    : reloading
+      ? { text: t('reloadingLabel'), tone: 'info' }
+      : pathInvalid
+        ? { text: t('fileLostLabel'), tone: 'error', action: true }
+        : draftPersisted === false
+          ? { text: t('draftTooLargeLabel'), tone: 'warn' }
+          : null;
 
   return (
     <div className="status-bar">
@@ -116,6 +136,16 @@ export function StatusBar({ filePath, dirty, draftPersisted, pathInvalid, reload
           {notice.action && onSaveAs && (
             <button type="button" className="status-notice-action" onClick={onSaveAs}>
               {t('statusBarSaveAs')}
+            </button>
+          )}
+          {notice.externalChange && onExternalChangeReload && (
+            <button type="button" className="status-notice-action" onClick={onExternalChangeReload}>
+              {t('externalChangedReload')}
+            </button>
+          )}
+          {notice.externalChange && onExternalChangeDismiss && (
+            <button type="button" className="status-notice-action" onClick={onExternalChangeDismiss}>
+              {t('externalChangedDismiss')}
             </button>
           )}
         </span>

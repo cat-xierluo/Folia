@@ -100,6 +100,19 @@ export function GeneralSection() {
         />
       </div>
 
+      {/* ISS-188：磁盘文件外部修改自动重新加载编辑器。当前 tab 处于 dirty 时
+          （用户有未保存改动）自动降级为提示，绝不静默覆盖。 */}
+      <div className="settings-row">
+        <div>
+          <div className="settings-label">{t('autoReloadExternalChangesLabel')}</div>
+          <div className="settings-desc">{t('autoReloadExternalChangesDesc')}</div>
+        </div>
+        <button
+          className={`toggle-switch ${settings.autoReloadExternalChanges ? 'on' : ''}`}
+          onClick={() => handleChange({ autoReloadExternalChanges: !settings.autoReloadExternalChanges })}
+        />
+      </div>
+
       {/* ISS-192：设为默认 Markdown 应用（macOS 自动注册 .md / .markdown）。 */}
       <div className="settings-row settings-row-stacked">
         <div className="settings-default-app-info">
