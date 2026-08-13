@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- **设置「通用」页新增「设为默认 Markdown 应用」按钮**（#118，ISS-192）：此前已在 `tauri.conf.json` 声明 `.md` / `.markdown` 文件关联，安装 Folia 后系统「知道」它能打开 Markdown，但不会自动把 Folia 设为默认——默认仍是用户既有编辑器。本次在设置页「通用」分区新增按钮，一键把 Folia 注册为系统 .md / .markdown 文件的默认打开程序：macOS 新增 Rust 命令 `set_as_default_markdown_app`，用 `std::process::Command` 调 `osascript` 执行 JXA，通过 `ObjC.import('CoreServices')` 调 `LSSetDefaultRoleHandlerForContentType`，把 UTI `net.daringfireball.markdown`（覆盖 .md / .markdown）的默认 handler 指向本应用 bundle id（取自 `tauri.conf.json` identifier）。用 `std::process::Command` 而非 Tauri shell plugin，避免在 capabilities 引入 shell 执行权限（最小权限面）。非 macOS（Windows/Linux）后端返回 `unsupported` 哨兵串，前端展示「打开系统默认应用设置」的引导文案而非报错。前端新增 `defaultAppService`（invoke 封装 + success/unsupported/error 三态归类）、`GeneralSection` 按钮 + 结果消息、`i18n` 中/英/日文案。单测：Rust 端 `build_set_default_markdown_jxa` 纯函数断言脚本内容（bundle id / UTI 注入、单引号转义、哨兵串稳定性）；前端 `defaultAppService.test`（6 case）+ `GeneralSection.test`（5 case）覆盖三态映射与 UI 展示。**NOT_VERIFIED**：osascript 经 `LSSetDefaultRoleHandlerForContentType` 真正改变系统默认应用须真机验证（已确认 osascript 能解析该函数为合法 function、脚本构造正确、前端三态映射与 UI 展示，但「双击 .md 由 Folia 打开」这一端到端行为未在真机确认）。详见 [DEC-137](docs/DECISIONS.md)。
+
 ## [0.6.7] - 2026-08-12
 
 ### Added

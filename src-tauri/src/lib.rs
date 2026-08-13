@@ -525,6 +525,122 @@ fn confirm_close(window: tauri::Window, app: tauri::AppHandle) -> Result<(), Str
   Ok(())
 }
 
+// ──────── ISS-192 设为默认 Markdown 应用（macOS 优先）────────
+
+/// ISS-192：成功哨兵串。前端 defaultAppService 据此判定为「已设置」。
+const SET_DEFAULT_APP_SUCCESS: &str = "success";
+/// ISS-192：不支持自动设置平台的哨兵串。前端据此展示打开系统默认应用设置的引导。
+///
+/// `allow(dead_code)`：该常量仅在非 macOS 编译目标（Windows/Linux）的命令分支
+/// 中被返回；macOS 构建里该分支被 cfg 掉，因此非测试构建会判为未使用。
+/// 保留为常量是为了让 macOS / 非 macOS / 测试三处共用同一份哨兵真值。
+#[allow(dead_code)]
+const SET_DEFAULT_APP_UNSUPPORTED: &str = "unsupported";
+
+/// Markdown 的标准 UTI（Uniform Type Identifier）。`.md` / `.markdown` 扩展名在
+/// macOS 上均映射到该 UTI，因此只注册这一个即可覆盖两种扩展名。
+///
+/// 来源：`net.daringfireball.markdown` 是 Daring Fireball（Markdown 原作者）
+/// 注册的 UTI，也是 LaunchServices 识别 Markdown 文档的标准标识。
+const MARKDOWN_UTI: &str = "net.daringfireball.markdown";
+
+/// 构造用于注册默认 Markdown handler 的 JXA（JavaScript for Automation）脚本。
+///
+/// 脚本通过 `ObjC.import('CoreServices')` 引入 LaunchServices，调用 C 函数
+/// `LSSetDefaultRoleHandlerForContentType`，把 [`MARKDOWN_UTI`] 的默认 handler
+/// 指向传入的 `bundle_id`。`0xFFFFFFFF` 即 `kLSRolesAll`（同时覆盖 viewer /
+/// editor / shell 角色），保证 Folia 既是默认编辑器也是默认查看器。
+///
+/// 最后一条表达式（函数返回值）作为 osascript 的结果输出：返回 0 表示成功
+/// （OSStatus noErr），非 0 则是 LaunchServices 错误码。
+///
+/// 抽成独立纯函数以便单测断言脚本内容（bundle id / UTI 正确注入），避免在
+/// 单测里真正 spawn osascript 改系统状态。
+#[cfg(target_os = "macos")]
+fn build_set_default_markdown_jxa(bundle_id: &str) -> String {
+  // bundle_id 来自 tauri.conf.json 的 identifier，是受控字符串（反向域名格式
+  // com.folia.reader），不含单引号 / 反斜杠等会破坏 JXA 字面量的字符。
+  // 仍做一次转义以防 identifier 被改成含特殊字符的值。
+  let escaped_bundle = bundle_id.replace('\'', "\\'");
+  format!(
+    "ObjC.import('CoreServices');\n\
+     $.LSSetDefaultRoleHandlerForContentType('{uti}', '{escaped_bundle}', 0xFFFFFFFF)",
+    uti = MARKDOWN_UTI
+  )
+}
+
+/// macOS 上通过 osascript 执行 JXA，把本应用注册为 Markdown 默认打开程序。
+///
+/// 返回：
+/// - `Ok(SET_DEFAULT_APP_SUCCESS)`：LaunchServices 报告成功（OSStatus == 0）。
+/// - `Err(message)`：osascript 进程启动失败 / 非零退出 / LaunchServices 错误码。
+///
+/// 用 `std::process::Command` 而非 Tauri shell plugin，避免在 capabilities 里
+/// 引入 shell 执行权限（任务约束：保持最小权限面）。
+#[cfg(target_os = "macos")]
+fn set_default_markdown_app_macos(bundle_id: &str) -> Result<String, String> {
+  let script = build_set_default_markdown_jxa(bundle_id);
+
+  let output = std::process::Command::new("osascript")
+    .arg("-l")
+    .arg("JavaScript")
+    .arg("-e")
+    .arg(&script)
+    .output()
+    .map_err(|error| format!("failed to spawn osascript: {error}"))?;
+
+  if !output.status.success() {
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let trimmed = stderr.trim();
+    return Err(if trimmed.is_empty() {
+      format!("osascript exited with status {}", output.status)
+    } else {
+      format!("osascript failed: {trimmed}")
+    });
+  }
+
+  // osascript 把 JXA 最后一条表达式的值（OSStatus 数值）打印到 stdout。
+  let stdout = String::from_utf8_lossy(&output.stdout);
+  let status = stdout.trim();
+  if status == "0" {
+    Ok(SET_DEFAULT_APP_SUCCESS.to_string())
+  } else {
+    Err(format!(
+      "LSSetDefaultRoleHandlerForContentType returned status {status}"
+    ))
+  }
+}
+
+/// ISS-192：把本应用设为系统默认 Markdown 应用。
+///
+/// - **macOS**：通过 osascript JXA 调用 CoreServices 的
+///   `LSSetDefaultRoleHandlerForContentType`，把 UTI
+///   `net.daringfireball.markdown`（覆盖 `.md` / `.markdown`）的默认 handler
+///   指向本应用 bundle id（取自 tauri.conf.json `identifier`）。
+/// - **其他平台（Windows / Linux）**：暂不支持自动设置，返回
+///   [`SET_DEFAULT_APP_UNSUPPORTED`] 哨兵串，前端据此展示打开系统默认应用
+///   设置的引导文案（不报错）。
+///
+/// 返回 `Result<String, String>`：Ok 为哨兵串（`success` / `unsupported`），
+/// Err 为诊断信息。前端 [`defaultAppService`](../../services/defaultAppService)
+/// 按哨兵串映射到本地化提示。
+#[tauri::command]
+fn set_as_default_markdown_app(app: tauri::AppHandle) -> Result<String, String> {
+  #[cfg(target_os = "macos")]
+  {
+    // bundle id 取自 tauri.conf.json 的 identifier（源真值），随打包配置走，
+    // 避免在 Rust 里硬编码导致与打包产物漂移。
+    let bundle_id = app.config().identifier.clone();
+    set_default_markdown_app_macos(&bundle_id)
+  }
+  #[cfg(not(target_os = "macos"))]
+  {
+    // 引用 app 以避免 unused-variable 警告（非 macOS 编译目标上 AppHandle 未使用）。
+    let _ = &app;
+    Ok(SET_DEFAULT_APP_UNSUPPORTED.to_string())
+  }
+}
+
 /// 简易 percent-encoding（只覆盖我们用到的字符集），避免为这一点拉进 url crate。
 fn urlencode(raw: &str) -> String {
   let mut out = String::with_capacity(raw.len());
@@ -576,7 +692,8 @@ pub fn run() {
       create_tab_window,
       update_tab_window_tabs,
       close_tab_window,
-      confirm_close
+      confirm_close,
+      set_as_default_markdown_app
     ])
     .setup(|app| {
       if cfg!(debug_assertions) {
@@ -1246,5 +1363,81 @@ mod tests {
 
     assert_eq!(std::fs::read(dir.join(asset_rel)).unwrap(), b"v2");
     let _ = std::fs::remove_dir_all(&dir);
+  }
+
+  // ──────── ISS-192 设为默认 Markdown 应用 ────────
+
+  /// 不支持自动设置平台的哨兵串必须稳定，前端据此判定走引导文案分支。
+  #[test]
+  fn set_default_app_sentinels_are_stable() {
+    assert_eq!(SET_DEFAULT_APP_SUCCESS, "success");
+    assert_eq!(SET_DEFAULT_APP_UNSUPPORTED, "unsupported");
+    assert_ne!(SET_DEFAULT_APP_SUCCESS, SET_DEFAULT_APP_UNSUPPORTED);
+  }
+
+  /// 非 macOS 编译目标上命令返回 unsupported 哨兵串（走 cfg 分支）。
+  ///
+  /// 注意：在 macOS 开发机上 `#[cfg(not(target_os = "macos"))]` 分支不会被编译，
+  /// 因此本测试只在非 macOS CI 目标上断言；macOS 目标上跳过，避免假阳性。
+  #[cfg(not(target_os = "macos"))]
+  #[test]
+  fn set_default_app_returns_unsupported_off_macos() {
+    // MARKDOWN_UTI 仍应是标准 Markdown UTI（跨平台常量）。
+    assert_eq!(MARKDOWN_UTI, "net.daringfireball.markdown");
+    // 哨兵串断言（与平台无关，保证前端映射稳定）。
+    assert_eq!(SET_DEFAULT_APP_UNSUPPORTED, "unsupported");
+  }
+
+  /// macOS 上 JXA 脚本必须把 bundle id 与 Markdown UTI 正确注入，
+  /// 并以 LSSetDefaultRoleHandlerForContentType 调用作为最后表达式（其返回值
+  /// 作为 osascript 结果输出，供命令判定成功 / 失败）。
+  #[cfg(target_os = "macos")]
+  #[test]
+  fn build_set_default_markdown_jxa_injects_bundle_and_uti() {
+    let script = build_set_default_markdown_jxa("com.folia.reader");
+
+    // 引入 CoreServices 框架（提供 LSSetDefaultRoleHandlerForContentType）。
+    assert!(
+      script.contains("ObjC.import('CoreServices')"),
+      "script must import CoreServices, got: {script}"
+    );
+    // 调用正确的 LaunchServices C 函数。
+    assert!(
+      script.contains("LSSetDefaultRoleHandlerForContentType"),
+      "script must call LSSetDefaultRoleHandlerForContentType, got: {script}"
+    );
+    // bundle id 被注入（前端取自 tauri.conf.json identifier）。
+    assert!(
+      script.contains("'com.folia.reader'"),
+      "script must embed bundle id, got: {script}"
+    );
+    // 标准 Markdown UTI 被注入（覆盖 .md / .markdown）。
+    assert!(
+      script.contains("net.daringfireball.markdown"),
+      "script must embed Markdown UTI, got: {script}"
+    );
+    // 以函数调用作为最后表达式（无尾随分号），其返回值作为 osascript 结果。
+    assert!(
+      script.ends_with("0xFFFFFFFF)"),
+      "script must end with the LSSet call result, got: {script}"
+    );
+  }
+
+  /// bundle id 含单引号时必须被转义，避免破坏 JXA 字符串字面量。
+  /// （防御性：identifier 一般是合规反向域名，但转义保证健壮。）
+  #[cfg(target_os = "macos")]
+  #[test]
+  fn build_set_default_markdown_jxa_escapes_single_quote_in_bundle_id() {
+    let script = build_set_default_markdown_jxa("com.example'app");
+    assert!(
+      script.contains("'com.example\\'app'"),
+      "single quote in bundle id must be escaped, got: {script}"
+    );
+  }
+
+  /// MARKDOWN_UTI 常量在所有平台都应等于标准 Markdown UTI（前端文档引用）。
+  #[test]
+  fn markdown_uti_is_standard() {
+    assert_eq!(MARKDOWN_UTI, "net.daringfireball.markdown");
   }
 }
