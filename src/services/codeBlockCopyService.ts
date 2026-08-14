@@ -73,20 +73,30 @@ export interface CopyableCodeBlock {
  *
  * 命中条件（全部满足）：
  * - target 位于某个 <pre> 内；
- * - 该 <pre> 直接包含一个 <code> 子元素；
- * - <code> 文本非空；
- * - <code> 不带任何异步渲染语言 class（mermaid 等——会被替换成 SVG）；
+ * - 该 <pre> 不是 Vditor IR 编辑面（`vditor-reset`——IR 模式的整个编辑表面
+ *   就是 pre.vditor-reset，见 vditor/src/ts/ir/index.ts:37；不排除的话
+ *   closest('pre') 从任意正文命中它，其深层 querySelector('code') 又能找到
+ *   文档中任意 code 元素，整个编辑面被误判为代码块，按钮吸附在 pane
+ *   右上角常驻——v0.7.0 用户报告的回归）；
  * - 该 <pre> 不是 Vditor IR 源码 marker（`vditor-ir__marker`，那是源码展示态，
- *   非渲染结果，且编辑它没有意义）。
+ *   非渲染结果，且编辑它没有意义）；
+ * - <code> 是该 <pre> 的**直接子元素**（结构性保证 pre 是代码块容器本身，
+ *   而不是恰好内含 code 的容器型 pre）；
+ * - <code> 文本非空；
+ * - <code> 不带任何异步渲染语言 class（mermaid 等——会被替换成 SVG）。
  *
  * 返回 null 表示鼠标当前位置没有可复制的代码块。
  */
 export function findCopyableCodeBlock(target: Element): CopyableCodeBlock | null {
   const pre = target.closest('pre');
   if (!pre) return null;
+  // 排除 Vditor IR 编辑面 pre.vditor-reset（整个编辑表面，非代码块）
+  if (pre.classList.contains('vditor-reset')) return null;
   // 排除 Vditor IR 源码 marker pre（class 同时含 vditor-ir__marker / vditor-ir__marker--pre）
   if (pre.classList.contains('vditor-ir__marker')) return null;
-  const code = pre.querySelector('code');
+  // code 必须是直接子元素：容器型 pre（编辑面 / 未来 wrapper）内的深层
+  // code 一律不命中。真实代码块结构恒为 <pre><code>…</code></pre>。
+  const code = pre.querySelector(':scope > code');
   if (!code) return null;
   // 排除异步渲染语言（mermaid / echarts / math / ...）
   if (isAsyncRenderCodeBlock(code)) return null;
