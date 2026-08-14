@@ -152,6 +152,27 @@ describe('resolveLocalImages', () => {
     expect(container.querySelector('img')?.getAttribute('src')).toBe('file:///Users/demo/photo.png');
   });
 
+  // Regression: when a Markdown file references an image by its POSIX absolute
+  // path (`![主体关系图](/Users/.../图件/主体关系图.png)`), the resolver must
+  // route it through convertFileSrc directly. Previously the absolute path was
+  // joined with the markdown directory, producing
+  // `/Users/.../note.md/Users/.../主体关系图.png` which became an asset URL
+  // pointing nowhere — the editor then classified the load failure as
+  // `decode-failed` ("图片数据损坏，图片字节可能不完整或格式不受支持").
+  it('resolves POSIX absolute image paths to an asset URL without joining the markdown directory', async () => {
+    const { resolveLocalImages: resolve } = await importFresh();
+    const container = createContainerWithImages([{
+      src: '/Users/demo/docs/figures/主体关系图.png',
+      alt: '主体关系图',
+    }]);
+    await resolve(container, '/Users/demo/docs/note.md');
+    const src = container.querySelector('img')?.getAttribute('src') ?? '';
+    expect(src).toContain('asset.localhost');
+    expect(src).toContain('/Users/demo/docs/figures/主体关系图.png');
+    // The bogus double-path must not appear.
+    expect(src).not.toContain('/note.md/Users');
+  });
+
   it('resolves local WebP via Markdown image syntax', async () => {
     // ISS-178 follow-up: lock down that .webp goes through the same path as
     // .png / .jpg — extension-agnostic. Real Tauri runtime verified via

@@ -87,6 +87,36 @@ describe('htmlPresentationService', () => {
     expect(resolveLocalResourcePath('/Users/demo/decks/case.html', '//example.test/a.js')).toBeUndefined();
   });
 
+  // Regression for absolute-path image references such as
+  // `![主体关系图](/Users/.../图件/主体关系图.png)` in Markdown files. Before
+  // the fix, isRelativeLocalUrl() did not recognise POSIX absolute paths
+  // (`/Users/...`), so the resource was joined with the markdown directory
+  // and produced `/Users/.../note.md/Users/.../主体关系图.png` — a non-existent
+  // path that became asset:///<bogus> and surfaced as "图片数据损坏".
+  it('treats POSIX absolute paths as already resolved (does not prepend the markdown directory)', () => {
+    expect(
+      resolveLocalResourcePath(
+        '/Users/demo/docs/note.md',
+        '/Users/demo/docs/figures/主体关系图.png',
+      ),
+    ).toBe('/Users/demo/docs/figures/主体关系图.png');
+  });
+
+  it('treats Windows absolute paths as already resolved', () => {
+    expect(
+      resolveLocalResourcePath(
+        'C:\\Users\\demo\\docs\\note.md',
+        'C:\\Users\\demo\\docs\\figures\\photo.png',
+      ),
+    ).toBe('C:\\Users\\demo\\docs\\figures\\photo.png');
+  });
+
+  it('still refuses POSIX absolute paths that land in a sensitive directory', () => {
+    expect(resolveLocalResourcePath('/Users/demo/docs/note.md', '/etc/passwd')).toBeUndefined();
+    expect(resolveLocalResourcePath('/Users/demo/docs/note.md', '/private/etc/hosts')).toBeUndefined();
+    expect(resolveLocalResourcePath('/Users/demo/docs/note.md', '/Users/demo/.ssh/id_rsa')).toBeUndefined();
+  });
+
   it('refuses paths that traverse into sensitive system or credential directories', () => {
     const base = '/Users/demo/decks/case.html';
     // Three `..` reach the filesystem root from /Users/demo/decks/, landing in /etc, /var, /private.
