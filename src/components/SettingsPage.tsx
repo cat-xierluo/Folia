@@ -149,7 +149,7 @@ export function SettingsPage({ onClose, onUpdateAvailable, updateSnapshot, onRet
             {activeSection === 'general' && <GeneralSection />}
             {activeSection === 'editor' && <EditorSection />}
             {activeSection === 'preview' && <PreviewSection />}
-            {activeSection === 'appearance' && <AppearanceSection />}
+            {activeSection === 'appearance' && <AppearanceSection onOpenLicense={() => handleSectionSelect('license')} />}
             {activeSection === 'export' && <ExportSection onOpenLicense={() => handleSectionSelect('license')} />}
             {activeSection === 'htmlExport' && <HtmlExportSection onOpenLicense={() => handleSectionSelect('license')} />}
             {activeSection === 'license' && <LicenseSection />}
