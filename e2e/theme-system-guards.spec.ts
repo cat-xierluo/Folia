@@ -101,7 +101,7 @@ test.describe('ISS-191 Wave 2-B 主题系统守卫', () => {
 
     // app 外壳 dataset.theme 由 documentElement 驱动（CSS 变量已在 root div 内联 style 中），
     // 不在 .app-layout 上重复设 data-theme 属性（避免与 html[data-theme] 重复）。
-    // colorScheme 已在上面验证为 'dark，足够证明应用层生效。
+    // colorScheme 已在上面验证为 'dark'，足够证明应用层生效。
   });
 
   test('切深色主题后公众号预览文章体仍保持白底（导出面不渗漏）', async ({ page }) => {

@@ -237,7 +237,7 @@
 .preview-content a {
   color: var(--link);
   text-decoration: none;
-  border-bottom: 1px solid oklch(58% 0.16 35 / 0.3);
+  border-bottom: 1px solid color-mix(in oklch, var(--link) 30%, transparent);
 }
 
 .preview-content ::selection {

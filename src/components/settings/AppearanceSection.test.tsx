@@ -203,6 +203,41 @@ describe('AppearanceSection ISS-191 Wave 2-B', () => {
     expect(message?.textContent).toContain('My Theme');
   });
 
+  it('同名 CSS 导入时追加 -2/-3 后缀，避免静默覆盖（review MAJOR 2）', async () => {
+    // 预置已存在的 custom:my-theme，模拟重名场景。
+    updateSettings({
+      customThemePresets: [
+        { id: 'custom:my-theme', name: 'My Theme', css: '.a{}', createdAt: '2026-08-14T00:00:00.000Z' },
+      ],
+      disabledThemePresetIds: [],
+    });
+    settingsServiceMock.addCustomThemePreset.mockImplementation((preset) => {
+      updateSettings({ customThemePresets: [preset], themeId: preset.id });
+      return getSettings();
+    });
+
+    await act(async () => {
+      root.render(<AppearanceSection />);
+    });
+
+    const fileInput = host.querySelector<HTMLInputElement>('input[type="file"]');
+    const file = new File(['.x { color: red; }'], 'My Theme.css', { type: 'text/css' });
+    Object.defineProperty(file, 'text', { value: async () => '.x { color: red; }' });
+
+    await act(async () => {
+      Object.defineProperty(fileInput!, 'files', { value: [file], configurable: true });
+      fileInput!.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    const call = settingsServiceMock.addCustomThemePreset.mock.calls[0][0] as CustomThemePreset;
+    // 重名 → 追加 -2，name 带 " 2"，不覆盖既有 custom:my-theme。
+    expect(call.id).toBe('custom:my-theme-2');
+    expect(call.name).toBe('My Theme 2');
+  });
+
   it('surfaces a sanitize-stripped warning when the imported CSS contains dangerous content', async () => {
     settingsServiceMock.addCustomThemePreset.mockImplementation((preset) => {
       updateSettings({

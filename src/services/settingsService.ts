@@ -40,7 +40,6 @@ import {
   DEFAULT_THEME_ID,
   hasThemePreset,
   isThemePresetId,
-  listThemePresets,
   normalizeCustomThemePresets,
   type CustomThemePreset,
 } from './themePresets';
@@ -537,10 +536,14 @@ function normalizeDisabledThemePresetIds(
   return disabled;
 }
 
-function firstEnabledThemeId(customThemePresets: CustomThemePreset[]): string {
-  return listThemePresets({ customThemePresets }).find((preset) => isThemePresetId(preset.id))
-    ? listThemePresets({ customThemePresets })[0]?.id ?? DEFAULT_THEME_ID
-    : DEFAULT_THEME_ID;
+/**
+ * themeId 无效 / 缺失时的回退目标。
+ *
+ * listThemePresets 不过滤 builtin 主题（builtin 永远可用），其 [0] 恒为
+ * BUILT_IN_THEME_PRESETS[0] = builtin:light = DEFAULT_THEME_ID，故直接返回它。
+ */
+function firstEnabledThemeId(): string {
+  return DEFAULT_THEME_ID;
 }
 
 function normalizeThemeId(
@@ -557,7 +560,7 @@ function normalizeThemeId(
     return id;
   }
 
-  return firstEnabledThemeId(customThemePresets);
+  return firstEnabledThemeId();
 }
 
 function firstEnabledPresetId(

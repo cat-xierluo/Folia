@@ -155,37 +155,59 @@ export function AppearanceSection({ onOpenLicense }: AppearanceSectionProps) {
         setMessage({ tone: 'error', text: t('themeImportEmptyError') });
         return;
       }
-      const { css, stripped } = sanitizeThemeCss(text);
+      const { css, stripped, externalDomains } = sanitizeThemeCss(text);
       if (!css.trim()) {
         setMessage({ tone: 'error', text: t('themeImportParseError') });
         return;
       }
       const fallbackName = defaultNameFromFileName(file.name) || file.name;
-      const normalizedId = normalizeCustomThemeId(fallbackName);
-      if (!normalizedId) {
+      // 重名检测：若 slug 已被现有自定义主题占用，追加 -2/-3… 后缀直到唯一，
+      // 避免静默覆盖（review MAJOR 2）。
+      const baseId = normalizeCustomThemeId(fallbackName);
+      if (!baseId) {
         setMessage({ tone: 'error', text: t('themeImportParseError') });
         return;
       }
+      const existingIds = new Set(settings.customThemePresets.map((preset) => preset.id));
+      let uniqueId = baseId;
+      let suffix = 2;
+      let uniqueName = fallbackName;
+      while (existingIds.has(uniqueId)) {
+        uniqueId = `${baseId}-${suffix}` as never;
+        uniqueName = `${fallbackName} ${suffix}`;
+        suffix += 1;
+      }
       try {
         addCustomThemePreset({
-          id: normalizedId,
-          name: fallbackName,
+          id: uniqueId,
+          name: uniqueName,
           css,
           createdAt: new Date().toISOString(),
         });
+        // 合并警示：被剥离项 + 外部网络请求域名（review MAJOR 1）。
+        const warnings: string[] = [];
         if (stripped.length > 0) {
-          const preview = stripped.slice(0, 3).join('、');
-          setMessage({
-            tone: 'warning',
-            text: t('themeImportSanitizeStripped', {
+          warnings.push(
+            t('themeImportSanitizeStripped', {
               count: stripped.length,
-              items: preview,
+              items: stripped.slice(0, 3).join('、'),
             }),
-          });
+          );
+        }
+        if (externalDomains.length > 0) {
+          warnings.push(
+            t('themeImportExternalDomains', {
+              count: externalDomains.length,
+              domains: externalDomains.slice(0, 3).join('、'),
+            }),
+          );
+        }
+        if (warnings.length > 0) {
+          setMessage({ tone: 'warning', text: warnings.join(' / ') });
         } else {
           setMessage({
             tone: 'ok',
-            text: t('themeImportSuccess', { name: fallbackName }),
+            text: t('themeImportSuccess', { name: uniqueName }),
           });
         }
       } catch (error) {
@@ -261,7 +283,7 @@ export function AppearanceSection({ onOpenLicense }: AppearanceSectionProps) {
     </button>
   );
 
-  const renderCustomCard = (preset: CustomThemePreset, index: number) => {
+  const renderCustomCard = (preset: CustomThemePreset) => {
     const enabled = !disabledSet.has(preset.id);
     const active = settings.themeId === preset.id;
     const definition = presetById.get(preset.id);
@@ -269,10 +291,6 @@ export function AppearanceSection({ onOpenLicense }: AppearanceSectionProps) {
     const previewFg = definition?.variables['--fg'] ?? 'oklch(22% 0.015 60)';
     const previewAccent = definition?.variables['--accent'] ?? 'oklch(58% 0.16 35)';
     const isEditing = editingId === preset.id;
-    const slotLabel =
-      index < customLimit
-        ? t('themeImportTrigger') // 占位，仅在非编辑时使用
-        : t('themeImportTrigger');
     return (
       <div
         key={preset.id}
@@ -369,8 +387,6 @@ export function AppearanceSection({ onOpenLicense }: AppearanceSectionProps) {
             </button>
           </div>
         )}
-        {/* slotLabel 占位槽位仅当存在自定义主题且 preset.id 已是 custom id 时才渲染，避免 lint no-constant-binary-expression */}
-        {slotLabel && preset.id.startsWith('custom:') && <span className="settings-theme-card-slot-label">{slotLabel}</span>}
       </div>
     );
   };
@@ -413,7 +429,7 @@ export function AppearanceSection({ onOpenLicense }: AppearanceSectionProps) {
         <div className="settings-theme-grid">
           {customSlots.map((preset, index) =>
             preset
-              ? renderCustomCard(preset, index)
+              ? renderCustomCard(preset)
               : renderEmptyCustomSlot(index),
           )}
           {!licenseActive && (

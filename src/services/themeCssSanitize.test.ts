@@ -3,11 +3,28 @@ import { sanitizeThemeCss } from './themeCssSanitize';
 
 describe('sanitizeThemeCss', () => {
   it('returns empty input untouched', () => {
-    expect(sanitizeThemeCss('')).toEqual({ css: '', stripped: [] });
+    expect(sanitizeThemeCss('')).toEqual({ css: '', stripped: [], externalDomains: [] });
     // @ts-expect-error 验证对非字符串容错
-    expect(sanitizeThemeCss(null)).toEqual({ css: '', stripped: [] });
+    expect(sanitizeThemeCss(null)).toEqual({ css: '', stripped: [], externalDomains: [] });
     // @ts-expect-error 验证对非字符串容错
-    expect(sanitizeThemeCss(undefined)).toEqual({ css: '', stripped: [] });
+    expect(sanitizeThemeCss(undefined)).toEqual({ css: '', stripped: [], externalDomains: [] });
+  });
+
+  it('报告放行 http/https url 的外部域名（不剥离，仅警示）', () => {
+    const css = [
+      '.a { background: url(https://evil.com/?leak=1) }',
+      '.b { background: url(http://tracker.example.org/x.png) }',
+      '.c { background: url(https://EVIL.com/path) }',
+    ].join('\n');
+    const { css: clean, stripped, externalDomains } = sanitizeThemeCss(css);
+    // url 不剥离（http/https 放行）
+    expect(clean).toContain('https://evil.com/?leak=1');
+    expect(clean).toContain('http://tracker.example.org/x.png');
+    expect(stripped).toEqual([]);
+    // 域名去重 + 大小写归一（evil.com 与 EVIL.com 合并）
+    expect(externalDomains).toContain('evil.com');
+    expect(externalDomains).toContain('tracker.example.org');
+    expect(externalDomains.filter((d) => d === 'evil.com')).toHaveLength(1);
   });
 
   it('passes through safe CSS unchanged', () => {

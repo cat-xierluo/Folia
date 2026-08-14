@@ -9,12 +9,16 @@
  *   保险起见仍清洗）。
  * - 选择器不限（只影响用户自己的 DOM）。
  *
- * 返回清洗后的 CSS 与被剥离项摘要，供 UI 回显「已移除 N 处不安全内容」。
+ * 返回清洗后的 CSS、被剥离项摘要（供 UI 回显「已移除 N 处不安全内容」），
+ * 以及检测到的外部网络请求域名（http/https url 不剥离——CSS 属性选择器 +
+ * background:url 可作为数据外泄通道——但需告知用户，由其决定是否信任）。
  */
 
 export interface ThemeCssSanitizeResult {
   css: string;
   stripped: string[];
+  /** 检测到的外部 http/https 域名（去重）。不剥离，仅警示。 */
+  externalDomains: string[];
 }
 
 const DANGEROUS_URL_PROTOCOLS = ['javascript', 'vbscript', 'data:text/html', 'data:application'];
@@ -30,14 +34,23 @@ const DANGEROUS_PROTOCOL_HEAD_RE = new RegExp(
   'i',
 );
 
-/** @import 后跟任意 url(...) 或 "url" 字符串，统一剥除整条 @import。 */
-const IMPORT_AT_RULE_RE = /@import\s+(?:url\(\s*[\s\S]*?\s*\)|"[^"]+"|'[^']+')\s*;?/gi;
+/** @import 后跟任意 url(...) 或 "url" 字符串，统一剥除整条 @import（含可选 media query 后缀）。 */
+const IMPORT_AT_RULE_RE = /@import\s+(?:url\(\s*[\s\S]*?\s*\)|"[^"]+"|'[^']+')\s*(?:[^;]*)?\s*;?/gi;
 
 const EXPRESSION_RE = /expression\s*\(/gi;
 const MOZ_BINDING_RE = /-moz-binding\s*:/gi;
 const BEHAVIOR_RE = /behavior\s*:/gi;
 
 const FONT_FACE_SRC_RE = /(@font-face\s*\{[\s\S]*?\})/gi;
+
+/**
+ * 从 url/http(s) payload 提取域名（供外部网络请求警示去重展示）。
+ * 无法解析出域名的（相对路径/锚点）返回 null。
+ */
+function extractDomain(payload: string): string | null {
+  const match = payload.match(/^https?:\/\/([^/]+)/i);
+  return match ? match[1] : null;
+}
 
 function describeUrlStrip(match: string, payload: string): string {
   const snippet = payload.length > 40 ? `${payload.slice(0, 40)}…` : payload;
@@ -46,9 +59,10 @@ function describeUrlStrip(match: string, payload: string): string {
 
 export function sanitizeThemeCss(raw: string): ThemeCssSanitizeResult {
   const stripped: string[] = [];
+  const externalDomains = new Set<string>();
 
   if (typeof raw !== 'string' || raw.length === 0) {
-    return { css: '', stripped };
+    return { css: '', stripped, externalDomains: [] };
   }
 
   let css = raw;
@@ -72,7 +86,13 @@ export function sanitizeThemeCss(raw: string): ThemeCssSanitizeResult {
       if (
         lower.startsWith('http://')
         || lower.startsWith('https://')
-        || lower.startsWith('/')
+      ) {
+        const domain = extractDomain(payload);
+        if (domain) externalDomains.add(domain);
+        continue;
+      }
+      if (
+        lower.startsWith('/')
         || lower.startsWith('./')
         || lower.startsWith('../')
         || lower.startsWith('#')
@@ -88,14 +108,20 @@ export function sanitizeThemeCss(raw: string): ThemeCssSanitizeResult {
     return block;
   });
 
-  // 3) url() 中的危险协议：逐条剥除。
+  // 3) url() 中的危险协议：逐条剥除；放行的 http/https 记录外部域名供警示。
   css = css.replace(URL_PROTOCOL_RE, (full, payload: string) => {
     const trimmed = payload.trim().replace(/^['"]|['"]$/g, '');
     const lower = trimmed.toLowerCase();
     if (
       lower.startsWith('http://')
       || lower.startsWith('https://')
-      || lower.startsWith('/')
+    ) {
+      const domain = extractDomain(trimmed);
+      if (domain) externalDomains.add(domain);
+      return full;
+    }
+    if (
+      lower.startsWith('/')
       || lower.startsWith('./')
       || lower.startsWith('../')
       || lower.startsWith('#')
@@ -133,5 +159,10 @@ export function sanitizeThemeCss(raw: string): ThemeCssSanitizeResult {
     css = css.replace(BEHAVIOR_RE, 'legacy-ie-behavior-blocked :');
   }
 
-  return { css, stripped };
+  // 5) 深度防御：转义可能提前闭合 <style> / 注入 <script> 的字面序列。
+  //    当前 <style data-folia-theme> 用 React textContent 渲染（不触发 HTML 解析），
+  //    但防止将来误改成 dangerouslySetInnerHTML 或引入 SSR。
+  css = css.replace(/<\/(style|script)/gi, '<\\/$1');
+
+  return { css, stripped, externalDomains: [...externalDomains] };
 }
