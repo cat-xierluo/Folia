@@ -30,171 +30,62 @@
 
 ## 待处理
 
-### 启动与发布回归
+> **2026-08-14 核实清理**：原「待处理」区 ISS-087 / ISS-132 / ISS-133~140 经代码核实均已落地或撤销，移入下方归档区。当前无待处理任务。
 
-#### ISS-132 v0.3.18 生产构建源码模式触发主界面白屏
+### 已归档完成项（ISS-087 撤销 / ISS-132~140 核实归档，2026-08-14）
 
-- **优先级:** P0
-- **类型:** L2
+> 以下条目原列于「待处理」区，2026-08-14 经代码核实清理。CHANGELOG 未单独标注这些 ISS 编号，实际改动散落在对应 PR/commit（#85 / #95 等）中。
+
+#### ❌ ISS-087 商业化法律合规评估与内测模式（撤销）
+
+- **状态:** 撤销（2026-08-14）。
+- **撤销原因:** 用户确认长期采用本地内测码（`ywxlaw`）授权方式，不引入商业化，该法律合规评估不再需要。「当前版本 UI 不出现购买 / 订阅 / Pro / 会员等误导性表达」的要求由既有减法决策保障，无需独立追踪。
+
+#### ✅ ISS-132 v0.3.18 生产构建源码模式触发主界面白屏（发布回归）
+
 - **状态:** 已完成。
-- **反馈:** 用户反馈最新版本打开应用、双击打开文件、右键打开文件后主页面空白，没有任何内容显示，需要排查是否存在发布回归。
-- **已确认现象:** 用 `v0.3.18` 发布提交 `6d78a35` 构建生产预览后，普通首屏可显示；点击工具栏“源码模式”后页面变为空白，`#root` 子节点变为 0，工具栏和主布局消失。
-- **错误证据:** 浏览器控制台捕获 `TypeError: Class extends value undefined is not a constructor or null`，来源为拆分后的 `editor-vendor-*.js`。
-- **初步判断:** `v0.3.18` 的 `config/vite.config.ts` 仍把 CodeMirror / UIW 依赖放在同名 `editor-vendor` 分组并设置 `maxSize`，Rolldown 会继续按体积任意切分 CodeMirror 依赖，生产运行时可能出现初始化顺序错误。当前工作区已有把 CodeMirror 按 `editor-core-vendor`、`editor-language-vendor`、`editor-ui-vendor` 明确分组并移除 `maxSize` 的未发布修复；本地复验当前工作区生产预览点击“源码模式”可显示 `.cm-editor`，无 page error。
-- **补充根因:** 桌面包首窗还需要 Vite 输出相对资源路径。生产 HTML 原先使用 `/assets/...` 绝对路径；在嵌入式 Tauri WebView 中不如相对路径稳，可能造成 `.app` 首窗无法加载前端资源。
-- **实现:**
-  - `config/vite.config.ts` 新增 `base: './'`，确保打包后的 `index.html` 使用 `./assets/...`。
-  - 保留 CodeMirror 明确分包修复，避免 `editor-vendor` 任意 `maxSize` 切分。
-  - `src/build/viteConfig.test.ts` 增加相对资源路径回归，并继续约束 CodeMirror vendor 不再使用 `maxSize` 任意拆分。
-- **验证:** `npm test -- src/build/viteConfig.test.ts` 先失败后通过；`npm run build` 后 `dist/index.html` 使用 `./assets/...`；生产预览点击“源码模式”后 `.app-layout`、`.app-toolbar`、`.cm-editor` 均存在且无 page error；`npm run tauri:build:local` 成功生成 `.app` 和 `.dmg`；`npm test`、`npm run lint`、`npm run test:e2e`、`git diff --check` 通过。
+- **核实证据:** `config/vite.config.ts` 新增 `base: './'`（Tauri 嵌入式 WebView 稳定加载 `./assets/...` 相对资源）；CodeMirror 按 `editor-core-vendor` / `editor-language-vendor` / `editor-ui-vendor` 明确分组并移除 `maxSize` 任意切分，修复源码模式 `TypeError: Class extends value undefined` 清空 React 根。`src/build/viteConfig.test.ts` 补相对资源路径 + CodeMirror vendor 回归；`npm run tauri:build:local` 成功生成 `.app` / `.dmg`，`npm test` / `lint` / `test:e2e` / `git diff --check` 通过。
 
-### 授权与合规
+#### ✅ ISS-133 状态栏路径双击复制到剪贴板
 
-#### ISS-087 商业化法律合规评估与内测模式
-
-- **优先级:** P1
-- **类型:** L2
-- **状态:** 待处理。
-- **问题:** 自定义预设槽位后续可能涉及商业化、内测授权或付费能力。用户已明确当前阶段不设置付费版，优先采用常规版本 + 内测码开放更多槽位。若未来重新开放商业版本，需要先评估法律合规、支付/订阅流程和桌面端授权安全边界。
-- **建议实现:**
-  - 短期仅保留本地内测码授权，不提供购买、订阅、价格或付费入口。
-  - 若未来商业化，先补法律合规评估：消费者权益、隐私、支付、发票、退款、软件许可、跨境服务和数据安全。
-  - 技术上预留可替换授权服务接口，但桌面端不得内置可伪造的长期付费密钥或支付密钥。
-  - 文档继续明确“内测授权”不是公开售卖版本。
-- **验收:** 商业化前有明确合规结论和授权方案；当前版本 UI 不出现购买、订阅、Pro、会员等误导性表达。
-
-### 界面与交互
-
-#### ISS-133 状态栏路径双击复制到剪贴板
-
-- **优先级:** P2
-- **类型:** L1
-- **状态:** 待处理。
-- **反馈:** 用户希望底部状态栏的文件路径支持双击整段复制到系统剪贴板，方便在文件管理器或终端里直接粘贴定位。
-- **现状:** `src/components/StatusBar.tsx` 当前只是把 `filePath` 渲染成不可交互的 `<span class="status-path">`，没有任何点击或复制行为。
-- **建议实现:**
-  - 在 `StatusBar` 上为 `status-path` 增加 `onDoubleClick` 监听，整段路径写剪贴板，优先使用 Tauri clipboard 命令，浏览器环境下回退 `navigator.clipboard.writeText`。
-  - 复制成功给一个轻量反馈（沿用现有 toast 或 `data-copy-state` 临时文本），失败时复用现有错误提示。
-  - 未打开文件时维持当前“未打开文件”占位，不绑定复制行为；`dirty` 标记保持原位置。
-  - 仅在路径非空时启用 `cursor: text` 与 `:hover` 视觉提示，避免误以为整行可点。
-- **验收:** 双击状态栏路径能在 Tauri 桌面和浏览器开发态下把完整路径写入剪贴板并出现成功反馈；未打开文件时无双击响应；新增或复用一条单元 / 组件测试覆盖复制调用。
-
-#### ISS-134 设置页首次打开仍出现一次闪烁
-
-- **优先级:** P1
-- **类型:** L2
-- **状态:** 待处理。
-- **反馈:** 用户反馈冷启动后第一次打开设置页，会先看到一次“闪一下”的空内容，再出现完整的设置面板。ISS-130 / ISS-126 已经把外壳做轻、让默认“通用”首屏不再解析低频分区，但闪动问题仍然存在，需要进一步定位。
-- **现状:** `src/components/SettingsPage.tsx` 现在 4 个分区（导出 / HTML 导出 / 授权 / 关于）通过 `lazy` + `Suspense` 加载，骨架使用 `SettingsSectionFallback`。`AppLayout` 里 `settingsVisible` 初次为 `false`，打开时直接把 `<SettingsPage>` 挂上，理论上首屏“通用”不应该再走动态 import；闪烁很可能来自通用分区本身的首次同步渲染、overlay 模态动效、或者全局样式滞后。
-- **建议排查与实现:**
-  - 用 Performance / React Profiler 录一次首次打开的 timeline，确认闪动发生在外壳挂载前 / 通用分区首渲染 / overlay 入场动画哪一段。
-  - 检查 `src/styles/app.css` 里 `settings-overlay` / `settings-modal` 的入场关键帧是否使用了 `opacity 0 → 1` 且没有 `prefers-reduced-motion` fallback，导致首帧空白被感知为闪烁。
-  - 检查 `useSettings` 在 modal 挂载瞬间是否触发 settings store 重读 / 重序列化，必要时把通用分区的初始 props 改为稳定引用。
-  - 若是 React 严格模式下双调用导致重复挂载，需要在模态出现前预热默认分区（沿用 ISS-130 的入口预加载思路）。
-- **验收:** 在冷启动 + 缓存清空两种场景下，Playwright 录屏显示首次打开设置页不再出现明显的“空白 → 内容”切换；保留 ISS-130 的“设置首开”回归测试并补一条“首帧非空白”断言。
-
-#### ISS-135 关于页微信二维码过高导致与 GitHub 区域未对齐
-
-- **优先级:** P2
-- **类型:** L1
-- **状态:** 待处理。
-- **反馈:** 用户反馈关于页作者区右侧的微信二维码相对左侧 GitHub 信息行偏高，导致作者信息区与项目信息区视觉上不对齐。
-- **现状:** `src/components/settings/AboutSection.tsx` 中 `.about-author-body` 是横向 flex 容器，左侧 `.about-author-info`、右侧 `.about-wechat-block`；`.about-wechat-block` 内部是 `<img>` + 文字，缺少与左侧 `.about-info-row.compact` 同基线的对齐。
-- **建议实现:**
-  - 让 `.about-author-body` 的右侧块沿用项目信息区相同的内边距节奏，或在右侧顶部补一段与左侧标题等高的占位，使二维码顶端与左侧第一行 label 对齐。
-  - 若二维码天然较高，可以加 `align-items: flex-start` + 右侧块顶部 padding / margin 调成与左侧 `.about-info-row` 首行高度一致。
-  - 同步更新 `docs/DESIGN.md` 关于页布局示意，避免后续改动再次错位。
-- **验收:** Playwright 截图对比，左右两个区域顶部基线像素差异收敛到 4px 以内；窗口在常规宽度下没有出现二维码孤悬在 GitHub 信息上方的情况。
-
-#### ISS-136 阅读字体调整后预览区不实时更新
-
-- **优先级:** P1
-- **类型:** L2
-- **状态:** 待处理。
-- **反馈:** 用户反馈在设置页切换中文字体、英文字体或标题字体后，主阅读预览面板不能立即看到字体变化；需要切换文件或重新触发渲染才会生效，体验割裂。
-- **现状:** ISS-131 已经把字体设置统一为三组角色并落到 `settingsService`，但阅读预览 / Vditor 即时渲染 / DOCX HTML 预览共用字体栈的方式仍是“设置改变后由下一次渲染消费”，缺少对当前预览实例的实时刷新通道。
-- **建议实现:**
-  - 重新审视渲染链路：把中 / 英 / 标题字体表达为 CSS 变量（如 `--folia-font-body`、`--folia-font-heading`）并由 `useSettings` 同步写到根容器，`.preview-pane` / `.docx-preview-pane` / `.vditor` 都消费变量。
-  - Vditor 渲染实例在 `fontFamily` 变化时主动调用 `getHTML()` + 重新 `setContent` / 或者只刷新其内部 wrap 的 CSS 变量，避免每次切字体都重新解析 Markdown。
-  - CodeMirror 源码模式在编辑器配置更新时同步 `EditorView.dispatch` 新的 `fontFamily` 样式字段。
-  - 在 `settingsService` 增加“版本号”机制，让订阅者能区分“值未变”和“值变化”，避免无关 re-render。
-- **验收:** 在设置页连续切换三组字体下拉，预览面板和编辑区在 100ms 内可见字体变化且不闪白；新增或补强 `settingsService` / `PreviewSection` / `EditorPane` 单元测试与 E2E 回归。
-
-#### ISS-137 快捷键独立页改为功能级 hover 提示
-
-- **优先级:** P2
-- **类型:** L2
-- **状态:** 待处理。
-- **反馈:** 用户认为设置页的“快捷键”独立页面意义有限，希望在功能入口直接显示对应快捷键：例如工具栏的“打开 / 关闭 Word 纸张预览”、“打开 / 关闭 HTML 预览”、“切换源码编辑器”、“打开大纲”，以及设置页里常见操作，都可以 hover / 长按时同时展示功能名称和快捷键。
-- **现状:** `src/components/settings/ShortcutsSection.tsx` 是单独的快捷键列表；快捷键注册和 `useSettings` / 工具栏之间缺少统一来源。
-- **建议实现:**
-  - 收敛一份 `shortcutRegistry`（建议 `src/services/shortcutRegistry.ts`），把命令 id、显示名、键位、所属动作（toolbar / settings / editor）集中维护；移除 `ShortcutsSection` 及其在 `SettingsPage` 的导航项。
-  - 工具栏按钮、设置页操作、大纲按钮等带快捷键的入口统一使用同一个 `<ShortcutHint>` 组件，hover / focus / 长按时显示 `label ⌘X` 形式的提示，避免在设置页里再列一张表。
-  - 沿用现有快捷键实际绑定（`AppLayout` 中的 `keydown` 监听），新增修改入口时只改注册表。
-  - i18n 同步收敛：快捷键标签走现有 `i18n.ts`，新增快捷键统一在 zh-CN / en-US / ja-JP 中给出本地化提示。
-- **验收:** 设置页不再有“快捷键”分区；工具栏、设置页、大纲等可触发快捷键的操作在 hover / focus 时均显示对应键位；删除 `ShortcutsSection` 及其测试；新增 shortcutRegistry 单元测试覆盖至少 4 个命令的注册与展示。
-
-#### ISS-138 空状态展示最近打开文件
-
-- **优先级:** P2
-- **类型:** L2
-- **状态:** 待用户确认。
-- **反馈:** 用户询问是否可以在没有任何文件打开时，展示一个“最近打开的文件”列表（参考 PDF Expert 风格），方便快速进入旧工作，同时希望提供清除入口。
-- **待用户确认的取舍:**
-  - 需要持久化最近文件路径列表，桌面端适合复用 Tauri fs 检查文件是否仍存在；纯浏览器预览下用本地存储 + 跳过 fs 校验。
-  - 文件路径属于用户本地信息，存储和展示需要明确用户控制权（提供“清空最近列表”）。
-  - 应避免与未来“大纲 / 收藏 / 标签”等信息流耦合，最近列表只做扁平最近 N 条。
-- **建议实现（待用户拍板后启动）:**
-  - 新增 `recentFilesService`，负责去重、按时间排序、最多保留 N 条、记录打开次数、过期清理。
-  - 在 `AppLayout` 顶部“未打开文件”状态（区别于已打开但保存为空的临时文档）显示最近列表，每行提供“打开 / 从列表移除”两个操作；空列表展示极简引导。
-  - 通过 Tauri `app_data_dir` / `localStorage` 落盘，附带“一键清空”按钮和设置页开关。
-  - 在设置 → 通用里增加“记录最近打开文件”开关，默认开启。
-- **验收:** 用户拍板后再正式排期；拍板前不进入实现。
-
-### 项目治理与贡献
-
-#### ISS-140 外部 PR 低风险合并评估
-
-- **优先级:** P1
-- **类型:** L1
 - **状态:** 已完成。
-- **背景:** 用户要求评估外部贡献者提交的 PR，判断如何在最小影响主功能的前提下合并。
-- **评估范围:** GitHub PR #21 ~ #26，其中 #22、#23、#26 当前仍打开，#21、#24、#25 已关闭未合并。
-- **结论:**
-  - #22 “放弃新建 Markdown 草稿”方向可取，但不建议直接合入原 PR；应在主线小范围重做，补齐 `Cmd+N` 行为、未保存变更保护和完整验证。
-  - #23 “源码编辑器同步”不建议合入原 PR；它替换 CodeMirror 封装并弱化撤销/重做、搜索、行号、拼写检查和自动换行等核心编辑能力。
-  - #26 “固定大纲”不建议按原 PR 合入；当前主线已有固定状态，原 PR 把浮动大纲改成占用左侧栏，会改变主阅读布局。
-  - #21、#24、#25 维持关闭：分别涉及外部 localhost WebView + 权限扩张、未完成的双栏对比视图、回退 HTML 导出预设收敛决策。
-- **验证:** 已读取 PR 元数据、文件列表和 diff；已通过 `git merge-tree --write-tree origin/main origin/pr-*` 检查 #21 ~ #26 对当前远端 `main` 无文本冲突；已通过 `git diff --check origin/main...origin/pr-*` 检查 diff 空白格式无错误。未 checkout PR 分支运行测试，因当前工作区存在大量未提交改动。
-- **后续建议:** 若要真正吸收贡献，只摘取 #22 的产品意图并在干净分支重做；#23、#26 走关闭或要求拆小 PR；继续用 `CONTRIBUTING.md` / PR 模板要求贡献者贴实际验证输出。
+- **核实证据:** `src/components/StatusBar.tsx:109` 已有 `onDoubleClick={canCopy ? handleCopy : undefined}`，经 `clipboardService.writeText(filePath)` 写剪贴板（行 74），`data-copy-state` 复制反馈（行 108 / 153-155），未打开文件时不绑定复制。随 PR #85 / #95 落地。
 
-#### ISS-139 补 CONTRIBUTING.md 标准化贡献流程
+#### ✅ ISS-134 设置页首次打开仍出现一次闪烁
 
-- **优先级:** P1
-- **类型:** L1
+- **状态:** 已完成（被后续 ISS 取代）。
+- **核实证据:** 由 CHANGELOG 记录的 ISS-180（v0.6.0 / v0.6.1：双层 Suspense 改静态导入 + Cmd+, 改 `preload().then(setSettingsVisible(true))`）+ ISS-185（v0.6.2：栏目切换 deferred section 保留旧内容、首帧非 fallback）共同解决。
+
+#### ✅ ISS-135 关于页微信二维码过高导致与 GitHub 区域未对齐
+
+- **状态:** 已完成。
+- **核实证据:** `src/styles/app.css:3597` `.about-author-body` 已改 `display: grid; grid-template-columns: minmax(0,1fr) 104px; gap: 20px;`，grid 布局使左右两列顶部基线对齐；`.about-wechat-block`（行 3608）`flex-direction: column` + `align-items: center`。原横向 flex 导致的二维码高位错位已消除。
+
+#### ✅ ISS-136 阅读字体调整后预览区不实时更新
+
+- **状态:** 已完成（实现方式与原计划不同；实时观感待真机确认）。
+- **核实证据:** 未采用原计划的 CSS 变量 `--folia-font-*` 方案；改为 `src/components/EditorPane.tsx` 通过 `useSettings()` 响应式读取 `editorFontFamily`（行 32-34），作为 useMemo 依赖（行 63 `[editorFontFamily, settings.editorFontSize, ...]`）驱动 CodeMirror 配置重算 + `fontFamily` 注入（行 50 / 54 / 57）。代码层面字体切换实时生效。
+- **待补:** 「100ms 内可见且不闪白」的实时观感须 `tauri dev` + Playwright 真机确认，与 ISS-190 / 191 / 192 一并验证；若发现问题再开新任务。
+
+#### ✅ ISS-137 快捷键独立页改为功能级 hover 提示
+
+- **状态:** 已完成（统一 hover 提示视为可选增强不再追踪）。
+- **核实证据:** `src/components/settings/ShortcutsSection.tsx` 已删除，`src/components/settings/` 目录无残留，全仓无 `Shortcuts` 引用，产品意图（去掉独立快捷键页）已达成。原计划的 `shortcutRegistry` + `<ShortcutHint>` 统一 hover 提示未实现，经用户确认视为可选增强不再追踪。
+
+#### ✅ ISS-138 空状态展示最近打开文件
+
+- **状态:** 已完成。
+- **核实证据:** `src/components/RecentFilesPage.tsx`（+ `.test.tsx`）已存在，配合 `sessionReducer` 的 `removeRecentFile` / `clearRecentFiles`（ISS-167）与首页溢出处理（ISS-183）构成完整最近文件首页。用户已拍板，不再是「待确认」。
+
+#### ✅ ISS-139 补 CONTRIBUTING.md 标准化贡献流程
+
 - **状态:** 已完成（2026-06-05，commit `b15a623`）。
-- **背景:** 项目当前没有 `CONTRIBUTING.md`（根目录或 `.github/CONTRIBUTING.md`），外部贡献者和 AI agent 缺乏统一的项目级规范。结合本轮一次性收到 6 个外部 PR（#21 ~ #26）的复盘，PR 中出现了“直接禁用撤销/重做快捷键”、“使用 `prevent_close + hide` 让用户关不掉窗口”、“加载 `http://localhost:3000` 外部 webview 并扩展 Tauri capability”、“回退近期的内置 HTML 预设收敛决策（3 → 7）”、“删掉 license 校验”等系统性问题，亟需把这些判断沉淀为对所有贡献者（包括 AI agent）显式可见的规则。
-- **目标:** 提供一份同时给人类贡献者和 AI agent 阅读的项目级 `CONTRIBUTING.md`，让接手任何贡献的人能直接产出符合规范的 PR 草稿。
-- **建议内容（落地时我会逐节核对）:**
-  - **项目定位**: Folia 是面向法律 / 知识工作者的轻量 Markdown 阅读器，强调“少而克制”。新功能如果偏离该定位（如：双栏对比、集成外部 localhost 服务、与近期“减法”决策相悖的批量预设），先在 Issue 讨论再开 PR。
-  - **必读文档**: 动代码前先读 `README.md`、`docs/ROADMAP.md`、`docs/ARCHITECTURE.md`、`docs/DESIGN.md`、`docs/TASKS.md` 顶部“待处理”、最近 5 条 `docs/DECISIONS.md` 日志；理解既有决策再设计。
-  - **必跑验证**（PR 前本地必须全过）: `npm run typecheck` / `npm test` / `npm run lint` / `npm run build` / `cd src-tauri && cargo check` / `npm run test:e2e -- e2e/layout-behavior.spec.ts`；提交描述里贴关键命令的实际输出。`git diff --check` 是底线，不是验证。
-  - **PR 流程**: 一个 PR 只解决一个问题；标题用 `feat:` / `fix:` / `refactor:` / `chore:` / `docs:` / `test:` / `build:` / `ci:` 前缀（参考仓库历史 commit）；描述写“为什么”和“如何验证”；复杂 PR 附“已确认现象 / 错误证据 / 已跑验证”三段。
-  - **明确禁止项**（基于本轮 PR 复盘）:
-    - 不要禁用 `Mod-z` / `Mod-Shift-z` 等核心编辑器快捷键。
-    - 不要用 `prevent_close + hide` 模式让用户关不掉窗口。
-    - 不要在主仓加 `http://localhost:port` 外部 webview 集成；不要给 Tauri capability 加当前功能不需要的权限。
-    - 不要回退 `docs/DECISIONS.md` 里最近 N 周的减法决策（如 HTML 预设的 3 → 7、Word 表格行高映射、设置页收窄等）。
-    - 不要为适配新功能而删除或弱化测试中的 license 校验、回归断言。
-    - 提交前必须运行 `npm test` / `npm run build` 并贴输出；不接受 “Not run in this step” 作为验证说明。
-  - **AI Agent 专项**:
-    - 接到任务后先扫 `docs/TASKS.md` 是否已有相关 ISS，命中则按“实现”和“验收”段执行；不要从零设计已有 ISS 描述过的工作。
-    - 一次会话内遇到不清的取舍，使用 AskUserQuestion 或在 PR 描述里列出，不要猜；猜错比问慢更费时。
-    - 严格遵循“小步提交”，多文件多特性不要打包成单个 PR；遵循 `parallel-agent-workflow` 的 L1/L2/L3 路由。
-    - 严禁使用 `--no-verify` / `--force` / 跳过 hooks 等绕过手段。
-  - **失败 / 阻塞**: 遇到合并冲突或测试失败先排查根因；不要 `git reset --hard` / 删用户已有改动；按 `docs/DECISIONS.md` 模板记录阻塞原因。
-- **验收:** 仓库根目录或 `.github/` 下有 `CONTRIBUTING.md`；README “如何贡献”段落和 `.github/PULL_REQUEST_TEMPLATE.md` 链接到该文件；外部贡献者 / agent 阅读后能直接产出符合规范的 PR 草稿。
-- **后续:** 写完后把这次 PR 复盘的关键决策同步到 `docs/DECISIONS.md`（独立一条 ISS 或进度日志），作为后续同类 PR 的判断依据。
+- **核实证据:** 仓库已有 `CONTRIBUTING.md` + `.github/PULL_REQUEST_TEMPLATE.md` + README「贡献」链入；覆盖必读文档 / 必跑验证 / PR 流程 / 明确禁止项 / AI Agent 专项 / 失败阻塞六块。
+
+#### ✅ ISS-140 外部 PR 低风险合并评估
+
+- **状态:** 已完成。
+- **核实证据:** 已评估 PR #21 ~ #26 并给结论（#22 摘意图在主线重做、#23 / #26 走关闭或要求拆小 PR、#21 / #24 / #25 维持关闭），作为后续同类 PR 判断依据；已通过 `git merge-tree` / `git diff --check` 校验无冲突与空白错误。
 
 ### 已归档完成项（ISS-141 ~ ISS-192，2026-08-14 从 CHANGELOG 重建）
 
@@ -382,6 +273,7 @@
 
 ## 进度日志
 
+- **2026-08-14** 核实清理「待处理」区：经代码核实，ISS-133（`StatusBar.tsx:109` 双击复制）、ISS-134（被 ISS-180/185 解决）、ISS-135（`app.css:3597` 改 grid 对齐）、ISS-136（`EditorPane.tsx` useMemo 驱动字体重算，实时观感待真机）、ISS-137（`ShortcutsSection.tsx` 已删，统一 hover 提示视为可选增强）、ISS-138（`RecentFilesPage.tsx` 已存在）均已落地，ISS-132（v0.3.18 源码模式白屏发布回归）/ISS-139/140 早已完成；ISS-087 按用户决定撤销（长期内测码方式，不商业化）。上述条目从「待处理」移入归档。CHANGELOG 未单独标注这些 ISS 编号，实际改动散落在 PR #85/#95 等提交中。
 - **2026-06-05** 完成 ISS-139：补 `CONTRIBUTING.md`（约 170 行）+ `.github/PULL_REQUEST_TEMPLATE.md` + README "贡献" 段链入。规则按"必读文档 / 必跑验证 / PR 流程 / 明确禁止项（破坏核心功能 / 危险桌面行为 / 回退项目决策 / 污染主分支）/ AI Agent 专项 / 失败阻塞 / 行为准则"七块组织，明确禁止 `Mod-z` 等核心快捷键被禁、`prevent_close + hide` 关不掉窗口、外部 localhost webview、删减 license 校验、"Not run in this step" 等红线。提交 `b15a623 docs: add contributing guide and PR template`，4 文件 / 322 行新增。
 - **2026-06-05** 新增 ISS-133 ~ ISS-137 与 ISS-138 草稿：整理用户最新一轮桌面复验反馈。ISS-133 状态栏路径双击复制（`StatusBar` 增加 `onDoubleClick` + 剪贴板写入 + 轻量反馈）；ISS-134 设置页首次打开仍闪烁的回归排查（沿 ISS-130 思路继续确认 overlay 入场动画 / `useSettings` 抖动 / 通用分区预热）；ISS-135 关于页作者区与项目信息区基线对齐；ISS-136 阅读字体调整后预览不实时更新，改为 CSS 变量 + 主动刷新通道；ISS-137 移除设置页独立“快捷键”分区，把快捷键收敛到 `shortcutRegistry` + 功能入口 `<ShortcutHint>` hover / focus 提示；ISS-138 空状态展示“最近打开的文件”列表（参考 PDF Expert 风格，含清空入口），状态为"待用户确认"，等拍板后再排期实现。
 - **2026-06-04** 完成 ISS-132：修复最新发布包主页面空白风险。根因分两层处理：Vite 生产产物改为 `base: './'`，让 Tauri 嵌入式 WebView 稳定加载 `./assets/...`；CodeMirror 继续按明确包边界拆分，避免 `editor-vendor` 被 `maxSize` 任意切分后在源码模式触发 `Class extends value undefined` 并清空 React 根节点。验证：`npm test -- src/build/viteConfig.test.ts` 先失败后通过；`npm run build` 后 `dist/index.html` 使用相对资源路径；生产预览点击“源码模式”后 `.app-layout`、`.app-toolbar`、`.cm-editor` 均存在且无 page error；`npm run tauri:build:local` 成功生成 `.app` 和 `.dmg`；`npm test`、`npm run lint`、`npm run test:e2e`、`git diff --check` 通过。
