@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
-import { FileUp, Lock, Pencil, Trash2 } from 'lucide-react';
+import { ChevronDown, FileUp, Lock, Pencil, Trash2 } from 'lucide-react';
 import { useSettings } from '../../hooks/useSettings';
 import {
   addCustomThemePreset,
@@ -48,6 +48,33 @@ const BUILT_IN_NAME_KEYS: Record<BuiltInThemePresetId, Parameters<typeof transla
 
 const BUILT_IN_IDS = BUILT_IN_THEME_PRESETS.map((preset) => preset.id);
 
+/**
+ * 自定义主题 CSS 示例模板（ISS-191）。
+ * 教用户两件事：(1) 在 :root 覆盖 Folia 语义 CSS 变量（--bg/--fg/--accent 等）；
+ * (2) 可选地写元素级规则（.preview-content / .wysiwyg-editor-pane 等）。
+ * 这正是内置主题的 variables + elementCss 双通道，照此写即可复刻任意内置主题或自创。
+ */
+const THEME_CSS_EXAMPLE = [
+  '/* 1. 覆盖语义变量：Folia 主题由这些变量驱动，改它们即换肤 */',
+  ':root {',
+  '  --bg: oklch(96% 0.02 200);            /* 页面背景 */',
+  '  --surface: oklch(98% 0.01 200);       /* 编辑器/面板底 */',
+  '  --fg: oklch(22% 0.03 210);            /* 正文文字 */',
+  '  --muted: oklch(50% 0.02 205);         /* 次要文字 */',
+  '  --accent: oklch(55% 0.13 220);        /* 强调色（链接/选中）*/',
+  '  --border: oklch(88% 0.01 200);        /* 分隔线/边框 */',
+  '  --link: oklch(50% 0.14 225);          /* 链接色 */',
+  '  --code-bg: oklch(92% 0.01 200);       /* 行内代码背景 */',
+  '  --code-block-bg: oklch(94% 0.01 200); /* 代码块背景 */',
+  '  --selection-bg: oklch(55% 0.13 220 / 0.25); /* 选区 */',
+  '}',
+  '',
+  '/* 2.（可选）元素级规则：微调特定区块排版 */',
+  '.preview-content h2 {',
+  '  border-bottom: 1px dashed var(--border);',
+  '}',
+].join('\n');
+
 function defaultNameFromFileName(fileName: string): string {
   return fileName
     .replace(/\.css$/i, '')
@@ -66,6 +93,7 @@ export function AppearanceSection({ onOpenLicense }: AppearanceSectionProps) {
   const [message, setMessage] = useState<SectionMessage | null>(null);
   const [editingId, setEditingId] = useState<CustomThemePresetId | null>(null);
   const [editingName, setEditingName] = useState('');
+  const [showExample, setShowExample] = useState(false);
 
   const t = (key: Parameters<typeof translate>[1], params?: Record<string, string | number>) =>
     translate(settings.locale, key, params);
@@ -450,6 +478,27 @@ export function AppearanceSection({ onOpenLicense }: AppearanceSectionProps) {
             </button>
           )}
         </div>
+
+        <button
+          type="button"
+          className="settings-theme-example-toggle"
+          onClick={() => setShowExample((value) => !value)}
+          aria-expanded={showExample}
+        >
+          <ChevronDown size={14} className={`settings-theme-example-chevron ${showExample ? 'open' : ''}`} />
+          {t('themeExampleToggle')}
+        </button>
+        {showExample && (
+          <div className="settings-preset-page settings-json-example settings-theme-example">
+            <div className="settings-preset-page-header">
+              <div>
+                <div className="settings-preset-group-title">{t('themeExampleTitle')}</div>
+                <p className="settings-preset-desc">{t('themeExampleDesc')}</p>
+              </div>
+            </div>
+            <pre>{THEME_CSS_EXAMPLE}</pre>
+          </div>
+        )}
       </div>
 
       {message && (
