@@ -8,15 +8,23 @@
 //      + license 锁定行存在（标准 2 槽位）；
 //   4) 代码块复制按钮（ISS-190）：hover 出现 → 点击 → is-copied 反馈 → 真实剪贴板内容。
 // 真机（WKWebView 观感 / osascript 系统注册 / fileWatchService）不在本 spec 范围。
+// 文案断言确定性前提：settingsService 默认 locale 硬编码 'zh-CN'（不经 navigator 检测），
+// 各测试独立 fresh context 仅注入 session——若未来默认 locale 改为浏览器检测，需同步调整。
 import { expect, test } from '@playwright/test';
 
-const APP_URL = 'http://127.0.0.1:5173/';
-
 const BUILT_IN_NAMES = ['亮色', '羊皮纸', '青纸', '深色', '夜墨', '古典'] as const;
+const BUILT_IN_IDS: Record<(typeof BUILT_IN_NAMES)[number], string> = {
+  亮色: 'builtin:light',
+  羊皮纸: 'builtin:sepia',
+  青纸: 'builtin:sage',
+  深色: 'builtin:dark',
+  夜墨: 'builtin:ink',
+  古典: 'builtin:classic',
+};
 const DARK_NAMES = new Set(['深色', '夜墨']);
 
 async function openAppearance(page: import('@playwright/test').Page): Promise<void> {
-  await page.goto(APP_URL);
+  await page.goto('/');
   await page.getByRole('button', { name: '设置' }).click();
   await page.getByRole('button', { name: '外观' }).click();
   await expect(page.locator('.settings-section-appearance')).toBeVisible();
@@ -96,11 +104,13 @@ test.describe('ISS-191 主题系统视觉守卫', () => {
         padding: cs.paddingTop,
       };
     });
-    // 浏览器默认 button：radius 0 / border 无 / padding 0。这里必须「非裸渲染」。
-    expect(cardStyle.radius).not.toBe('0px');
-    expect(cardStyle.borderWidth).not.toBe('0px');
-    expect(cardStyle.background).not.toBe('rgba(0, 0, 0, 0)');
-    expect(cardStyle.padding).not.toBe('0px');
+    // 锚定 app.css `.settings-theme-card` 的声明值（radius 8px / border 1px / padding 10px），
+    // 背景 ≠ 透明 ≠ chromium UA 裸 button 默认灰（rgb(239,239,239)）——
+    // 防「写 className 不写 CSS」时退回 UA 裸渲染。
+    expect(cardStyle.radius).toBe('8px');
+    expect(cardStyle.borderWidth).toBe('1px');
+    expect(cardStyle.padding).toBe('10px');
+    expect(['rgba(0, 0, 0, 0)', 'rgb(239, 239, 239)']).not.toContain(cardStyle.background);
 
     // --- 逐套切换：active 状态 + themeId 持久化 + 根变量 = 色卡 preview 背景 ---
     for (const name of BUILT_IN_NAMES) {
@@ -111,12 +121,12 @@ test.describe('ISS-191 主题系统视觉守卫', () => {
       await card.click();
       await expect(card).toHaveClass(/active/);
 
-      // 持久化
+      // 持久化（精确到 name → id 映射，防错主题误存）
       const persisted = await page.evaluate(() => {
         const raw = window.localStorage.getItem('folia-settings');
         return raw ? ((JSON.parse(raw) as { themeId?: unknown }).themeId ?? null) : null;
       });
-      expect(persisted).toMatch(/^builtin:/);
+      expect(persisted).toBe(BUILT_IN_IDS[name]);
 
       // 注入链路：根 div 内联 --bg 应等于该卡 preview 的内联 background
       const previewBg = await card
@@ -224,6 +234,11 @@ test.describe('ISS-191 主题系统视觉守卫', () => {
       return raw ? ((JSON.parse(raw) as { themeId?: unknown }).themeId ?? null) : null;
     });
     expect(persisted).toMatch(/^custom:/);
+
+    // 点击锁定卡 → 跳转到内测授权栏目（onOpenLicense → handleSectionSelect('license')）。
+    // 放在导入断言之后：点击会离开外观栏目，file input 将卸载。
+    await lockedCard.click();
+    await expect(page.locator('.settings-license-section')).toBeVisible();
   });
 });
 
@@ -247,7 +262,7 @@ test.describe('ISS-190 代码块复制按钮', () => {
     ].join('\n');
     await page.addInitScript(initSessionScript, { content, rightPanelMode: 'preview' });
 
-    await page.goto(APP_URL);
+    await page.goto('/');
     await expect(page.locator('.wysiwyg-editor-pane')).toBeVisible();
 
     // Vditor IR 有三种 pre：编辑面 pre.vditor-reset、源码 marker pre.vditor-ir__marker
@@ -258,16 +273,18 @@ test.describe('ISS-190 代码块复制按钮', () => {
       )
       .first();
     await expect(codeBlock).toBeVisible({ timeout: 30_000 });
-    const blockPre = codeBlock.locator('xpath=ancestor::pre[1]');
 
     // hover 代码块 → overlay 层按钮淡入（is-visible；默认 opacity:0 + visibility:hidden）
     const trigger = page.locator('.folia-code-copy-trigger');
+    await expect(trigger).toHaveCount(1);
     await expect(trigger).not.toHaveClass(/is-visible/);
     await codeBlock.hover();
     await expect(trigger).toHaveClass(/is-visible/);
     await expect(trigger).toBeVisible();
-    // 按钮不在 pre 内（overlay 铁律：不被 getValue() 写回 markdown）
-    await expect(blockPre.locator('.folia-code-copy-trigger')).toHaveCount(0);
+    // overlay 铁律：按钮绝不进入任何 pre（不被 getValue() 写回 markdown）
+    await expect(
+      page.locator('.wysiwyg-editor-pane pre .folia-code-copy-trigger'),
+    ).toHaveCount(0);
 
     // 点击 → is-copied 反馈 + 文本 span 变「已复制」
     await trigger.click();
