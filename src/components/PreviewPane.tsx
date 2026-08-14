@@ -2,6 +2,12 @@ import { useDeferredValue, useEffect, useMemo, useRef } from 'react';
 import '../styles/preview.css';
 import type { TocItem } from '../types/document';
 import { useSettings } from '../hooks/useSettings';
+// ISS-191（Wave 2-A）：Vditor.preview 的 theme.current 跟随当前主题 isDark 切换
+// （驱动 Vditor 内置 hljs 配色与 code 主题色）。读 Wave 1 契约层只读。
+import {
+  getThemePresetDefinition,
+  DEFAULT_THEME_ID,
+} from '../services/themePresets';
 import { detectMarkdownRenderFeatures } from '../services/markdownFeatureDetector';
 import { resolvePreviewFontFamily, resolvePreviewHeadingFontFamily, resolvePreviewChineseFontFamily, resolvePreviewLatinFontFamily } from '../services/settingsService';
 import { VDITOR_PREVIEW_I18N } from '../services/vditorPreviewConfig';
@@ -24,6 +30,15 @@ export function PreviewPane({ source, tocIds, wideTables = false, renderMode = '
   const deferredSource = useDeferredValue(source);
   const deferredTocIds = useDeferredValue(tocIds);
   const settings = useSettings();
+  // ISS-191：解析当前主题预设，仅取 isDark 驱动 Vditor.preview theme.current。
+  // fallback builtin:light 由 Wave 1 getThemePresetDefinition 兜底。
+  const themePreset = useMemo(
+    () => getThemePresetDefinition(settings.themeId || DEFAULT_THEME_ID, {
+      customThemePresets: settings.customThemePresets ?? [],
+      disabledThemePresetIds: settings.disabledThemePresetIds ?? [],
+    }),
+    [settings.themeId, settings.customThemePresets, settings.disabledThemePresetIds],
+  );
   const renderFeatures = useMemo(
     () => detectMarkdownRenderFeatures(deferredSource),
     [deferredSource],
@@ -79,7 +94,7 @@ export function PreviewPane({ source, tocIds, wideTables = false, renderMode = '
         i18n: VDITOR_PREVIEW_I18N,
         icon: undefined,
         theme: {
-          current: 'light',
+          current: themePreset.isDark ? 'dark' : 'light',
           path: '',
         },
         hljs: {
@@ -105,7 +120,7 @@ export function PreviewPane({ source, tocIds, wideTables = false, renderMode = '
     return () => {
       cancelled = true;
     };
-  }, [deferredSource, deferredTocIds, filePath, markdownPreviewInput, renderFeatures.hasHighlightableCode, renderMode]);
+  }, [deferredSource, deferredTocIds, filePath, markdownPreviewInput, renderFeatures.hasHighlightableCode, renderMode, themePreset.isDark]);
 
   useEffect(() => {
     const shell = shellRef.current;

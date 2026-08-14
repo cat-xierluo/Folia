@@ -9,6 +9,12 @@ import {
   type HtmlTableBlock,
 } from '../services/htmlTableBlockService';
 import { useSettings } from '../hooks/useSettings';
+// ISS-191（Wave 2-A）：Vditor theme.current 跟随当前主题 isDark 切换，
+// 让 Vditor 内置 hljs / toolbar 配色跟主题走。读 Wave 1 契约层只读。
+import {
+  getThemePresetDefinition,
+  DEFAULT_THEME_ID,
+} from '../services/themePresets';
 import { translate } from '../services/i18n';
 import { resolveLocalImages } from '../services/localImageResolver';
 import { openExternalUrl } from '../services/urlOpener';
@@ -629,6 +635,15 @@ function rerenderAsyncCodeBlocks(editor: import('vditor').default): void {
 
 export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePath }: WysiwygEditorPaneProps) {
   const settings = useSettings();
+  // ISS-191：解析当前主题预设，仅取 isDark 驱动 Vditor theme.current。
+  // fallback builtin:light 由 Wave 1 getThemePresetDefinition 兜底。
+  const themePreset = useMemo(
+    () => getThemePresetDefinition(settings.themeId || DEFAULT_THEME_ID, {
+      customThemePresets: settings.customThemePresets ?? [],
+      disabledThemePresetIds: settings.disabledThemePresetIds ?? [],
+    }),
+    [settings.themeId, settings.customThemePresets, settings.disabledThemePresetIds],
+  );
   const t = useCallback(
     (key: Parameters<typeof translate>[1]) => translate(settings.locale, key),
     [settings.locale],
@@ -1015,7 +1030,7 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
             sanitize: true,
           },
           theme: {
-            current: 'light',
+            current: themePreset.isDark ? 'dark' : 'light',
             path: '',
           },
           hljs: {
@@ -1292,7 +1307,7 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
       // ISS-94：Vditor 按 filePath 变化销毁重建，重置 focus 标记让新空白文件可再次 auto-focus
       focusedOnceRef.current = false;
     };
-  }, [filePath, lockComplexTables, emitEditorValueIfChanged, onChange, retryKey, handleImageFiles, handleTextPaste]);
+  }, [filePath, lockComplexTables, emitEditorValueIfChanged, onChange, retryKey, handleImageFiles, handleTextPaste, themePreset.isDark]);
 
   useEffect(() => {
     const editor = editorRef.current;

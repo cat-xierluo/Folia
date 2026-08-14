@@ -516,3 +516,153 @@ describe('AppLayout settings first-open', () => {
     expect(host.textContent).toContain('settings-page-content');
   });
 });
+
+// ============================================================================
+// ISS-191 Wave 2-A：主题运行时接入
+// 复用本文件已验证工作的 mock 集；用真实 settingsService 写 themeId，让 useSettings
+// 自然读到，避免 vi.mock 整个 hook 引入额外污染。
+// ============================================================================
+
+describe('AppLayout ISS-191 主题运行时接入', () => {
+  let host: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    Object.defineProperty(window, '__TAURI_INTERNALS__', { configurable: true, value: {} });
+    host = document.createElement('div');
+    document.body.append(host);
+    root = createRoot(host);
+    tauriWindowMock.onDragDropEvent.mockResolvedValue(vi.fn());
+    tauriWindowMock.setTitle.mockResolvedValue(undefined);
+    tauriCoreMock.invoke.mockResolvedValue([]);
+    tauriEventMock.listen.mockResolvedValue(vi.fn());
+    fileServiceMock.openFile.mockResolvedValue(null);
+  });
+
+  afterEach(async () => {
+    await act(async () => {
+      root.unmount();
+    });
+    host.remove();
+    delete (window as typeof window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+    document.documentElement.dataset.theme = '';
+    document.documentElement.style.colorScheme = '';
+    // 重置 settings 到稳定起点
+    const { updateSettings } = await import('../services/settingsService');
+    updateSettings({ themeId: 'builtin:light', customThemePresets: [], disabledThemePresetIds: [] });
+  });
+
+  it('1. builtin:dark 时根 div 内联 style 携带 dark 主题的 CSS 变量', async () => {
+    const { updateSettings } = await import('../services/settingsService');
+    const { BUILT_IN_THEME_PRESETS } = await import('../services/themePresets');
+    const dark = BUILT_IN_THEME_PRESETS.find((p) => p.id === 'builtin:dark')!;
+    updateSettings({ themeId: 'builtin:dark' });
+
+    await act(async () => {
+      root.render(<AppLayout />);
+      await Promise.resolve();
+    });
+
+    const layoutEl = host.querySelector<HTMLDivElement>('.app-layout');
+    expect(layoutEl).not.toBeNull();
+    const inlineStyle = layoutEl!.getAttribute('style') ?? '';
+    for (const [key, value] of Object.entries(dark.variables)) {
+      expect(inlineStyle, `${key}=${value} 应出现在内联 style`).toContain(`${key}: ${value}`);
+    }
+    expect(inlineStyle).toMatch(/font-size:\s*100%/);
+  });
+
+  it('2. isDark 映射：6 套主题逐一验证 dataset.theme / colorScheme', async () => {
+    const { updateSettings } = await import('../services/settingsService');
+    for (const id of ['builtin:light', 'builtin:dark', 'builtin:sepia', 'builtin:sage', 'builtin:ink', 'builtin:classic']) {
+      updateSettings({ themeId: id });
+      await act(async () => {
+        root.render(<AppLayout />);
+        await Promise.resolve();
+      });
+      const expected = id === 'builtin:dark' || id === 'builtin:ink' ? 'dark' : 'light';
+      expect(document.documentElement.dataset.theme, `${id} → dataset.theme`).toBe(expected);
+      expect(document.documentElement.style.colorScheme, `${id} → colorScheme`).toBe(expected);
+    }
+  });
+
+  it('3. themeId 找不到时 fallback builtin:light', async () => {
+    const { updateSettings } = await import('../services/settingsService');
+    const { BUILT_IN_THEME_PRESETS, DEFAULT_THEME_ID } = await import('../services/themePresets');
+    const light = BUILT_IN_THEME_PRESETS.find((p) => p.id === DEFAULT_THEME_ID)!;
+    updateSettings({ themeId: 'does:not-exist' as never });
+
+    await act(async () => {
+      root.render(<AppLayout />);
+      await Promise.resolve();
+    });
+
+    const layoutEl = host.querySelector<HTMLDivElement>('.app-layout');
+    expect(layoutEl).not.toBeNull();
+    const inlineStyle = layoutEl!.getAttribute('style') ?? '';
+    for (const [key, value] of Object.entries(light.variables)) {
+      expect(inlineStyle, `fallback 应注入 light.${key}`).toContain(`${key}: ${value}`);
+    }
+    expect(document.documentElement.dataset.theme).toBe('light');
+    expect(document.documentElement.style.colorScheme).toBe('light');
+  });
+
+  it('4. <style data-folia-theme> 渲染 elementCss：builtin:classic 注入 serif body', async () => {
+    const { updateSettings } = await import('../services/settingsService');
+    const { BUILT_IN_THEME_PRESETS } = await import('../services/themePresets');
+    const classic = BUILT_IN_THEME_PRESETS.find((p) => p.id === 'builtin:classic')!;
+    updateSettings({ themeId: 'builtin:classic' });
+
+    await act(async () => {
+      root.render(<AppLayout />);
+      await Promise.resolve();
+    });
+
+    const styleEl = host.querySelector<HTMLStyleElement>('style[data-folia-theme]');
+    expect(styleEl).not.toBeNull();
+    if (classic.elementCss) {
+      expect(styleEl!.textContent).toContain('--font-serif-reading');
+    }
+  });
+
+  it('5. 自定义主题 css 走同一 <style data-folia-theme> 通道', async () => {
+    const { updateSettings } = await import('../services/settingsService');
+    const customCss = '.app-layout { background: oklch(50% 0.1 200); }';
+    updateSettings({
+      themeId: 'custom:test',
+      customThemePresets: [
+        {
+          id: 'custom:test',
+          name: 'Test',
+          css: customCss,
+          createdAt: new Date().toISOString(),
+        },
+      ],
+      disabledThemePresetIds: [],
+    });
+
+    await act(async () => {
+      root.render(<AppLayout />);
+      await Promise.resolve();
+    });
+
+    const styleEl = host.querySelector<HTMLStyleElement>('style[data-folia-theme]');
+    expect(styleEl).not.toBeNull();
+    expect(styleEl!.textContent).toContain(customCss);
+  });
+
+  it('6. 根 div 不再带 data-theme={settings.theme} 重复属性', async () => {
+    const { updateSettings } = await import('../services/settingsService');
+    updateSettings({ themeId: 'builtin:dark' });
+
+    await act(async () => {
+      root.render(<AppLayout />);
+      await Promise.resolve();
+    });
+
+    const layoutEl = host.querySelector<HTMLDivElement>('.app-layout');
+    expect(layoutEl).not.toBeNull();
+    expect(layoutEl!.hasAttribute('data-theme')).toBe(false);
+    expect(document.documentElement.dataset.theme).toBe('dark');
+  });
+});

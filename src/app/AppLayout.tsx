@@ -37,6 +37,13 @@ import {
   persistPendingImageAssets,
   replaceBlobUrlsWithRelativePaths,
 } from '../services/imageAssetPersistenceService';
+// ISS-191（Wave 2-A）：从 Wave 1 契约层读 ThemePreset，注入到根 div + <style data-folia-theme>。
+// 应用层只读不算改 services；详见 docs/plans/2026-08-14-iss191-theme-system-design.md 第 5/7 节。
+import {
+  getThemePresetDefinition,
+  DEFAULT_THEME_ID,
+  type ThemePreset,
+} from '../services/themePresets';
 import { Toolbar } from '../components/Toolbar';
 import { StatusBar } from '../components/StatusBar';
 import { FloatingToc } from '../components/FloatingToc';
@@ -323,10 +330,24 @@ export function AppLayout() {
     setToc(activeTab?.file.fileType === 'docx' ? [] : extractMarkdownToc(activeTab?.file.content ?? ''));
   }
 
+  // ISS-191：解析当前主题预设（内置 + 启用的自定义）。fallback builtin:light 由
+  // Wave 1 的 getThemePresetDefinition 兜底：themeId 缺失 / 找不到 / 全停用都走 light。
+  // 切换主题只需 settings.themeId 变化即可重渲，无需显式调度——useMemo 已串好依赖链。
+  const themePreset = useMemo<ThemePreset>(
+    () => getThemePresetDefinition(settings.themeId || DEFAULT_THEME_ID, {
+      customThemePresets: settings.customThemePresets ?? [],
+      disabledThemePresetIds: settings.disabledThemePresetIds ?? [],
+    }),
+    [settings.themeId, settings.customThemePresets, settings.disabledThemePresetIds],
+  );
+  // 内置主题 elementCss（古典等的元素规则）+ 自定义主题用户 CSS 都走 elementCss 通道
+  // （listThemePresets 已把 customs 的 css 映射到 elementCss 字段）。
+  const themeStyleCss = themePreset.elementCss ?? '';
+
   useEffect(() => {
-    document.documentElement.dataset.theme = settings.theme;
-    document.documentElement.style.colorScheme = settings.theme;
-  }, [settings.theme]);
+    document.documentElement.dataset.theme = themePreset.isDark ? 'dark' : 'light';
+    document.documentElement.style.colorScheme = themePreset.isDark ? 'dark' : 'light';
+  }, [themePreset.isDark]);
 
   // 卸载时取消挂起的 TOC 防抖，避免离开后仍触发 stale setToc（ISS-159）。
   useEffect(() => {
@@ -1339,6 +1360,9 @@ export function AppLayout() {
     fontSize: `${settings.zoomLevel}%`,
     '--reading-font-family': resolvePreviewFontFamily(settings),
     '--reading-heading-font-family': resolvePreviewHeadingFontFamily(settings),
+    // ISS-191：主题 CSS 变量由 Wave 1 themePresets 提供，根部直接 spread。
+    // 内置 6 套主题各自覆盖 26 个变量；自定义主题 variables=空，仅靠 elementCss 注入。
+    ...themePreset.variables,
   } as CSSProperties;
 
   // ISS-85：右键菜单作用对象 = contextMenu.tabId 对应的 tab（可能不是当前激活 tab）。
@@ -1346,7 +1370,10 @@ export function AppLayout() {
 
   return (
     <ImageAssetStoreProvider store={imageAssetStore}>
-    <div className="app-layout" data-theme={settings.theme} style={appStyle}>
+    <div className="app-layout" style={appStyle}>
+      {/* ISS-191：当前主题的 elementCss（古典元素规则 / 自定义导入 CSS）。
+          React 会按 props.children 调换 textContent，无需 key 强制重建。 */}
+      <style data-folia-theme>{themeStyleCss}</style>
       <Toolbar
         dirty={file.dirty}
         fileName={file.name}

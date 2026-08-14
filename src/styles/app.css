@@ -45,6 +45,20 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* ISS-191：细化的阅读区变量契约。每个主题覆盖以下变量，缺省回退到现状，
+   保证向前兼容（不改任何消费方既有的视觉表现）。 */
+:root {
+  --link: var(--accent);
+  --code-bg: var(--border);
+  --code-block-bg: var(--surface);
+  --code-block-text: var(--fg);
+  --blockquote-border: var(--accent);
+  --blockquote-bg: transparent;
+  --table-header-bg: var(--surface);
+  --selection-bg: color-mix(in oklch, var(--accent) 24%, transparent);
+  --highlight-bg: oklch(90% 0.12 90);
+}
+
 html[data-theme='dark'] {
   color-scheme: dark;
   --bg: oklch(19% 0.012 70);
