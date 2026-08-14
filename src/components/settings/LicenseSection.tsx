@@ -5,6 +5,7 @@ import {
   clearLicense,
   getCustomExportPresetLimit,
   getCustomHtmlExportPresetLimit,
+  getCustomThemePresetLimit,
 } from '../../services/settingsService';
 
 export function LicenseSection() {
@@ -14,6 +15,7 @@ export function LicenseSection() {
   const active = settings.license.status === 'active';
   const wordLimit = getCustomExportPresetLimit(settings);
   const htmlLimit = getCustomHtmlExportPresetLimit(settings);
+  const themeLimit = getCustomThemePresetLimit(settings);
 
   const handleActivate = () => {
     const result = activateLicenseCode(code);
@@ -56,6 +58,14 @@ export function LicenseSection() {
           <div className="settings-desc">内测授权启用后可保存更多 HTML / CSS 导出预设。</div>
         </div>
         <span className="settings-license-limit">{htmlLimit} 个</span>
+      </div>
+
+      <div className="settings-row">
+        <div>
+          <div className="settings-label">自定义主题槽位</div>
+          <div className="settings-desc">内测授权启用后可导入更多自定义外观主题。</div>
+        </div>
+        <span className="settings-license-limit">{themeLimit} 个</span>
       </div>
 
       <div className="settings-row settings-row-stacked settings-license-activate-row">

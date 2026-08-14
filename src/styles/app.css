@@ -3792,3 +3792,241 @@ html[data-theme='dark'] .word-paper-content td {
     will-change: auto;
   }
 }
+
+/* ===== ISS-191 AppearanceSection 主题系统（对齐 settings-preset 精致风格）===== */
+
+.settings-section-appearance {
+  gap: 18px;
+}
+
+.settings-appearance-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.settings-appearance-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.settings-appearance-group-title {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.03em;
+}
+
+/* 主题色卡网格：自适应列，每张卡 ~128px，留出呼吸感 */
+.settings-theme-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+  gap: 10px;
+  min-width: 0;
+}
+
+/* 通用色卡：圆角、柔和边框、hover/active 反馈 */
+.settings-theme-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.1s;
+}
+
+.settings-theme-card:hover {
+  border-color: var(--border-hover);
+}
+
+.settings-theme-card:active {
+  transform: translateY(1px);
+}
+
+.settings-theme-card:focus-visible {
+  outline: 2px solid oklch(58% 0.16 35 / 0.2);
+  outline-offset: 2px;
+}
+
+.settings-theme-card.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent) inset;
+}
+
+.settings-theme-card.disabled {
+  opacity: 0.55;
+}
+
+/* 空槽位：虚线边框、虚化提示，区别于实卡 */
+.settings-theme-card--empty {
+  border-style: dashed;
+  background: transparent;
+  color: var(--muted);
+  align-items: center;
+  justify-content: center;
+  min-height: 92px;
+}
+
+.settings-theme-card--empty:hover {
+  border-color: var(--accent);
+  color: var(--fg);
+}
+
+/* 锁定行（license 未激活）：柔和提示，不强抢视觉 */
+.settings-theme-card--locked {
+  border-style: dashed;
+  background: transparent;
+}
+
+.settings-theme-card--locked:hover {
+  border-color: var(--border-hover);
+}
+
+/* 预览块：模拟主题外观（bg 底 + fg/accent 色样），圆角内嵌 */
+.settings-theme-card-preview {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 44px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.settings-theme-card-swatch {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid oklch(20% 0.02 60 / 0.15);
+}
+
+.settings-theme-card-preview--placeholder,
+.settings-theme-card-preview--locked {
+  justify-content: center;
+  color: var(--muted);
+  background: var(--control-bg);
+}
+
+/* 主题名：清晰但不抢，与 preset-item 标题同级 */
+.settings-theme-card-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--fg);
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-theme-card--empty .settings-theme-card-name,
+.settings-theme-card--locked .settings-theme-card-name {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+/* 槽位标签（空槽位的"空槽位 1"）：小字 muted */
+.settings-theme-card-slot-label {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* meta 区（自定义/已停用 badge 容器）*/
+.settings-theme-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-height: 0;
+}
+
+/* badge：圆角胶囊，复用 preset-count 的 control-active-bg */
+.settings-theme-card-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--control-active-bg);
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+}
+
+.settings-theme-card-badge.disabled {
+  background: oklch(52% 0.16 30 / 0.12);
+  color: var(--danger);
+}
+
+/* 自定义卡的选中区 + 操作行 */
+.settings-theme-card-select {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.settings-theme-card-rename-input {
+  width: 100%;
+  padding: 3px 6px;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  outline: none;
+}
+
+.settings-theme-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+/* CSS 示例折叠区（ISS-191）：对齐既有 .settings-json-example 风格 */
+.settings-theme-example-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  align-self: flex-start;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+
+.settings-theme-example-toggle:hover {
+  color: var(--fg);
+  background: var(--control-bg);
+}
+
+.settings-theme-example-chevron {
+  transition: transform 0.15s;
+}
+
+.settings-theme-example-chevron.open {
+  transform: rotate(90deg);
+}
+
+.settings-theme-example {
+  margin-top: 2px;
+}
+
+
