@@ -117,6 +117,29 @@ describe('htmlPresentationService', () => {
     expect(resolveLocalResourcePath('/Users/demo/docs/note.md', '/Users/demo/.ssh/id_rsa')).toBeUndefined();
   });
 
+  // Cross-OS contract: when the resource URL is POSIX-style (no backslashes),
+  // the resolved path uses POSIX separators, even if filePath is Windows-style.
+  // Windows accepts both `\\` and `/` as separators, and downstream
+  // `encodePathForFileUrl` normalises either form — so this lock-in is about
+  // behaviour stability, not correctness.
+  //
+  // Before PR #128 the decision was based on `filePath.includes('\\')` (would
+  // return `C:\\Users\\demo\\decks\\assets\\deck.js`); after the fix it is
+  // based on `resourceUrl.includes('\\')` (returns the mixed
+  // `C:/Users/demo/decks/assets/deck.js` — legal on Windows, normalised by
+  // downstream consumers).
+  it('uses POSIX separators when the resource URL is POSIX, regardless of filePath style', () => {
+    // Windows filePath + POSIX resource URL → POSIX output (C: drive letter
+    // preserved, separators normalised to /)
+    expect(
+      resolveLocalResourcePath('C:\\Users\\demo\\decks\\case.html', './assets/deck.js'),
+    ).toBe('C:/Users/demo/decks/assets/deck.js');
+    // POSIX filePath + POSIX resource URL → POSIX output (existing behaviour)
+    expect(
+      resolveLocalResourcePath('/Users/demo/decks/case.html', './assets/deck.js'),
+    ).toBe('/Users/demo/decks/assets/deck.js');
+  });
+
   it('refuses paths that traverse into sensitive system or credential directories', () => {
     const base = '/Users/demo/decks/case.html';
     // Three `..` reach the filesystem root from /Users/demo/decks/, landing in /etc, /var, /private.
