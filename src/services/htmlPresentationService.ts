@@ -128,15 +128,36 @@ function isSensitivePath(normalizedPath: string): boolean {
 }
 
 export function resolveLocalResourcePath(filePath: string | undefined, resourceUrl: string): string | undefined {
-  if (!filePath || !isRelativeLocalUrl(resourceUrl)) return undefined;
+  if (!filePath) return undefined;
 
-  const usesWindowsSeparators = filePath.includes('\\');
+  // Honour the resource URL's own separator style (the filePath may be on a
+  // different OS — only the resource URL matters when it is already absolute).
+  const usesWindowsSeparators = resourceUrl.includes('\\');
+  const decoded = decodeResourcePath(stripUrlSuffix(resourceUrl)).replaceAll('\\', '/');
+  // `//host/path` is a protocol-relative URL, not a POSIX absolute path —
+  // keep it on the existing "external URL" branch handled below.
+  const isUnixAbsolute = decoded.startsWith('/') && !decoded.startsWith('//');
+  const isWindowsAbsolute = /^[A-Za-z]:\//.test(decoded);
+
+  // Absolute paths (POSIX `/Users/...` or Windows `C:/...`) already point at
+  // a real filesystem location — joining them with the markdown directory
+  // produces a non-existent path that the Tauri asset URL then fails to load
+  // (surfacing as `decode-failed` "图片数据损坏" in the editor). Honour the
+  // absolute path directly, but still apply the sensitive-path guard so a
+  // crafted Markdown cannot probe /etc or .ssh via the asset protocol.
+  if (isUnixAbsolute || isWindowsAbsolute) {
+    if (isSensitivePath(decoded)) return undefined;
+    return usesWindowsSeparators ? decoded.replaceAll('/', '\\') : decoded;
+  }
+
+  if (!isRelativeLocalUrl(resourceUrl)) return undefined;
+
   const normalizedFilePath = filePath.replaceAll('\\', '/');
   const lastSlash = normalizedFilePath.lastIndexOf('/');
   if (lastSlash < 0) return undefined;
 
   const directory = normalizedFilePath.slice(0, lastSlash + 1);
-  const resourcePath = decodeResourcePath(stripUrlSuffix(resourceUrl)).replaceAll('\\', '/');
+  const resourcePath = decoded;
   const joined = `${directory}${resourcePath}`;
   const hasLeadingSlash = joined.startsWith('/');
   const parts = normalizePathParts(joined.split('/'));

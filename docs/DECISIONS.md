@@ -36,6 +36,14 @@
 
 > ⚠️ **2026-08-14 数据恢复说明**：本文件 DEC-065 ~ DEC-137 正文因一次 `git stash pop` 误操作覆盖丢失（local 文件，git 无历史备份）。以下已从 CHANGELOG.md（权威变更记录）重建决策骨架——编号/ISS/PR/版本/结论可追溯，但部分早期条目（v0.3.10~v0.4.3，CHANGELOG 未逐条标 DEC 号）按版本聚合；完整根因分析详见 CHANGELOG 对应版本段与 PR。代码无损失（全部已合并）。排列沿用本文件既有降序惯例（新决策在前），与 DEC-064→DEC-001 衔接。
 
+### [DEC-138] - 2026-08-14 - 绝对路径图片引用误判为相对路径（ISS-127 / PR #128）
+
+**背景**：macOS 用户在 Markdown 里用 `![alt](/Users/.../xxx.png)` 这种 POSIX 绝对路径引用本地图片，编辑器显示「图片数据损坏，图片字节可能不完整或格式不受支持」（`decode-failed`）。PNG 文件本身完好（211886 字节，magic bytes 正确）。根因是 `src/services/htmlPresentationService.ts:resolveLocalResourcePath` 经 `isRelativeLocalUrl()` 判定路径类型——它的排除规则只检查 scheme `:` / `#` / `//`，但漏判 POSIX `/` 开头。绝对路径因此走进「目录拼接」分支，被错拼成 `/Users/.../note.md/Users/.../xxx.png`。该无效路径经 `convertFileSrc()` 转 `asset://localhost/<bogus>`，`<img>` 加载失败，因 src 以 `asset:` 开头被 `WysiwygEditorPane.classifyError` 归类为 `decode-failed`、触发 `MediaPlaceholder` "图片数据损坏" 占位（`MediaPlaceholder.tsx:43,53`）。
+
+**决策/结论**：`resolveLocalResourcePath` 入口识别 POSIX / Windows 绝对路径（POSIX：`startsWith('/') && !startsWith('//')` 排除 protocol-relative URL；Windows：`/^[A-Za-z]:\//`），命中后跳过目录拼接、直接返回解码后的资源路径，仍走 `isSensitivePath` 守卫保护（防止恶意 md 通过 asset 协议探查 `/etc` / `~/.ssh`）。`usesWindowsSeparators` 改由 `resourceUrl` 自身决定（绝对路径场景下 filePath 不可信）。选最小修复而非新增 helper（如 `isAbsoluteLocalUrl`）：函数本身已用 `isSensitivePath` 守卫、调用方（localImageResolver / htmlPresentationService）都期望 `resolveLocalResourcePath` 返回可直接传给 `convertFileSrc` 的绝对路径，抽象独立 helper 会让 caller 多一次判断、收益不明显。
+
+**验证**：`npm test` 715/715 PASS（含 4 项新增：htmlPresentationService 3 项 + localImageResolver 1 项，覆盖 POSIX/Windows 绝对路径 + 敏感路径拒绝 + 集成路径不拼接 markdown 目录）/ `typecheck` 0 error / `lint` 0 error。**真机 Tauri runtime 验证（NOT_VERIFIED，移交用户）**：`resolveLocalResourcePath` 是纯函数、单元测试已精确断言输出；`convertFileSrc` + `asset://` 协议由 Tauri runtime 提供，不在本修复范围。建议用户在 macOS Folia 里打开含 `![alt](/Users/<your-path>/xxx.png)` 的 markdown 确认图片正常显示。
+
 ### [DEC-137] - 2026-08-14 - 主题系统与「设为默认 Markdown 应用」（ISS-191 / #123；ISS-192 / #118）
 
 **背景**：内置只有浅色/深色两套，缺多元护眼主题与自定义能力；系统虽已知 Folia 能打开 `.md`（v0.3.16 文件关联），但不会自动把 Folia 设为默认打开程序。

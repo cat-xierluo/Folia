@@ -4,6 +4,10 @@ All notable changes of this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **修复 Markdown 用 POSIX/Windows 绝对路径引用本地图片时显示「图片数据损坏，图片字节可能不完整或格式不受支持」（ISS-127 / PR #128）**：根因是 `src/services/htmlPresentationService.ts:resolveLocalResourcePath` 经 `isRelativeLocalUrl()` 判定路径类型，但排除规则只检查 scheme `:` / `#` / `//`，没排除 POSIX `/` 开头 —— macOS 上常见的 `![alt](/Users/.../xxx.png)` 漏判，走进「目录拼接」分支、被错误拼成 `/Users/.../note.md/Users/.../xxx.png`。该无效路径经 `convertFileSrc()` 转成 `asset://localhost/<bogus>`，`<img>` 加载失败，因 src 以 `asset:` 开头被 `WysiwygEditorPane.classifyError` 归类为 `decode-failed`、触发 `MediaPlaceholder` "图片数据损坏" 占位。本次在 `resolveLocalResourcePath` 入口识别 POSIX（`startsWith('/') && !startsWith('//')` 排除 protocol-relative URL）和 Windows（`/^[A-Za-z]:\//`）绝对路径，命中后跳过目录拼接、直接返回解码后的资源路径，仍走 `isSensitivePath` 守卫保护（防止恶意 md 通过 asset 协议探查 `/etc` / `~/.ssh`）。`usesWindowsSeparators` 改由 `resourceUrl` 自身决定（绝对路径场景下 filePath 不可信）。新增 4 项 vitest（htmlPresentationService 3 + localImageResolver 1）覆盖 POSIX/Windows 绝对路径 + 敏感路径拒绝 + 集成路径不拼接 markdown 目录；`npm test` 715/715 PASS、`typecheck` / `lint` 0 error。**真机 Tauri runtime 验证（NOT_VERIFIED，移交用户）**：`resolveLocalResourcePath` 是纯函数、单元测试已精确断言输出；`convertFileSrc` + `asset://` 协议由 Tauri runtime 提供，不在本修复范围。建议用户在 macOS Folia 里打开含 `![alt](/Users/<your-path>/xxx.png)` 的 markdown 确认图片正常显示。
+
 ## [0.7.0] - 2026-08-14
 
 ### Added
