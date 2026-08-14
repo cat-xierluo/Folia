@@ -138,4 +138,33 @@ describe('PreviewPane sanitize 加固 (ISS-169)', () => {
     expect(sanitizeSpy).not.toHaveBeenCalled();
     sanitizeSpy.mockRestore();
   });
+
+  // 用户报告回归（v0.7.0）+ WysiwygEditorPane 对称修复：切换外观（深浅色）
+  // 预览面不应整面重渲。preview.theme.current 在 path:'' 下是死配置（vditor
+  // setContentTheme 直接 return，mermaidRender 读 mode）——主题切换在预览面
+  // 也不该触发 Vditor.preview 重渲。WysiwygEditorPane 已有对称测试
+  // (WysiwygEditorPane.test.tsx)；此处防止 PreviewPane 单边回归。
+  it('主题 isDark 切换不重渲 Vditor.preview', async () => {
+    localStorage.setItem('folia-settings', JSON.stringify({ themeId: 'builtin:light' }));
+    await act(async () => {
+      root.render(
+        React.createElement(PreviewPane, {
+          source: '# 标题\n\n正文',
+          tocIds: [],
+        }),
+      );
+      await flushPromises();
+    });
+    expect(previewCalls).toHaveLength(1);
+
+    // 切深色：settings 事件 → useSettings 刷新 → 组件重渲
+    await act(async () => {
+      localStorage.setItem('folia-settings', JSON.stringify({ themeId: 'builtin:dark' }));
+      window.dispatchEvent(new CustomEvent('folia-settings-changed'));
+      await flushPromises();
+    });
+
+    // 预览调用次数不变（旧实现此处为 2：Vditor.preview 重渲）
+    expect(previewCalls).toHaveLength(1);
+  });
 });
