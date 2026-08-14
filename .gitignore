@@ -32,6 +32,7 @@ src-tauri/target/
 .worktrees/
 .claude/*
 !.claude/settings.local.json
+!.claude/skills/
 .claude/-settings.json
 # 注：`.claude/-settings.json`（本机 Claude Code 自动生成的 settings 文件）已由
 # 上一行 `.claude/*` 覆盖忽略；此处显式列出以防未来调整通配时遗漏。
@@ -43,9 +44,7 @@ test-results/
 website/.astro/
 website/dist/
 
-# Local AI working context
-docs/DECISIONS.md
-docs/TASKS.md
+# DECISIONS.md / TASKS.md 已纳入 git 版本管理（2026-08-14，含项目决策与任务记录）
 
 # Playwright MCP verification artifacts
 .playwright-mcp/
