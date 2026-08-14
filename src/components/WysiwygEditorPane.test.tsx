@@ -68,6 +68,11 @@ vi.mock('vditor', () => {
       const ir = document.createElement('div');
       ir.className = 'vditor-ir';
       const pre = document.createElement('pre');
+      // 真实 Vditor IR 编辑面是 <pre class="vditor-reset" ...>（见
+      // vditor/src/ts/ir/index.ts:37）。mock 必须带该 class 才能让
+      // findCopyableCodeBlock 的 vditor-reset 排除逻辑在 IR 表面节点上
+      // 真正生效；否则测试会通过但漏报 IR 表面误命中回归。
+      pre.className = 'vditor-reset';
       pre.setAttribute('contenteditable', 'true');
       pre.innerHTML = '<p data-block="0"><span data-type="text">init</span></p>';
       ir.appendChild(pre);
@@ -1569,6 +1574,43 @@ describe('WysiwygEditorPane 代码块复制按钮 (ISS-190)', () => {
 
     const button = overlay.querySelector<HTMLButtonElement>('.folia-code-copy-trigger');
     expect(button?.classList.contains('is-visible')).toBe(false);
+
+    await act(async () => {
+      root?.unmount();
+    });
+  });
+
+  // 用户报告回归（v0.7.0）：切换外观（深浅色）卡顿。根因：init effect 依赖
+  // themePreset.isDark → 每次主题切换整销毁重建 Vditor（destroy + 重新
+  // setValue 全文档重渲染，丢滚动位置 / 光标 / 撤销历史）。而传递的
+  // preview.theme.current 在 path:'' 下是死配置（vditor setContentTheme
+  // 对空 path 直接 return；异步渲染器读顶层 options.theme），重建零视觉
+  // 收益。主题视觉实际由根节点 CSS 变量即时切换（AppLayout）。
+  it('主题 isDark 切换不销毁重建 Vditor', async () => {
+    let root: Root | null = null;
+    localStorage.setItem('folia-settings', JSON.stringify({ themeId: 'builtin:light' }));
+    await act(async () => {
+      root = createRoot(host);
+      root.render(
+        renderWithProvider(
+          React.createElement(WysiwygEditorPane, { source: '', onChange: () => undefined }),
+        ),
+      );
+      await flushMicrotasks();
+      await flushFrames();
+    });
+    expect(vditorCalls).toHaveLength(1);
+
+    // 切深色：settings 事件 → useSettings 刷新 → 组件重渲
+    await act(async () => {
+      localStorage.setItem('folia-settings', JSON.stringify({ themeId: 'builtin:dark' }));
+      window.dispatchEvent(new CustomEvent('folia-settings-changed'));
+      await flushMicrotasks();
+      await flushFrames();
+    });
+
+    // 编辑器实例不应被重建（旧实现此处为 2：destroy + new Vditor）
+    expect(vditorCalls).toHaveLength(1);
 
     await act(async () => {
       root?.unmount();
