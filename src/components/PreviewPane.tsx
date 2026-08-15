@@ -2,12 +2,6 @@ import { useDeferredValue, useEffect, useMemo, useRef } from 'react';
 import '../styles/preview.css';
 import type { TocItem } from '../types/document';
 import { useSettings } from '../hooks/useSettings';
-// ISS-191（Wave 2-A）：Vditor.preview 的 theme.current 跟随当前主题 isDark 切换
-// （驱动 Vditor 内置 hljs 配色与 code 主题色）。读 Wave 1 契约层只读。
-import {
-  getThemePresetDefinition,
-  DEFAULT_THEME_ID,
-} from '../services/themePresets';
 import { detectMarkdownRenderFeatures } from '../services/markdownFeatureDetector';
 import { resolvePreviewFontFamily, resolvePreviewHeadingFontFamily, resolvePreviewChineseFontFamily, resolvePreviewLatinFontFamily } from '../services/settingsService';
 import { VDITOR_PREVIEW_I18N } from '../services/vditorPreviewConfig';
@@ -30,15 +24,6 @@ export function PreviewPane({ source, tocIds, wideTables = false, renderMode = '
   const deferredSource = useDeferredValue(source);
   const deferredTocIds = useDeferredValue(tocIds);
   const settings = useSettings();
-  // ISS-191：解析当前主题预设，仅取 isDark 驱动 Vditor.preview theme.current。
-  // fallback builtin:light 由 Wave 1 getThemePresetDefinition 兜底。
-  const themePreset = useMemo(
-    () => getThemePresetDefinition(settings.themeId || DEFAULT_THEME_ID, {
-      customThemePresets: settings.customThemePresets ?? [],
-      disabledThemePresetIds: settings.disabledThemePresetIds ?? [],
-    }),
-    [settings.themeId, settings.customThemePresets, settings.disabledThemePresetIds],
-  );
   const renderFeatures = useMemo(
     () => detectMarkdownRenderFeatures(deferredSource),
     [deferredSource],
@@ -93,8 +78,14 @@ export function PreviewPane({ source, tocIds, wideTables = false, renderMode = '
         cdn: '/vditor',
         i18n: VDITOR_PREVIEW_I18N,
         icon: undefined,
+        // path:'' 是关键：抑制 vditor 默认从 CDN 加载 content-theme CSS
+        // （默认 path = ${CDN}/dist/css/content-theme）。current 在空 path 下
+        // 是死配置（setContentTheme 直接 return；mermaid 主题读 mode）——
+        // 预览视觉主题由根节点 CSS 变量驱动。themePreset.isDark 不进本
+        // effect 依赖：v0.7.0 曾据此在切外观时整面重渲染预览（大文档卡顿），
+        // 无视觉收益。
         theme: {
-          current: themePreset.isDark ? 'dark' : 'light',
+          current: 'light',
           path: '',
         },
         hljs: {
@@ -120,7 +111,7 @@ export function PreviewPane({ source, tocIds, wideTables = false, renderMode = '
     return () => {
       cancelled = true;
     };
-  }, [deferredSource, deferredTocIds, filePath, markdownPreviewInput, renderFeatures.hasHighlightableCode, renderMode, themePreset.isDark]);
+  }, [deferredSource, deferredTocIds, filePath, markdownPreviewInput, renderFeatures.hasHighlightableCode, renderMode]);
 
   useEffect(() => {
     const shell = shellRef.current;

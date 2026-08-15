@@ -108,6 +108,44 @@ describe('codeBlockCopyService · findCopyableCodeBlock', () => {
     root.appendChild(p);
     expect(findCopyableCodeBlock(p)).toBeNull();
   });
+
+  // 用户报告回归（v0.7.0）：鼠标 hover 普通正文时，复制按钮出现在编辑器
+  // 右上角。根因：Vditor IR 编辑面本身是 pre.vditor-reset（vditor/src/ts/
+  // ir/index.ts:37），closest('pre') 从正文段落冒泡命中它，而它内部的
+  // querySelector('code') 能找到文档中任意 code 元素（内联代码 / 嵌套
+  // 代码块），整个编辑面被误判为「可复制代码块」→ 按钮定位到编辑面
+  // 矩形（全宽、贴顶）→ 吸附在 pane 右上角常驻。
+  it('Vditor IR 编辑面 pre.vditor-reset 不命中（即使内部含 code 元素）', () => {
+    const root = document.createElement('div');
+    const surface = document.createElement('pre');
+    surface.className = 'vditor-reset';
+    const p = document.createElement('p');
+    p.textContent = '普通正文段落';
+    const p2 = document.createElement('p');
+    const inlineCode = document.createElement('code');
+    inlineCode.textContent = 'inline';
+    p2.appendChild(inlineCode);
+    surface.append(p, p2);
+    root.appendChild(surface);
+    expect(findCopyableCodeBlock(p)).toBeNull();
+    expect(findCopyableCodeBlock(inlineCode)).toBeNull();
+    expect(findCopyableCodeBlock(surface)).toBeNull();
+  });
+
+  // 结构性守卫：只有「pre 的直接子元素 code」才算代码块。容器型 pre
+  // （编辑面、未来任何 wrapper pre）里的深层 code 一律不命中。
+  it('code 非 pre 直接子元素（容器型 pre）→ null', () => {
+    const root = document.createElement('div');
+    const pre = document.createElement('pre');
+    const span = document.createElement('span');
+    const code = document.createElement('code');
+    code.textContent = 'nested';
+    span.appendChild(code);
+    pre.appendChild(span);
+    root.appendChild(pre);
+    expect(findCopyableCodeBlock(pre)).toBeNull();
+    expect(findCopyableCodeBlock(code)).toBeNull();
+  });
 });
 
 describe('codeBlockCopyService · attachCodeBlockCopy', () => {
@@ -139,6 +177,30 @@ describe('codeBlockCopyService · attachCodeBlockCopy', () => {
     expect(button!.classList.contains(CODE_COPY_TRIGGER_VISIBLE_CLASS)).toBe(true);
     // 关键：按钮在 overlay 内，不残留在 root 的内容树（IR DOM）里
     expect(root.querySelector(`.${CODE_COPY_TRIGGER_CLASS}`)).toBeNull();
+  });
+
+  // 用户报告回归（v0.7.0）：hover 编辑面普通正文，按钮吸附在 pane 右上角
+  // 常驻显示。编辑面 = pre.vditor-reset（内含正文段落 + 内联 code）。
+  it('hover 编辑面（pre.vditor-reset）正文 → 按钮不显示', () => {
+    const { root, overlay } = setup();
+    const surface = document.createElement('pre');
+    surface.className = 'vditor-reset';
+    const p = document.createElement('p');
+    p.textContent = '普通正文段落';
+    const p2 = document.createElement('p');
+    const inlineCode = document.createElement('code');
+    inlineCode.textContent = 'inline';
+    p2.appendChild(inlineCode);
+    surface.append(p, p2);
+    // 给编辑面一个「全宽贴顶」几何（真实编辑面的形态，触发右上角吸附）
+    mockRect(surface, { top: 0, left: 0, right: 800, bottom: 2000 });
+    root.appendChild(surface);
+
+    fireMouseOver(p);
+
+    const button = overlay.querySelector<HTMLButtonElement>(`.${CODE_COPY_TRIGGER_CLASS}`);
+    expect(button).not.toBeNull();
+    expect(button.classList.contains(CODE_COPY_TRIGGER_VISIBLE_CLASS)).toBe(false);
   });
 
   it('鼠标移出代码块 → 按钮隐藏（失去 is-visible）', () => {
