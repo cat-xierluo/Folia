@@ -36,6 +36,32 @@
 
 > ⚠️ **2026-08-14 数据恢复说明**：本文件 DEC-065 ~ DEC-137 正文因一次 `git stash pop` 误操作覆盖丢失（local 文件，git 无历史备份）。以下已从 CHANGELOG.md（权威变更记录）重建决策骨架——编号/ISS/PR/版本/结论可追溯，但部分早期条目（v0.3.10~v0.4.3，CHANGELOG 未逐条标 DEC 号）按版本聚合；完整根因分析详见 CHANGELOG 对应版本段与 PR。代码无损失（全部已合并）。排列沿用本文件既有降序惯例（新决策在前），与 DEC-064→DEC-001 衔接。
 
+### [DEC-139] - 2026-08-15 - v0.7.0 两处用户报告回归：复制按钮误显 + 切外观销毁重建 Vditor（ISS-190/ISS-191 回归 / PR #129）
+
+**背景**：v0.7.0 用户报告两个回归。① 鼠标悬停正文时编辑器右上角常驻「复制」按钮。② 切换外观（深↔亮）偶发卡顿。
+
+**根因**（两条都经独立 reviewer 对照 `node_modules/vditor/dist/index.js` 核实）：
+
+① Vditor IR 模式整个编辑表面就是 `<pre class="vditor-reset">`（dist:11910）。`codeBlockCopyService.findCopyableCodeBlock` 只排除了 `vditor-ir__marker`（源码 marker），未排除编辑面——`closest('pre')` 从任意正文段落冒泡命中编辑面，其深层 `querySelector('code')` 能找到文档中任意内联 code → 编辑面整块被误判为「代码块」，按钮按编辑面全宽贴顶几何吸附 pane 右上角。
+
+② `preview.theme.current` 在 Folia 配置（`path:''`）下是**死配置**：`setContentTheme` 开头 `if (!contentTheme || !path) return;`（dist:4045-4048）→ `current` 无论传什么都无副作用；`preview.theme.current` 的全部消费点（preview 流 / initUI / wysiwyg / export / setContentTheme method）都只经 setContentTheme → 全 no-op；mermaid/chart 主题读**顶层** `options.theme`（默认 `'classic'`，Folia 未传），预览 mermaid 读硬编码 `mode:'light'`。#124（ISS-191 Wave 2-A）把它改成 isDark 三元并塞进两处 effect deps，主题切换即触发 Vditor 整销毁重建 / Vditor.preview 整面重渲（destroy + setValue 全文档 + 重跑异步渲染器，丢滚动/光标/撤销历史），**零视觉收益**——isDark 值在此配置下从未产生过任何视觉效果，主题视觉本就由根节点 CSS 变量驱动（`html[data-theme='dark']`）。
+
+**决策/结论**：
+
+① `findCopyableCodeBlock` 加两道门（纵深防御）：显式排除 `pre.vditor-reset` + `querySelector(':scope > code')` 直接子元素门（容器型 pre 内深层 code 一律不命中）。真实代码块结构恒为 `<pre><code>…</code></pre>`（IR 渲染块 / Vditor.preview / wechatPreviewService 三个生产面均有结构保证），两道门均不误杀。
+
+② 精确回滚 #124 引入的死配置：两处 `preview.theme.current` 回常量 `'light'`（**保留 `path:''`**——它抑制 vditor 默认从 CDN 加载 content-theme CSS，这是 v0.7.0 之前就有的正确配置）、effect deps 移除 `themePreset.isDark`、清理无用 import。**防回归要点**：未来做「mermaid 深色支持」时不要动 `preview.theme.current`——正确路径是顶层 `options.theme`（编辑器）或 `mode`（预览）配合 CSS 变量；把 isDark 塞回这两个 effect deps 会重新引入整销毁重建。
+
+**验证**：`npm test` 716/716（合并 main #128 后 720/720）/ `typecheck` / `lint` 0 error / e2e `theme-ui-visual-guards` 4/4 / 真机复现 spec 2/2（hover 正文按钮 `opacity=0`；切深色后 IR 内部段落节点存活即未重建）。**WKWebView 真机观感（NOT_VERIFIED）**：切主题瞬时无感与大文档不丢滚动的主观观感须 `tauri dev` 真机确认，DOM 层已证未重建。独立 code-reviewer 结论：根因逐条核实成立、修复最小且精确、测试真实有效（APPROVE）。
+
+### [DEC-138] - 2026-08-14 - 绝对路径图片引用误判为相对路径（ISS-127 / PR #128）
+
+**背景**：macOS 用户在 Markdown 里用 `![alt](/Users/.../xxx.png)` 这种 POSIX 绝对路径引用本地图片，编辑器显示「图片数据损坏，图片字节可能不完整或格式不受支持」（`decode-failed`）。PNG 文件本身完好（211886 字节，magic bytes 正确）。根因是 `src/services/htmlPresentationService.ts:resolveLocalResourcePath` 经 `isRelativeLocalUrl()` 判定路径类型——它的排除规则只检查 scheme `:` / `#` / `//`，但漏判 POSIX `/` 开头。绝对路径因此走进「目录拼接」分支，被错拼成 `/Users/.../note.md/Users/.../xxx.png`。该无效路径经 `convertFileSrc()` 转 `asset://localhost/<bogus>`，`<img>` 加载失败，因 src 以 `asset:` 开头被 `WysiwygEditorPane.classifyError` 归类为 `decode-failed`、触发 `MediaPlaceholder` "图片数据损坏" 占位（`MediaPlaceholder.tsx:43,53`）。
+
+**决策/结论**：`resolveLocalResourcePath` 入口识别 POSIX / Windows 绝对路径（POSIX：`startsWith('/') && !startsWith('//')` 排除 protocol-relative URL；Windows：`/^[A-Za-z]:\//`），命中后跳过目录拼接、直接返回解码后的资源路径，仍走 `isSensitivePath` 守卫保护（防止恶意 md 通过 asset 协议探查 `/etc` / `~/.ssh`）。`usesWindowsSeparators` 改由 `resourceUrl` 自身决定（绝对路径场景下 filePath 不可信）。选最小修复而非新增 helper（如 `isAbsoluteLocalUrl`）：函数本身已用 `isSensitivePath` 守卫、调用方（localImageResolver / htmlPresentationService）都期望 `resolveLocalResourcePath` 返回可直接传给 `convertFileSrc` 的绝对路径，抽象独立 helper 会让 caller 多一次判断、收益不明显。
+
+**验证**：`npm test` 715/715 PASS（含 4 项新增：htmlPresentationService 3 项 + localImageResolver 1 项，覆盖 POSIX/Windows 绝对路径 + 敏感路径拒绝 + 集成路径不拼接 markdown 目录）/ `typecheck` 0 error / `lint` 0 error。**真机 Tauri runtime 验证（NOT_VERIFIED，移交用户）**：`resolveLocalResourcePath` 是纯函数、单元测试已精确断言输出；`convertFileSrc` + `asset://` 协议由 Tauri runtime 提供，不在本修复范围。建议用户在 macOS Folia 里打开含 `![alt](/Users/<your-path>/xxx.png)` 的 markdown 确认图片正常显示。
+
 ### [DEC-137] - 2026-08-14 - 主题系统与「设为默认 Markdown 应用」（ISS-191 / #123；ISS-192 / #118）
 
 **背景**：内置只有浅色/深色两套，缺多元护眼主题与自定义能力；系统虽已知 Folia 能打开 `.md`（v0.3.16 文件关联），但不会自动把 Folia 设为默认打开程序。
