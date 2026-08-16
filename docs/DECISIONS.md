@@ -49,9 +49,9 @@
 3. **保守边界**：围栏代码块与行内代码内容逐字节保留；`<>` 包裹 / `\ ` 已转义 / `\![` 字面构造不动；只处理图片不碰普通链接；幂等。宁可漏改、不可误改。
 4. **落盘语义**：`content` 与 `lastSavedContent` 同步取归一化结果（`dirty = content !== lastSavedContent`，不误标）；用户不编辑磁盘永不重写；编辑保存时落盘等价且严格合法的 Markdown。**不选**「编辑器 setValue 前归一化」：会与 `getValue()` 往返、`latestSource` 比对、dirtySuppression 窗口互相纠缠，且 PreviewPane / Word 纸张预览等其余消费面拿不到归一化结果。
 
-**已知边界**：引用式定义 `[ref]: ./x y.png` 的目标空格、普通链接目标空格不在本期范围（转录场景未出现，行为最小变更）；缩进式代码块（4 空格）不跳过——法律文档罕见且与列表内嵌图片互斥，接受。
+**已知边界**：引用式定义 `[ref]: ./x y.png` 的目标空格、普通链接目标空格不在本期范围（转录场景未出现，行为最小变更）；缩进式代码块（4 空格）不跳过——法律文档罕见且与列表内嵌图片互斥，接受；HTML 属性值 / HTML 块内的 `![…](…)` 字面文本会被归一化（HTML 上下文内 Markdown 本不解析、不影响渲染，仅改写字面文本，登记为已知边界，PR #131 review m-1）。
 
-**验证**：新增 `markdownImagePathNormalizer` 21 项单测（17 主用例 + 4 项回归守卫）+ `fileService` 2 项 + `resolveLocalResourcePath` %20 解码链路守卫 1 项；`npm test` 745/745、typecheck / lint 0 error、`npm run build` 0 error（2158 modules transformed，✓ built in 529ms）。用户原文件端到端（node + vendored Lute）：归一化后 94/94 张幻灯片渲染为 `<img>`，slide_001 src 输出 `./260815%20Agent%20+%20Skill%EF%BC%9A…`（全角冒号由 Lute 自动 UTF-8 编码，`decodeResourcePath` 解码后拼目录已有单测）。**真机 WKWebView 显示（NOT_VERIFIED，移交用户）**：`tauri dev` / release 打开该转录文档确认 94 张图显示。
+**验证**：新增 `markdownImagePathNormalizer` 25 项单测（17 主用例 + 4 项回归守卫 + 4 项 CRLF 换行守卫——PR #131 review M-1：CRLF 文档 `split('\n')` 残留 `\r` 致围栏永不闭合、其后全部行被当代码块跳过，修复为剥离 `\r` 参与判定、输出原样回接，换行风格逐字节保留）+ `fileService` 2 项 + `resolveLocalResourcePath` %20 解码链路守卫 1 项；`npm test` 749/749、typecheck / lint 0 error、`npm run build` 0 error。用户原文件端到端（node + vendored Lute）：归一化后 94/94 张幻灯片渲染为 `<img>`，slide_001 src 输出 `./260815%20Agent%20+%20Skill%EF%BC%9A…`（全角冒号由 Lute 自动 UTF-8 编码，`decodeResourcePath` 解码后拼目录已有单测）。**真机 WKWebView 显示（NOT_VERIFIED，移交用户）**：`tauri dev` / release 打开该转录文档确认 94 张图显示。
 
 ### [DEC-139] - 2026-08-15 - v0.7.0 两处用户报告回归：复制按钮误显 + 切外观销毁重建 Vditor（ISS-190/ISS-191 回归 / PR #129）
 

@@ -115,6 +115,33 @@ describe('normalizeMarkdownImagePaths', () => {
   });
 });
 
+describe('CRLF 换行（PR #131 review M-1 回归守卫）', () => {
+  // Windows 端导出 / 部分 Electron 工具产出的 Markdown 是 \r\n 换行。
+  // split('\n') 后行尾残留 \r，若直接用带 $ 的围栏闭合正则判定，围栏
+  // 永不闭合、其后所有行被当作代码块跳过、图片全部不归一化。
+  it('CRLF 文档：围栏正常闭合，围栏内逐字节保留，围栏后图片归一化，\\r 保留', () => {
+    const doc = '```markdown\r\n![in fence](./a b.png)\r\n```\r\n![real](./c d.png)\r\n';
+    expect(normalizeMarkdownImagePaths(doc))
+      .toBe('```markdown\r\n![in fence](./a b.png)\r\n```\r\n![real](./c%20d.png)\r\n');
+  });
+
+  it('CRLF 普通图片行归一化且行尾 \\r 保留（不顺手改写成 LF）', () => {
+    expect(normalizeMarkdownImagePaths('![a](./x y.png)\r\n正文段落\r\n'))
+      .toBe('![a](./x%20y.png)\r\n正文段落\r\n');
+  });
+
+  it('CRLF 下 ~~~ 围栏同样正确闭合', () => {
+    const doc = '~~~\r\n![f](./a b.png)\r\n~~~\r\n![r](./c d.png)\r\n';
+    expect(normalizeMarkdownImagePaths(doc))
+      .toBe('~~~\r\n![f](./a b.png)\r\n~~~\r\n![r](./c%20d.png)\r\n');
+  });
+
+  it('CRLF 归一化结果幂等', () => {
+    const once = normalizeMarkdownImagePaths('```\r\n![f](./a b.png)\r\n```\r\n![r](./c d.png)\r\n');
+    expect(normalizeMarkdownImagePaths(once)).toBe(once);
+  });
+});
+
 describe('normalizeMarkdownImagePaths 回归守卫（ISS-194：不得改坏任何原本能显示的图片）', () => {
   it('各类「原本就正常」的图片构造逐字节保留（引用相等）', () => {
     const docs = [

@@ -184,6 +184,7 @@ function normalizeOutsideInlineCode(line: string): string {
  * 归一化 Markdown 全文里图片目标地址中的未转义空格 / Tab（→ %20 / %09）。
  * 纯函数：不修改入参；围栏代码块与行内代码内容逐字节保留；不含
  * `![…](…)` 构造的文档原字符串返回（引用相等，热路径零分配）。
+ * CRLF（\r\n）文档与 LF 文档同等处理，换行风格逐字节保留（不顺手改写）。
  */
 export function normalizeMarkdownImagePaths(markdown: string): string {
   if (!markdown || !markdown.includes('](')) return markdown;
@@ -194,16 +195,23 @@ export function normalizeMarkdownImagePaths(markdown: string): string {
   const out: string[] = [];
 
   for (const line of lines) {
+    // CRLF（\r\n）文档：split('\n') 后行尾残留 \r。围栏闭合模式以 $ 收尾、
+    // 不吞 \r，残留会让 CRLF 文档的围栏永不闭合、其后所有行被当作代码块
+    // 跳过（PR #131 review M-1）。剥离 \r 参与判定，输出时原样回接——
+    // 换行风格逐字节保留，CRLF 文件不会被顺手改写成 LF。
+    const crlfSuffix = line.endsWith('\r') ? '\r' : '';
+    const content = crlfSuffix ? line.slice(0, -1) : line;
+
     if (fenceMarker !== null) {
       out.push(line);
-      const closing = FENCE_CLOSE_PATTERN.exec(line);
+      const closing = FENCE_CLOSE_PATTERN.exec(content);
       if (closing && closing[1].charAt(0) === fenceMarker.charAt(0) && closing[1].length >= fenceMarker.length) {
         fenceMarker = null;
       }
       continue;
     }
 
-    const opening = FENCE_OPEN_PATTERN.exec(line);
+    const opening = FENCE_OPEN_PATTERN.exec(content);
     if (opening) {
       // 开栏行本身（含 info string）不改写——info string 里出现 `![](` 也是
       // 代码语义的一部分（如 markdown 教学文档的示例围栏）。
@@ -212,9 +220,9 @@ export function normalizeMarkdownImagePaths(markdown: string): string {
       continue;
     }
 
-    const normalized = normalizeOutsideInlineCode(line);
-    changed = changed || normalized !== line;
-    out.push(normalized);
+    const normalized = normalizeOutsideInlineCode(content);
+    changed = changed || normalized !== content;
+    out.push(normalized + crlfSuffix);
   }
 
   return changed ? out.join('\n') : markdown;
