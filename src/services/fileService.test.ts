@@ -94,6 +94,41 @@ describe('fileService', () => {
     expect(opened.content).toBe('# legacy\n正文');
   });
 
+  it('normalizes image destinations containing spaces when loading Markdown (ISS-194)', async () => {
+    // Lute 按 CommonMark 拒绝把目标含未转义空格的 `![…](…)` 解析为图片，
+    // 读盘装载层必须归一化（空格 → %20），否则插图整段按普通文本渲染。
+    Object.defineProperty(window, '__TAURI_INTERNALS__', {
+      configurable: true,
+      value: {},
+    });
+    const raw = '# 转录\n\n![PPT 幻灯片 1](./260815 Agent + Skill：法律工作的AI变革-杨卫薪律师_slides/slide_001.webp)\n';
+    tauriCoreMock.invoke.mockResolvedValue(arrayBufferOf(raw));
+
+    const opened = await openPath('/Users/demo/转录.md', 'UTF-8');
+
+    expect(opened.content).toBe(
+      '# 转录\n\n![PPT 幻灯片 1](./260815%20Agent%20+%20Skill：法律工作的AI变革-杨卫薪律师_slides/slide_001.webp)\n',
+    );
+    // lastSavedContent 与 content 同步取归一化结果：打开即干净，不误标 dirty。
+    expect(opened.lastSavedContent).toBe(opened.content);
+    expect(opened.dirty).toBe(false);
+  });
+
+  it('leaves HTML documents untouched by the image path normalizer', async () => {
+    Object.defineProperty(window, '__TAURI_INTERNALS__', {
+      configurable: true,
+      value: {},
+    });
+    const raw = '<p>![not markdown](./a b.png)</p>';
+    tauriCoreMock.invoke.mockResolvedValue(arrayBufferOf(raw));
+
+    const opened = await openPath('/Users/demo/演示.html', 'UTF-8');
+
+    expect(opened.fileType).toBe('html');
+    expect(opened.content).toBe(raw);
+    expect(opened.lastSavedContent).toBe(raw);
+  });
+
   it('keeps browser/test fallback on the filesystem plugin outside Tauri runtime', async () => {
     tauriFsMock.readTextFile.mockResolvedValue('# 手动打开');
 

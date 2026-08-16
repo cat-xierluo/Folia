@@ -2,6 +2,7 @@ import { open, save } from '@tauri-apps/plugin-dialog';
 import { readTextFile, readFile, writeTextFile } from '@tauri-apps/plugin-fs';
 import type { OpenedFile } from '../types/document';
 import type { DefaultEncoding } from './settingsService';
+import { normalizeMarkdownImagePaths } from './markdownImagePathNormalizer';
 
 function isTauriRuntime(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -131,7 +132,21 @@ export async function openPath(path: string, encoding: DefaultEncoding = 'UTF-8'
     const content = await readTextWithEncoding(path, encoding);
     const fileType = ext === 'html' || ext === 'htm' ? 'html' as const : 'markdown' as const;
 
-    return { path, name, content, dirty: false, lastSavedContent: content, fileType };
+    // ISS-194 / DEC-140：转录 / 导出工具常产出 `![…](./含 空格/xxx.webp)` 这类
+    // 目标地址含未转义空格的图片语法。CommonMark 规定非 `<>` 包裹的行内图片
+    // 目标不允许空格，Vditor 的 Lute 严格遵循——整段按普通文本渲染、不产生
+    // <img>，后续 localImageResolver 无从处理（用户症状：插图不渲染）。
+    // 读盘装载层统一归一化（未转义空格 → %20，围栏/行内代码内容保留）。
+    // content 与 lastSavedContent 同步取归一化结果，dirty 判定不受影响；
+    // 用户不编辑则磁盘文件永不重写，编辑保存时落盘的是等价且严格合法的
+    // Markdown。所有读盘路径（打开 / 自动重载 / 系统「打开方式」）都经
+    // openPath 收口，单点接入即全覆盖。HTML 文件不经此处理
+    // （htmlPresentationService 自行内联本地资源）。
+    const normalizedContent = fileType === 'markdown'
+      ? normalizeMarkdownImagePaths(content)
+      : content;
+
+    return { path, name, content: normalizedContent, dirty: false, lastSavedContent: normalizedContent, fileType };
   } catch (error) {
     // 超大文件由后端在读取前拒绝；这里给出可见提示后再向上抛出（ISS-159）。
     await notifyOversizedFileIfApplicable(error, name);
