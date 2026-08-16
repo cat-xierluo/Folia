@@ -80,6 +80,18 @@ describe('htmlPresentationService', () => {
     );
   });
 
+  it('decodes percent-encoded whitespace when joining percent-normalized image destinations (ISS-194)', () => {
+    // markdownImagePathNormalizer 把目标里的空格归一化为 %20 后，Lute 输出的
+    // src 即此形态；resolveLocalResourcePath 必须先解码再拼目录，否则按字面
+    // %20 找文件必然 miss。
+    expect(
+      resolveLocalResourcePath(
+        '/Users/demo/课程/转录.md',
+        './260815%20Agent%20+%20Skill：法律工作的AI变革_slides/slide_001.webp',
+      ),
+    ).toBe('/Users/demo/课程/260815 Agent + Skill：法律工作的AI变革_slides/slide_001.webp');
+  });
+
   it('does not resolve external, data, anchor, or protocol-relative resource URLs', () => {
     expect(resolveLocalResourcePath('/Users/demo/decks/case.html', 'https://example.test/a.js')).toBeUndefined();
     expect(resolveLocalResourcePath('/Users/demo/decks/case.html', 'data:text/plain,ok')).toBeUndefined();
