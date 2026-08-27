@@ -775,6 +775,9 @@ const WRAPPER_TAG_RE = '(?:div|p|section|blockquote)';
 const WRAPPER_OPEN_RE = new RegExp(`^<(${WRAPPER_TAG_RE})((?:\\s[^<>]*)?)>(?:</\\1>)?$`, 'i');
 const WRAPPER_CLOSE_RE = new RegExp(`^</(${WRAPPER_TAG_RE})>$`, 'i');
 const ALIGN_ATTR_RE = /\balign\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/i;
+// ISS-207：`style="text-align: right"` 与 `align` 属性是同一对齐意图的两种
+// 常见写法（GitHub / Typora 均支持），align 未命中时回退解析 style。
+const STYLE_TEXT_ALIGN_RE = /text-align\s*:\s*(?:"\s*)?([a-z]+)/i;
 
 const ALIGN_CLASS_MAP: Record<string, string> = {
   right: FOLIA_IR_HTML_ALIGN_RIGHT_CLASS,
@@ -791,7 +794,16 @@ function parseWrapperOpenMarker(text: string | null): WrapperOpenInfo | null {
   const attrs = match[2] ?? '';
   const alignMatch = ALIGN_ATTR_RE.exec(attrs);
   const rawAlign = (alignMatch?.[1] ?? alignMatch?.[2] ?? alignMatch?.[3] ?? '').toLowerCase();
-  return { tag: match[1].toLowerCase(), alignClass: ALIGN_CLASS_MAP[rawAlign] ?? null };
+  const fromAttr = ALIGN_CLASS_MAP[rawAlign] ?? null;
+  if (fromAttr) return { tag: match[1].toLowerCase(), alignClass: fromAttr };
+  // style 回退：取 style 属性值内首个 text-align 声明。属性值可能含 `>`?
+  // 不——WRAPPER_OPEN_RE 的 attrs 段排除 `<>`，与既有边界一致（含尖括号
+  // 的属性值 give-up 保横条，安全失败方向）。
+  const styleMatch = /style\s*=\s*(?:"([^"]*)"|'([^']*)')/i.exec(attrs);
+  const styleValue = (styleMatch?.[1] ?? styleMatch?.[2] ?? '').toLowerCase();
+  const textAlignMatch = STYLE_TEXT_ALIGN_RE.exec(styleValue);
+  const styledAlign = textAlignMatch?.[1]?.toLowerCase() ?? '';
+  return { tag: match[1].toLowerCase(), alignClass: ALIGN_CLASS_MAP[styledAlign] ?? null };
 }
 
 function isWrapperCloseMarker(text: string | null, tag: string): boolean {

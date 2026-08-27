@@ -716,3 +716,60 @@ describe('ISS-205 review 加固：黑名单补强与对齐注入收窄', () => {
       .toContain('落款文字');
   });
 });
+
+describe('repairSplitWrapperHtmlIrPreviews style 写法 (ISS-207)', () => {
+  it('style="text-align:right" 包裹组注入 right class 并隐藏孤立标签，round-trip 保真', () => {
+    const { lute, html } = createIrHtml([
+      '<div style="text-align: right">',
+      '',
+      '具状人：某人',
+      '',
+      '2026年　月　日',
+      '',
+      '</div>',
+    ].join('\n'));
+    const sanitized = sanitizeVditorIrHtml(html);
+    const root = document.createElement('div');
+    root.innerHTML = sanitized.html;
+
+    const changed = repairSplitWrapperHtmlIrPreviews(root);
+
+    expect(changed).toBe(true);
+    expect(root.querySelectorAll('.folia-html-align-right').length).toBe(2);
+    expect(root.querySelectorAll('.folia-html-align-right')[0].textContent).toBe('具状人：某人');
+    // 无 align 属性 → 不注 class 的断言只针对 align 场景；此处 style 已命中
+    expect(root.querySelectorAll('.folia-ir-html-wrap-hidden').length).toBe(2);
+
+    const roundTrip = lute.VditorIRDOM2Md(root.innerHTML);
+    expect(roundTrip).toContain('<div style="text-align: right">');
+    expect(roundTrip).toContain('</div>');
+  });
+
+  it('style 写法大小写/空格变体均可识别', () => {
+    for (const open of ['<div style="TEXT-ALIGN:center">', '<div style="text-align:center">', '<div style=\'text-align:center\'>']) {
+      const md = [open, '', '居中内容', '', '</div>'].join('\n');
+      const { html } = createIrHtml(md);
+      const sanitized = sanitizeVditorIrHtml(html);
+      const root = document.createElement('div');
+      root.innerHTML = sanitized.html;
+
+      repairSplitWrapperHtmlIrPreviews(root);
+
+      const centered = Array.from(root.querySelectorAll('.folia-html-align-center'));
+      expect(centered.map((el) => el.textContent)).toContain('居中内容');
+    }
+  });
+
+  it('无对齐声明的 style 不注入', () => {
+    const md = ['<div style="color:red">', '', '红色段', '', '</div>'].join('\n');
+    const { html } = createIrHtml(md);
+    const sanitized = sanitizeVditorIrHtml(html);
+    const root = document.createElement('div');
+    root.innerHTML = sanitized.html;
+
+    repairSplitWrapperHtmlIrPreviews(root);
+
+    expect(root.querySelectorAll('[class*="folia-html-align-"]').length).toBe(0);
+    expect(root.querySelectorAll('.folia-ir-html-wrap-hidden').length).toBe(2);
+  });
+});

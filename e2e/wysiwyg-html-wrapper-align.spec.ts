@@ -123,3 +123,42 @@ test('ISS-205: 空 content 的 html-block 节点全部不可见（无浅色横�
   ));
   expect(markers.join('\n')).toContain('<div align="right">');
 });
+
+test('ISS-207: style="text-align" 写法包裹组段落恢复右对齐', async ({ page }) => {
+  const styleMd = [
+    '<div style="text-align: right">',
+    '',
+    '具状人：某某',
+    '',
+    '2026年　月　日',
+    '',
+    '</div>',
+  ].join('\n');
+  const styleSession = {
+    ...SESSION,
+    activeTabId: 'tab-iss207',
+    tabs: [{
+      ...SESSION.tabs[0],
+      id: 'tab-iss207',
+      file: {
+        ...SESSION.tabs[0].file,
+        path: '/tmp/iss207-style-align.md',
+        name: 'iss207-style-align.md',
+        content: styleMd,
+        lastSavedContent: styleMd,
+      },
+    }],
+  };
+  await page.addInitScript((s) => localStorage.setItem('folia.session.v1', s), JSON.stringify(styleSession));
+
+  await page.goto(APP_URL);
+  await page.waitForSelector('.vditor-ir', { state: 'attached', timeout: 120_000 });
+
+  const sig = page.locator('.vditor-reset p', { hasText: '具状人：某某' });
+  await expect.poll(async () => sig.evaluate((el) => window.getComputedStyle(el).textAlign), {
+    timeout: 30_000,
+    intervals: [500, 1000, 2000],
+  }).toBe('right');
+
+  await expect(page.locator('.vditor-reset p', { hasText: '2026年' })).toHaveCSS('text-align', 'right');
+});
