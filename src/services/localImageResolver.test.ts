@@ -239,14 +239,13 @@ describe('resolveLocalImages (ISS-206 data URL 通路)', () => {
   });
 
   it('keeps the original src when the media command fails (oversize / missing)', async () => {
-    const { resolveLocalImages: resolve } = await importFresh();
     vi.resetModules();
     vi.doMock('@tauri-apps/api/core', () => ({
       invoke: vi.fn(async () => {
         throw new Error('media file exceeds the 20971520-byte limit');
       }),
     }));
-    const mod = await import('./localImageResolver');
+    const { resolveLocalImages: resolve } = await import('./localImageResolver');
     const container = createContainerWithImages([{ src: './huge.png' }]);
     await mod.resolveLocalImages(container, '/Users/demo/docs/note.md');
     // 命令失败 → 原样保留（编辑器走占位显示），不得写半截 data URL。
