@@ -12,7 +12,7 @@ import { useSettings } from '../hooks/useSettings';
 import { translate } from '../services/i18n';
 import { resolveLocalImages } from '../services/localImageResolver';
 import { openExternalUrl } from '../services/urlOpener';
-import { repairSvgIrPreviewsFromMarkdown, sanitizeVditorIrHtml } from '../services/vditorIrSanitizeService';
+import { repairSplitWrapperHtmlIrPreviews, repairSvgIrPreviewsFromMarkdown, sanitizeVditorIrHtml } from '../services/vditorIrSanitizeService';
 import { useImageAssetStore } from '../context/useImageAssetStore';
 import {
   pickImageFiles,
@@ -402,6 +402,10 @@ function sanitizeIrDom(editor: import('vditor').default | null, markdownSource: 
     restoreSelectionOffsets(ir, snap);
   }
   repairSvgIrPreviewsFromMarkdown(ir, markdownSource);
+  // ISS-205：多行 HTML 包裹块（<div align> 等）被 Lute 按空行拆散后的
+  // 视觉重组——隐藏孤立开/闭标签横条 + 中间段落注入对齐 class。与 SVG
+  // 修复同一挂接时机（sanitize 后、异步代码块重渲染前），round-trip 安全。
+  repairSplitWrapperHtmlIrPreviews(ir);
   // ISS-63 / DEC-118：sanitize 完成后重跑 Vditor 内部代码块渲染器，让
   // mermaid / echarts 等异步产物写入 sanitize 后的新 IR DOM 活节点（绕
   // 开 detached-node 竞争）。Try/catch 防 unhandled rejection + 卸载竞态
