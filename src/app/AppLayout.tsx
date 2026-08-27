@@ -504,7 +504,9 @@ export function AppLayout() {
     // blob: 失效、图片永久丢失。无 pending 或非 Tauri 时为快路径（空操作）。
     let fileToSave = file;
     if (file.path) {
-      const { replacements, failures } = await persistPendingImageAssets(imageAssetStore, file.path);
+      // ISS-196：只落盘当前文档 content 引用的资产，避免把其它 tab 的
+      // pending 图片写进本文档目录（跨 tab 污染 / 数据丢失）。
+      const { replacements, failures } = await persistPendingImageAssets(imageAssetStore, file.path, file.content);
       if (failures.length > 0) {
         console.error('[Folia] 部分图片落盘失败:', failures);
       }
@@ -528,7 +530,7 @@ export function AppLayout() {
     // <doc>.assets/ 并更新 content。saveFileAs 已写入旧 content，这里
     // 落盘后再写一次（含相对路径的 content）。
     if (updated.path) {
-      const { replacements, failures } = await persistPendingImageAssets(imageAssetStore, updated.path);
+      const { replacements, failures } = await persistPendingImageAssets(imageAssetStore, updated.path, updated.content);
       if (failures.length > 0) {
         console.error('[Folia] 部分图片落盘失败:', failures);
       }
@@ -558,7 +560,8 @@ export function AppLayout() {
     const { saveFile } = await import('../services/fileService');
     let fileToSave = targetFile;
     if (targetFile.path) {
-      const { replacements, failures } = await persistPendingImageAssets(imageAssetStore, targetFile.path);
+      // ISS-196：同 handleSave，仅落盘该 tab 正文引用的资产。
+      const { replacements, failures } = await persistPendingImageAssets(imageAssetStore, targetFile.path, targetFile.content);
       if (failures.length > 0) {
         console.error('[Folia] 部分图片落盘失败:', failures);
       }

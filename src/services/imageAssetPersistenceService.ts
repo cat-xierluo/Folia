@@ -54,11 +54,19 @@ export interface PersistResult {
 }
 
 /**
- * 把 store 中所有 pending 资源落盘到 `<doc>.assets/` 并返回 blob→相对路径
- * 的替换映射。调用方据此替换 Markdown content 后再保存文本。
+ * 把 store 中**被 `content` 引用**的资源落盘到 `<doc>.assets/` 并返回
+ * blob→相对路径的替换映射。调用方据此替换 Markdown content 后再保存文本。
+ *
+ * ISS-196：store 是窗口内所有 tab 共享的单例。此前「落盘全部 pending」会把
+ * 其它 tab 粘贴的图片写进本文档目录并全局标记 persisted，导致其它 tab 保存时
+ * 资产已被判为已持久化、blob: 死链且字节从未写入正确位置（数据丢失）。
+ * 因此：
+ * - 只处理 `content` 中实际引用的资产（objectUrl 出现在正文里）；
+ * - 已对同一文档路径写过盘的资产跳过（`persistedInto`）；
+ * - 共享 hash 的资产对另一文档首次保存时仍会再写该文档自己的 `.assets/`。
  *
  * - 非 Tauri 环境（vitest jsdom / 浏览器预览）直接返回空结果，不报错。
- * - 无 pending 资源时返回空结果（saveFile 的快路径不受影响）。
+ * - 无引用资源时返回空结果（saveFile 的快路径不受影响）。
  * - 单个资源失败不阻断其余资源；失败收集到 `failures`。
  *
  * 字节经 Rust `write_managed_asset` 写入（Vec<u8> JSON 序列化）；图片通常
@@ -68,14 +76,24 @@ export interface PersistResult {
 export async function persistPendingImageAssets(
   store: ImageAssetStore,
   documentPath: string,
+  content: string,
 ): Promise<PersistResult> {
-  const pending = store.list().filter((asset) => asset.state === 'pending' && asset.objectUrl);
-  if (pending.length === 0) {
-    return { replacements: [], failures: [] };
-  }
   // 非 Tauri 环境（浏览器预览 / vitest jsdom）无法写盘，直接跳过——不产生
   // 无意义的 failure（与 fileService 的 isTauriRuntime 前置检查一致）。
   if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) {
+    return { replacements: [], failures: [] };
+  }
+  // 锚定当前文档内容：只处理正文中引用且尚未为本文档写盘的资产。pending 与
+  // persisted 两态都可能命中（共享 hash 的资产曾被另一文档先写盘）。
+  const referenced = store
+    .list()
+    .filter(
+      (asset) =>
+        asset.objectUrl &&
+        content.includes(asset.objectUrl) &&
+        !(asset.persistedInto ?? []).includes(documentPath),
+    );
+  if (referenced.length === 0) {
     return { replacements: [], failures: [] };
   }
 
@@ -84,7 +102,7 @@ export async function persistPendingImageAssets(
   const failures: Array<{ hash: string; fileName: string; error: string }> = [];
 
   const { invoke } = await import('@tauri-apps/api/core');
-  for (const asset of pending) {
+  for (const asset of referenced) {
     const assetRelativePath = `${docBaseName}.assets/${asset.fileName}`;
     const relativeMarkdownPath = `./${assetRelativePath}`;
     try {
@@ -93,7 +111,7 @@ export async function persistPendingImageAssets(
         assetRelativePath,
         bytes: Array.from(asset.bytes),
       });
-      store.markPersisted(asset.hash);
+      store.markPersisted(asset.hash, documentPath);
       replacements.push({ objectUrl: asset.objectUrl, relativePath: relativeMarkdownPath });
     } catch (error) {
       failures.push({

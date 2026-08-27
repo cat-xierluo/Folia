@@ -69,22 +69,22 @@ describe('persistPendingImageAssets', () => {
     vi.resetModules();
   });
 
-  it('returns empty result when no pending assets', async () => {
+  it('returns empty result when no assets referenced by content', async () => {
     const store = new ImageAssetStore();
-    const result = await persistPendingImageAssets(store, '/work/doc.md');
+    const result = await persistPendingImageAssets(store, '/work/doc.md', '# 无图文档');
     expect(result.replacements).toHaveLength(0);
     expect(result.failures).toHaveLength(0);
   });
 
   it('skips in non-Tauri environment (no __TAURI_INTERNALS__)', async () => {
     const store = new ImageAssetStore();
-    await store.registerPending(new Uint8Array([1]), 'a.png', 'image/png');
-    const result = await persistPendingImageAssets(store, '/work/doc.md');
+    const asset = await store.registerPending(new Uint8Array([1]), 'a.png', 'image/png');
+    const result = await persistPendingImageAssets(store, '/work/doc.md', `![](${asset.objectUrl})`);
     expect(result.replacements).toHaveLength(0);
     expect(result.failures).toHaveLength(0);
   });
 
-  it('writes pending assets and returns blob→relative replacements', async () => {
+  it('writes pending assets referenced by content and returns blob→relative replacements', async () => {
     Object.defineProperty(window, '__TAURI_INTERNALS__', { value: {}, configurable: true });
     const invokeMock = vi.fn().mockResolvedValue(undefined);
     vi.doMock('@tauri-apps/api/core', () => ({ invoke: invokeMock }));
@@ -96,7 +96,8 @@ describe('persistPendingImageAssets', () => {
       'image/png',
     );
 
-    const result = await persistPendingImageAssets(store, '/work/案件.md');
+    const content = `# 案件\n\n![截图（待落盘）](${asset.objectUrl})`;
+    const result = await persistPendingImageAssets(store, '/work/案件.md', content);
 
     expect(invokeMock).toHaveBeenCalledTimes(1);
     expect(invokeMock).toHaveBeenCalledWith('write_managed_asset', {
@@ -112,6 +113,54 @@ describe('persistPendingImageAssets', () => {
     expect(store.get(asset.hash)?.state).toBe('persisted');
   });
 
+  it('ISS-196 回归：未在本文档引用的资产不落盘、不标记（其它 tab 的 pending 资产不受污染）', async () => {
+    Object.defineProperty(window, '__TAURI_INTERNALS__', { value: {}, configurable: true });
+    const invokeMock = vi.fn().mockResolvedValue(undefined);
+    vi.doMock('@tauri-apps/api/core', () => ({ invoke: invokeMock }));
+
+    const store = new ImageAssetStore();
+    // tab B 粘贴的图片（只存在于 B 的正文里），此刻正在保存 tab A
+    const bAsset = await store.registerPending(new Uint8Array([9]), 'b.png', 'image/png');
+
+    const result = await persistPendingImageAssets(store, '/work/A.md', '# A 的正文，不含图片');
+
+    expect(invokeMock).not.toHaveBeenCalled();
+    expect(result.replacements).toHaveLength(0);
+    expect(result.failures).toHaveLength(0);
+    // B 的资产必须保持 pending，等 B 自己保存时再落盘到 B 的 .assets/
+    expect(store.get(bAsset.hash)?.state).toBe('pending');
+  });
+
+  it('ISS-196 回归：共享 hash 的资产先随 A 文档落盘后，B 文档保存仍会写自己的目录', async () => {
+    Object.defineProperty(window, '__TAURI_INTERNALS__', { value: {}, configurable: true });
+    const invokeMock = vi.fn().mockResolvedValue(undefined);
+    vi.doMock('@tauri-apps/api/core', () => ({ invoke: invokeMock }));
+
+    const store = new ImageAssetStore();
+    const shared = await store.registerPending(new Uint8Array([7, 7]), 'same.png', 'image/png');
+    // 同一 objectUrl 被 A、B 两个文档同时引用（hash 去重返回同一条目）
+    const contentA = `![a](${shared.objectUrl})`;
+    const contentB = `![b](${shared.objectUrl})`;
+
+    await persistPendingImageAssets(store, '/work/A.md', contentA);
+
+    // 二次调用 B 文档：即使条目已切到 persisted 态、persistedInto=[A.md]，也要为 B 写盘
+    const result = await persistPendingImageAssets(store, '/work/B.md', contentB);
+
+    expect(invokeMock).toHaveBeenCalledTimes(2);
+    expect(invokeMock).toHaveBeenNthCalledWith(2, 'write_managed_asset', {
+      documentPath: '/work/B.md',
+      assetRelativePath: 'B.assets/same.png',
+      bytes: [7, 7],
+    });
+    expect(result.replacements).toEqual([
+      { objectUrl: shared.objectUrl, relativePath: './B.assets/same.png' },
+    ]);
+    expect(store.get(shared.hash)?.persistedInto).toEqual(['/work/A.md', '/work/B.md']);
+    // 替换锚点继续可用：objectUrl 不被提前 revoke / 清空
+    expect(store.get(shared.hash)?.objectUrl).toBe(shared.objectUrl);
+  });
+
   it('collects failures without aborting other assets', async () => {
     Object.defineProperty(window, '__TAURI_INTERNALS__', { value: {}, configurable: true });
     const invokeMock = vi
@@ -123,13 +172,31 @@ describe('persistPendingImageAssets', () => {
     const store = new ImageAssetStore();
     const ok = await store.registerPending(new Uint8Array([1]), 'a.png', 'image/png');
     const fail = await store.registerPending(new Uint8Array([2]), 'b.png', 'image/png');
+    const content = `![ok](${ok.objectUrl})\n\n![fail](${fail.objectUrl})`;
 
-    const result = await persistPendingImageAssets(store, '/work/doc.md');
+    const result = await persistPendingImageAssets(store, '/work/doc.md', content);
 
     expect(result.replacements).toHaveLength(1);
     expect(result.replacements[0].objectUrl).toBe(ok.objectUrl);
     expect(result.failures).toHaveLength(1);
     expect(result.failures[0].hash).toBe(fail.hash);
     expect(result.failures[0].error).toBe('disk full');
+  });
+
+  it('已为本路径写盘过的资产不重复写（幂等快路径）', async () => {
+    Object.defineProperty(window, '__TAURI_INTERNALS__', { value: {}, configurable: true });
+    const invokeMock = vi.fn().mockResolvedValue(undefined);
+    vi.doMock('@tauri-apps/api/core', () => ({ invoke: invokeMock }));
+
+    const store = new ImageAssetStore();
+    const asset = await store.registerPending(new Uint8Array([3]), 'a.png', 'image/png');
+    const content = `![](${asset.objectUrl})`;
+
+    await persistPendingImageAssets(store, '/work/doc.md', content);
+    const second = await persistPendingImageAssets(store, '/work/doc.md', content.replace(`${asset.objectUrl}`, './doc.assets/a.png'));
+
+    // 第二次保存时 content 已是相对路径（无 blob 锚点），不应重复写盘
+    expect(second.replacements).toHaveLength(0);
+    expect(invokeMock).toHaveBeenCalledTimes(1);
   });
 });
