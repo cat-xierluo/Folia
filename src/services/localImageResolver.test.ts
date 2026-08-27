@@ -247,7 +247,7 @@ describe('resolveLocalImages (ISS-206 data URL 通路)', () => {
     }));
     const { resolveLocalImages: resolve } = await import('./localImageResolver');
     const container = createContainerWithImages([{ src: './huge.png' }]);
-    await mod.resolveLocalImages(container, '/Users/demo/docs/note.md');
+    await resolve(container, '/Users/demo/docs/note.md');
     // 命令失败 → 原样保留（编辑器走占位显示），不得写半截 data URL。
     expect(container.querySelector('img')?.getAttribute('src')).toBe('./huge.png');
   });
