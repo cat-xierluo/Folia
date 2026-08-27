@@ -1152,6 +1152,7 @@ checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 name = "folia"
 version = "0.7.1"
 dependencies = [
+ "base64 0.22.1",
  "log",
  "notify",
  "serde_json",
