@@ -773,3 +773,33 @@ describe('repairSplitWrapperHtmlIrPreviews style 写法 (ISS-207)', () => {
     expect(root.querySelectorAll('.folia-ir-html-wrap-hidden').length).toBe(2);
   });
 });
+
+describe('ISS-207 review 加固：style 解析语义', () => {
+  it('align 属性与 style 同存时 align 优先（守卫锁定短路逻辑）', () => {
+    const md = ['<div align="right" style="text-align:center">', '', '优先级段', '', '</div>'].join('\n');
+    const { html } = createIrHtml(md);
+    const sanitized = sanitizeVditorIrHtml(html);
+    const root = document.createElement('div');
+    root.innerHTML = sanitized.html;
+
+    repairSplitWrapperHtmlIrPreviews(root);
+
+    const aligned = Array.from(root.querySelectorAll('.folia-html-align-right'));
+    expect(aligned.map((el) => el.textContent)).toContain('优先级段');
+    expect(root.querySelectorAll('.folia-html-align-center').length).toBe(0);
+  });
+
+  it('多个 text-align 声明取最后一个（CSS 层叠「后者胜」）', () => {
+    const md = ['<div style="text-align:left;text-align: right">', '', '层叠段', '', '</div>'].join('\n');
+    const { html } = createIrHtml(md);
+    const sanitized = sanitizeVditorIrHtml(html);
+    const root = document.createElement('div');
+    root.innerHTML = sanitized.html;
+
+    repairSplitWrapperHtmlIrPreviews(root);
+
+    const aligned = Array.from(root.querySelectorAll('.folia-html-align-right'));
+    expect(aligned.map((el) => el.textContent)).toContain('层叠段');
+    expect(root.querySelectorAll('.folia-html-align-left').length).toBe(0);
+  });
+});

@@ -777,7 +777,9 @@ const WRAPPER_CLOSE_RE = new RegExp(`^</(${WRAPPER_TAG_RE})>$`, 'i');
 const ALIGN_ATTR_RE = /\balign\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/i;
 // ISS-207：`style="text-align: right"` 与 `align` 属性是同一对齐意图的两种
 // 常见写法（GitHub / Typora 均支持），align 未命中时回退解析 style。
-const STYLE_TEXT_ALIGN_RE = /text-align\s*:\s*(?:"\s*)?([a-z]+)/i;
+// post-merge review M2：CSS 层叠语义是「后者胜」，多个 text-align 声明取
+// 最后一个（exec 首个会与浏览器实际渲染背离）。
+const STYLE_TEXT_ALIGN_RE = /text-align\s*:\s*([a-z]+)/gi;
 
 const ALIGN_CLASS_MAP: Record<string, string> = {
   right: FOLIA_IR_HTML_ALIGN_RIGHT_CLASS,
@@ -801,8 +803,13 @@ function parseWrapperOpenMarker(text: string | null): WrapperOpenInfo | null {
   // 的属性值 give-up 保横条，安全失败方向）。
   const styleMatch = /style\s*=\s*(?:"([^"]*)"|'([^']*)')/i.exec(attrs);
   const styleValue = (styleMatch?.[1] ?? styleMatch?.[2] ?? '').toLowerCase();
-  const textAlignMatch = STYLE_TEXT_ALIGN_RE.exec(styleValue);
-  const styledAlign = textAlignMatch?.[1]?.toLowerCase() ?? '';
+  // 取最后一个 text-align 声明（CSS 层叠「后者胜」）；g 标志正则需手动
+  // 重置 lastIndex，避免跨调用状态残留。
+  let styledAlign = '';
+  STYLE_TEXT_ALIGN_RE.lastIndex = 0;
+  for (const match of styleValue.matchAll(STYLE_TEXT_ALIGN_RE)) {
+    styledAlign = match[1]?.toLowerCase() ?? '';
+  }
   return { tag: match[1].toLowerCase(), alignClass: ALIGN_CLASS_MAP[styledAlign] ?? null };
 }
 
