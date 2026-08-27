@@ -18,25 +18,34 @@ import { resolveLocalResourcePath } from './htmlPresentationService';
  * 缓存：data URL 由路径唯一决定且不可变，模块级 Map 缓存 path → dataURL，
  * 使编辑器高频输入路径（每次 sanitize 触发 resolveLocalImages）对同一
  * 资源只发生一次 IPC + 读盘。上限 500 条，超出整表清空（简单防泄漏，
- * media 资源数量级远小于该值）。
+ * media 资源数量级远小于该值）。命令失败另有 30s TTL 负缓存，窗口内
+ * 短路避免重复空 invoke，过期后自然重试。
  */
 const dataUrlCache = new Map<string, string>();
 const DATA_URL_CACHE_LIMIT = 500;
 // 并发去重：同一容器内多张相同 src 的 img 会在缓存写入前并发到达，
 // in-flight 表把同路径请求合并为一次 IPC。
 const inflightMedia = new Map<string, Promise<string | null>>();
-
-let invokeUnavailable = false;
+// 负缓存：命令失败的 path → failedAt(ms)。编辑器高频输入路径下每次
+// sanitize 都会触发 resolveLocalImages，一个 404 / 超限 / 不支持的图
+// 若每次都重新 invoke 会反复空读盘；TTL 窗口内直接短路，过期后自然
+// 重试，给临时性错误（文件被占用、上次超限后已缩小）恢复机会。
+const negativeCache = new Map<string, number>();
+const NEGATIVE_CACHE_TTL_MS = 30_000;
 
 async function readMediaAsDataUrl(absolutePath: string): Promise<string | null> {
   const cached = dataUrlCache.get(absolutePath);
   if (cached !== undefined) return cached;
   const pending = inflightMedia.get(absolutePath);
   if (pending) return pending;
-  if (invokeUnavailable) return null;
   if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) {
     // 纯 Web 环境（vite dev / 测试）没有 Tauri runtime，媒体通路不可用。
-    invokeUnavailable = true;
+    // 逐次 O(1) 属性探测而非进程级 latch：Tauri 环境永不命中，Web 环境
+    // 每次短路，无跨调用状态可残留。
+    return null;
+  }
+  const failedAt = negativeCache.get(absolutePath);
+  if (failedAt !== undefined && Date.now() - failedAt < NEGATIVE_CACHE_TTL_MS) {
     return null;
   }
   const request = (async () => {
@@ -44,9 +53,14 @@ async function readMediaAsDataUrl(absolutePath: string): Promise<string | null> 
       const dataUrl = await invoke<string>('read_media_as_data_url', { path: absolutePath });
       if (dataUrlCache.size >= DATA_URL_CACHE_LIMIT) dataUrlCache.clear();
       dataUrlCache.set(absolutePath, dataUrl);
+      negativeCache.delete(absolutePath);
       return dataUrl;
     } catch {
-      // 命令 Err（超限 / 不支持扩展名 / 不存在 / denied root）→ 保留原 src。
+      // 命令 Err（超限 / 不支持扩展名 / 不存在 / denied root）→ 记入负
+      // 缓存后保留原 src（编辑器按既有占位逻辑显示）。失败只缓存 TTL
+      // 窗口，不进成功缓存。
+      if (negativeCache.size >= DATA_URL_CACHE_LIMIT) negativeCache.clear();
+      negativeCache.set(absolutePath, Date.now());
       return null;
     }
   })();

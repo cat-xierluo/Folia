@@ -1577,6 +1577,35 @@ mod tests {
     assert!(error.contains("denied roots list"), "unexpected error: {error}");
   }
 
+  /// 近似前缀负例：黑名单是「段边界精确前缀」匹配（`prefix` 后必须紧跟
+  /// `/` 或整路径相等），仅共享前缀字符串、不构成路径前缀的路径不应误拒
+  /// （`/etcfoo` 不是 `/etc` 的子路径，`/etc/passwd` 才是）。
+  #[test]
+  fn is_media_denied_path_allows_near_prefix_lookalikes() {
+    let allowed = [
+      // 前缀字符串相同但不构成路径前缀
+      "/etcfoo/pic.png",
+      "/private/etcetera/pic.png",
+      "/usrlocal/share/pic.png",
+      "/system32/pic.png",
+      "/varlog/app/pic.png",
+      "/library/keychains-backup/pic.png",
+      // Windows 形态（forward-slash 归一化后比较）
+      "c:/windowsupdate/pic.png",
+      "c:/programdata-backup/pic.png",
+      // 段级黑名单要求整段相等：.sshfoo ≠ .ssh
+      "/Users/demo/.sshfoo/id.png",
+      "/Users/demo/.gnupg2/pubring.png",
+      "/Users/demo/.awscli/config.png",
+    ];
+    for raw in allowed {
+      assert!(
+        !is_media_denied_path(Path::new(raw)),
+        "near-prefix lookalike must not be denied: {raw}"
+      );
+    }
+  }
+
   /// 超过 MAX_MEDIA_BYTES 拒绝（20MB+1 字节文件）。
   #[test]
   fn read_media_as_data_url_rejects_oversized_file() {

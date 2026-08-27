@@ -252,6 +252,50 @@ describe('resolveLocalImages (ISS-206 data URL 通路)', () => {
     expect(container.querySelector('img')?.getAttribute('src')).toBe('./huge.png');
   });
 
+  it('short-circuits within the negative-cache TTL and retries after expiry', async () => {
+    // 负缓存语义：命令失败 → 30s TTL 窗口内直接短路（编辑器高频 sanitize
+    // 下一个 404 图不反复空 invoke）；TTL 过期 → 重新 invoke，给临时性
+    // 错误（文件被占用、上次超限后已缩小）恢复机会。成功结果仍进
+    // dataUrlCache 永久缓存，与负缓存互不污染。
+    vi.useFakeTimers();
+    try {
+      vi.resetModules();
+      let failNext = true;
+      vi.doMock('@tauri-apps/api/core', () => ({
+        invoke: vi.fn(async (_cmd: string, args: { path: string }) => {
+          invokedPaths.push(args.path);
+          if (failNext) throw new Error('media file exceeds the 20971520-byte limit');
+          return 'data:image/png;base64,ZmFrZQ==';
+        }),
+      }));
+      const { resolveLocalImages: resolve } = await import('./localImageResolver');
+      const container = createContainerWithImages([{ src: './shrink.png' }]);
+      const docPath = '/Users/demo/docs/note.md';
+
+      await resolve(container, docPath);
+      expect(container.querySelector('img')?.getAttribute('src')).toBe('./shrink.png');
+      expect(invokedPaths).toEqual(['/Users/demo/docs/shrink.png']);
+
+      // TTL 窗口内：短路返回 null，不再 invoke。
+      await resolve(container, docPath);
+      expect(invokedPaths).toHaveLength(1);
+      expect(container.querySelector('img')?.getAttribute('src')).toBe('./shrink.png');
+
+      // TTL 过期：重新 invoke，命令成功 → 写入成功缓存。
+      vi.advanceTimersByTime(30_001);
+      failNext = false;
+      await resolve(container, docPath);
+      expect(invokedPaths).toEqual(['/Users/demo/docs/shrink.png', '/Users/demo/docs/shrink.png']);
+      expect(container.querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,ZmFrZQ==');
+
+      // 成功结果已缓存 → 不再 invoke（负缓存条目已被成功结果清除）。
+      await resolve(container, docPath);
+      expect(invokedPaths).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('keeps original src for <source> with unsupported media extension (mp4 不在白名单)', async () => {
     const { resolveLocalImages: resolve } = await importFresh();
     const container = document.createElement('div');
