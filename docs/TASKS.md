@@ -51,6 +51,14 @@
 - **发现:** (1) `AppLayout.tsx` 关窗确认流的 `let closing = false` 是 effect 局部变量、deps 含 tabs——dirty 弹窗期间 autosave 改变 tabs 触发重绑后可并发进入第二条关闭流，孤儿 promise；(2) `handleOpenPath` / 快捷键调用 async handler 无 catch、fileService 仅对 oversized/denied-path 两类弹提示，文件被移走 / 编码异常 / 磁盘满等全部 unhandled rejection。
 - **建议:** closing 提升为 ref 级标志；handleOpenPath/handleSave 包统一 toast / 原生 message 兜底。
 
+#### ⬜ ISS-205 多行 HTML 块（div align 等）在 IR 编辑器被 Lute 按空行拆块 → 对齐丢失 + 空节点浅色条
+
+- **发现:** 用户报《260826 民事起诉状》落款 `<div align="right">…</div>`（标签与内容间有空行，合法 CommonMark 写法）在 Folia 编辑器不右对齐，且所有含 HTML 的文件出现「更浅颜色背景」横条。2026-08-27 Playwright + Lute 双路实证根因：Vditor `mode: 'ir'` 的内核 Lute 在生成 IR DOM 时**按空行把一个 HTML block 拆成多个独立 `[data-type="html-block"]` 节点**（同 ISS-63 已知行为，`repairSplitSvgIrPreviews` 只对 `<svg>` 做了重组）。拆块后开/闭标签成为孤立空节点，中间段落升为编辑器顶层直接子元素——脱离任何 div 祖先链，`align` 自然失效。
+- **影响:** 编辑视图中落款/居中标题等靠 HTML 包裹实现的对齐全失效；每个被拆空的 html-block 节点渲染为 27px 高（`.vditor-ir__preview { min-height:27px }`）、底色 `--surface`（oklch(99% 0.005 80)，比纸面主背景更浅）的全宽空条——即用户看到的「浅色背景」。预览/导出路径不受影响：Lute `MarkdownStr` 连续 HTML 输出嵌套完整（`<div align="right"><p>具状人…</p></div>`），DOMPurify 白名单含 `align`。
+- **对照:** Typora 类编辑器把整段 raw HTML 合并解析为单个渲染块，故无此现象；GitHub 渲染同样正常（连续 HTML 流）。
+- **建议:** 方向 A——在 vditorIrSanitizeService 增加 div/section 等通用「拆散组重组」逻辑（仿 SVG 方案但需解决中间段落可编辑性问题，SVG 式隐藏片段会把正文藏掉，可能需要仅隐藏孤立开/闭标签节点的 preview 条而非合并）；方向 B——先做 CSS 止血：空内容的 html-block preview 不再撑 27px 浅色条（`display:none` 或 min-height:0），对齐问题另行评估。修复涉及编辑核心行为，走 Issue → PR → 真机回归（含 SVG 场景不回归）。
+- **证据:** 临时 e2e spec 实测（已删，结论记录于此）：3 个 html-block 节点、markers 序列化为 `<div align="right"></div>` 与空串、段落祖先链均为 `P`（顶层）、textAlign start；三段真实源文件 Lute 转换输出见上方「预览路径不受影响」。
+
 ### 收口 / 演进类
 
 #### ⬜ ISS-201 fs 插件彻底收口：持久 IO 全部走自定义命令
