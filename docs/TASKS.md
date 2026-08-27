@@ -59,12 +59,12 @@
 - **建议:** 方向 A——在 vditorIrSanitizeService 增加 div/section 等通用「拆散组重组」逻辑（仿 SVG 方案但需解决中间段落可编辑性问题，SVG 式隐藏片段会把正文藏掉，可能需要仅隐藏孤立开/闭标签节点的 preview 条而非合并）；方向 B——先做 CSS 止血：空内容的 html-block preview 不再撑 27px 浅色条（`display:none` 或 min-height:0），对齐问题另行评估。修复涉及编辑核心行为，走 Issue → PR → 真机回归（含 SVG 场景不回归）。
 - **证据:** 临时 e2e spec 实测（已删，结论记录于此）：3 个 html-block 节点、markers 序列化为 `<div align="right"></div>` 与空串、段落祖先链均为 `P`（顶层）、textAlign start；三段真实源文件 Lute 转换输出见上方「预览路径不受影响」。
 
-#### ⬜ ISS-207 `<div style="text-align:…">` 包裹块拆散后对齐不恢复（Issue #140）
+#### ✅ ISS-207 `<div style="text-align:…">` 包裹块拆散后对齐不恢复（已 PR #141，2026-08-27 squash merge 87d74d4，Issue #140 随关；单测 +3 / e2e +1 / 真机双写法验证）
 
 - **发现:** ISS-205 review（M3,APPROVE）指出 `style="text-align:…"` 写法与 `align` 属性写法同被 Lute 拆块，但开标签只解析 `align`，style 变体的对齐不恢复（横条隐藏已生效）。GitHub/Typora 均正常渲染该写法。
 - **建议:** `repairSplitWrapperHtmlIrPreviews` 在 `ALIGN_ATTR_RE` 未命中时回退解析 style 内 `text-align`，映射既有 `folia-html-align-*` class，机制零改动。验收见 Issue #140。
 
-#### ⬜ ISS-206 asset 协议 scope 仅 $HOME → 非 HOME 目录文档的本地图全部「图片数据损坏」（Issue #138）
+#### ✅ ISS-206 asset 协议 scope 仅 $HOME → 非 HOME 目录文档的本地图全部「图片数据损坏」（已 PR #142，2026-08-27 squash merge be69205，Issue #138 随关；采方案 2 受控 data URL 通路：Rust 命令 read_media_as_data_url 四层约束 + 前端缓存/in-flight 去重重写；Rust 44/44 + TS 764/764 + 真机三写法大图渲染验证）
 
 - **发现:** 2026-08-27 真机实证：`![img](/tmp/sample.png)` 等指向 `$HOME` 之外的本地图片全部显示「图片数据损坏」占位，与空格/%20 编码无关。dev 日志直接报 `[tauri::protocol::asset][ERROR] asset protocol not configured to allow the path`。
 - **根因:** `tauri.conf.json` assetProtocol scope 仅有 `$HOME/**/*`；/tmp、外置卷等一律被 Tauri 拒绝。相对路径文档放在非 HOME 目录同样命中（解析后仍落在受限路径）。main 与 fix 分支行为一致，存量限制非回归。
