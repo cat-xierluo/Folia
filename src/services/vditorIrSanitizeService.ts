@@ -300,6 +300,22 @@ function containsDangerousSvgMarkup(svg: string): boolean {
   return /<script\b|<foreignObject\b|\son[a-z][\w:-]*\s*=|\s(?:href|xlink:href)\s*=\s*["']?\s*javascript:/i.test(svg);
 }
 
+/**
+ * ISS-205：文本级危险特征快检，决定 html-block marker 是否需要进入
+ * DOMPurify 结构级清洗。
+ *
+ * marker 是「原始 HTML 源码的转义文本」而非可独立成立的文档——孤立开标签、
+ * 孤立闭标签（跨空行包裹块的常态）经 DOMPurify 的树构建会被补全闭合 /
+ * 直接丢弃，marker 文本一旦被规范化，保存 round-trip 就把用户源码改写为
+ * 语义损坏的形式（div 提前闭合 + 闭标签丢失）。因此干净的 marker 必须逐字
+ * 保真直通；只有检出危险特征时才值得以「源码被重排」为代价换安全剥除——
+ * 与 containsDangerousSvgMarkup 同一取舍模式。主防线（preview 渲染层的
+ * 整体 DOMPurify sanitize + hasRemovedUnsafeContent 门控）不受影响。
+ */
+function containsDangerousHtmlMarker(marker: string): boolean {
+  return /<script\b|<\/?(?:html|head|body|iframe|object|embed)\b|\son[a-z][\w:-]*\s*=|\s(?:href|src|xlink:href|poster|srcset)\s*=\s*["']?\s*(?:javascript:|data:text\/html)/i.test(marker);
+}
+
 function extractSvgInnerHtml(svgHtml: string): string {
   const root = document.createElement('div');
   root.innerHTML = svgHtml;
@@ -378,6 +394,11 @@ function sanitizeHtmlBlockMarkers(root: HTMLElement): boolean {
       }
       return;
     }
+
+    // ISS-205：不含危险特征的 marker 逐字保真（见 containsDangerousHtmlMarker
+    // 注释——DOMPurify 树构建会补全孤立开标签 / 丢弃孤立闭标签，静默损坏
+    // 用户源码）。危险特征命中时仍走结构级清洗，安全优先。
+    if (!containsDangerousHtmlMarker(original)) return;
 
     const sanitized = sanitizeForVditor(original);
     if (sanitized !== original) {
@@ -675,6 +696,149 @@ export function repairSvgIrPreviewsFromMarkdown(root: ParentNode, markdown: stri
       changed = true;
     }
   });
+
+  return changed;
+}
+
+/**
+ * ISS-205：修复被 Lute 按空行拆散的多行 HTML 包裹块（`<div align=…>`）。
+ *
+ * Lute IR 把「开标签 / （空行分隔的内容）/ 闭标签」拆成多个独立
+ * html-block 节点，产生两个问题：
+ *   1. 孤立的开/闭标签 preview 渲染为空，仍占 min-height:27px +
+ *      --surface 底色 → 用户看到的全宽浅色横条；
+ *   2. 中间段落升为编辑器顶层直接子元素，脱离任何 div 祖先链，
+ *      `align` 属性失效（落款不再右对齐）。
+ *
+ * 修复采用「视觉层重组」而非真实 DOM 嵌套：Vditor IR DOM 必须保持
+ * 线性结构（VditorIRDOM2Md 按序反序列化），嵌套重排会破坏 round-trip。
+ * 因此：
+ *   - 开/闭标签节点整体隐藏（新增 class，同 folia-ir-svg-fragment-hidden
+ *     先例，display:none 取消浅色横条）；marker 原样保留 → 源码不变；
+ *   - 从开标签 marker 解析 `align`，向中间块级元素注入对齐 class，
+ *     由 CSS 恢复 text-align。class 注入的 round-trip 安全性已由
+ *     folia-ir-svg-root 先例（DOMPurify 白名单含 class、Lute 忽略未知
+ *     class）证明，并有单测锁定。
+ *
+ * 已知边界：嵌套包裹组按线性兄弟配对处理（首个同名闭标签收口），不支持
+ * 跨组嵌套语义；SVG 组（folia-ir-svg-root/-fragment）不参与本修复。
+ */
+
+export const FOLIA_IR_HTML_WRAPPER_HIDDEN_CLASS = 'folia-ir-html-wrap-hidden';
+export const FOLIA_IR_HTML_ALIGN_RIGHT_CLASS = 'folia-html-align-right';
+export const FOLIA_IR_HTML_ALIGN_CENTER_CLASS = 'folia-html-align-center';
+export const FOLIA_IR_HTML_ALIGN_LEFT_CLASS = 'folia-html-align-left';
+
+const WRAPPER_TAG_RE = '(?:div|p|section|blockquote)';
+// 开标签两种形态：A. wasm 原生 `<div align="right">`；B. app 内序列化时
+// 被补全的自闭合空壳 `<div align="right"></div>`（实测两者都会出现）。
+const WRAPPER_OPEN_RE = new RegExp(`^<(${WRAPPER_TAG_RE})((?:\\s[^<>]*)?)>(?:</\\1>)?$`, 'i');
+const WRAPPER_CLOSE_RE = new RegExp(`^</(${WRAPPER_TAG_RE})>$`, 'i');
+const ALIGN_ATTR_RE = /\balign\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/i;
+
+const ALIGN_CLASS_MAP: Record<string, string> = {
+  right: FOLIA_IR_HTML_ALIGN_RIGHT_CLASS,
+  center: FOLIA_IR_HTML_ALIGN_CENTER_CLASS,
+  left: FOLIA_IR_HTML_ALIGN_LEFT_CLASS,
+};
+
+type WrapperOpenInfo = { tag: string; alignClass: string | null };
+
+function parseWrapperOpenMarker(text: string | null): WrapperOpenInfo | null {
+  if (text === null) return null;
+  const match = WRAPPER_OPEN_RE.exec(text.trim());
+  if (!match) return null;
+  const attrs = match[2] ?? '';
+  const alignMatch = ALIGN_ATTR_RE.exec(attrs);
+  const rawAlign = (alignMatch?.[1] ?? alignMatch?.[2] ?? alignMatch?.[3] ?? '').toLowerCase();
+  return { tag: match[1].toLowerCase(), alignClass: ALIGN_CLASS_MAP[rawAlign] ?? null };
+}
+
+function isWrapperCloseMarker(text: string | null, tag: string): boolean {
+  // 形态 A：显式 `</div>`；形态 B：序列化后 marker 为空串。
+  if (text === null) return false;
+  const trimmed = text.trim();
+  if (trimmed === '') return true;
+  const match = WRAPPER_CLOSE_RE.exec(trimmed);
+  return match !== null && match[1].toLowerCase() === tag;
+}
+
+function clearWrapperRepairClasses(root: ParentNode): boolean {
+  let changed = false;
+  const selector = [
+    FOLIA_IR_HTML_WRAPPER_HIDDEN_CLASS,
+    FOLIA_IR_HTML_ALIGN_RIGHT_CLASS,
+    FOLIA_IR_HTML_ALIGN_CENTER_CLASS,
+    FOLIA_IR_HTML_ALIGN_LEFT_CLASS,
+  ].map((cls) => `.${cls}`).join(', ');
+  root.querySelectorAll<HTMLElement>(selector).forEach((element) => {
+    element.classList.remove(
+      FOLIA_IR_HTML_WRAPPER_HIDDEN_CLASS,
+      FOLIA_IR_HTML_ALIGN_RIGHT_CLASS,
+      FOLIA_IR_HTML_ALIGN_CENTER_CLASS,
+      FOLIA_IR_HTML_ALIGN_LEFT_CLASS,
+    );
+    changed = true;
+  });
+  return changed;
+}
+
+export function repairSplitWrapperHtmlIrPreviews(root: ParentNode): boolean {
+  let changed = clearWrapperRepairClasses(root);
+  const nodes = getHtmlBlockNodes(root);
+  const visited = new Set<HTMLElement>();
+
+  for (const openNode of nodes) {
+    if (visited.has(openNode)) continue;
+    const open = parseWrapperOpenMarker(getIrHtmlMarkerText(openNode));
+    if (!open) continue;
+
+    // 从开节点沿兄弟链向后收集中间内容，首个配对闭界收口；到文档尾仍未
+    // 命中即悬挂开标签（用户输入进行中的常态），give-up 保持原状。
+    const middles: Element[] = [];
+    // 闭界仅在 isHtmlBlock(isWrapperCloseMarker) 分支赋值，current 已被
+    // instanceof HTMLElement 判定（TS 无法跨循环窄化，赋值点显式断言）。
+    let closeNode: HTMLElement | null = null;
+    let current = openNode.nextElementSibling;
+    while (current) {
+      const isHtmlBlock = current.classList.contains('vditor-ir__node')
+        && current.getAttribute('data-type') === 'html-block'
+        && current instanceof HTMLElement;
+      const marker = isHtmlBlock ? getIrHtmlMarkerText(current as HTMLElement) : null;
+      if (isWrapperCloseMarker(marker, open.tag)) {
+        closeNode = current as HTMLElement;
+        break;
+      }
+      // 嵌套同名开标签不做递归配对，仅标记已消费防止后续轮次重复成组。
+      if (isHtmlBlock && parseWrapperOpenMarker(marker)) {
+        visited.add(current as HTMLElement);
+      }
+      middles.push(current);
+      current = current.nextElementSibling;
+    }
+    if (!closeNode) continue;
+
+    visited.add(openNode);
+    visited.add(closeNode);
+    openNode.classList.add(FOLIA_IR_HTML_WRAPPER_HIDDEN_CLASS);
+    closeNode.classList.add(FOLIA_IR_HTML_WRAPPER_HIDDEN_CLASS);
+    changed = true;
+
+    if (open.alignClass) {
+      for (const mid of middles) {
+        // 跳过 SVG 专用标记（该节点已由 repairSplitSvgIrPreviews 负责）
+        // 与其它 html-block/html-inline IR 节点的对齐污染。
+        if (!(mid instanceof HTMLElement)) continue;
+        if (mid.classList.contains(FOLIA_IR_SVG_ROOT_CLASS)
+          || mid.classList.contains(FOLIA_IR_SVG_FRAGMENT_CLASS)) continue;
+        const dataType = mid.getAttribute('data-type');
+        if (mid.classList.contains('vditor-ir__node')
+          && (dataType === 'html-block' || dataType === 'html-inline')) continue;
+        mid.classList.add(open.alignClass);
+        changed = true;
+      }
+    }
+  }
 
   return changed;
 }
