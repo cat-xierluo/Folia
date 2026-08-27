@@ -4,16 +4,43 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 describe('Tauri capabilities', () => {
-  it('allows custom titlebar window interactions used by the toolbar', () => {
-    const capability = JSON.parse(
+  const readCapability = (): { permissions?: Array<string | Record<string, unknown>> } =>
+    JSON.parse(
       readFileSync(join(process.cwd(), 'src-tauri/capabilities/default.json'), 'utf8'),
-    ) as { permissions?: string[] };
+    );
+
+  it('allows custom titlebar window interactions used by the toolbar', () => {
+    const capability = readCapability();
 
     expect(capability.permissions).toEqual(expect.arrayContaining([
       'core:window:allow-set-title',
       'core:window:allow-start-dragging',
       'core:window:allow-toggle-maximize',
     ]));
+  });
+
+  it('ISS-197 契约：fs 插件保留 deny-only scope，敏感根目录一律拒绝', () => {
+    // Tauri v2 ACL 语义：allow 列表为空 = 放行一切（CommandScope::matches）。
+    // 当前 capability 仅授予 fs:allow-* 命令权限而未配置 allow scope，因此
+    // `readTextFile('/Users/x/.ssh/id_rsa')` 这类请求在插件层不受任何路径约束
+    // （Rust 自定义命令的黑名单不覆盖插件调用面）。此测试锚定 deny 列表存在：
+    // 若未来改为「收口到自定义命令 + 删除 fs allow-*」，请同步更新本契约。
+    const capability = readCapability();
+    const fsScope = (capability.permissions ?? []).find(
+      (entry) => typeof entry === 'object' && entry !== null && entry.identifier === 'fs:scope',
+    ) as { deny?: string[] } | undefined;
+
+    expect(fsScope).toBeDefined();
+    const denied = new Set(fsScope?.deny ?? []);
+    for (const required of [
+      '/etc/**',
+      '/private/etc/**',
+      '$HOME/.ssh/**',
+      '$HOME/.aws/**',
+      '$HOME/.gnupg/**',
+    ]) {
+      expect(denied.has(required)).toBe(true);
+    }
   });
 
   it('keeps local HTML presentation resources inside the desktop CSP', () => {

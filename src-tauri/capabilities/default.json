@@ -24,6 +24,27 @@
     "fs:allow-write-text-file",
     "fs:allow-read-file",
     "fs:allow-write-file",
+    {
+      "identifier": "fs:scope",
+      "deny": [
+        "/dev",
+        "/dev/**",
+        "/etc",
+        "/etc/**",
+        "/private/dev",
+        "/private/dev/**",
+        "/private/etc",
+        "/private/etc/**",
+        "$HOME/.ssh",
+        "$HOME/.ssh/**",
+        "$HOME/.aws",
+        "$HOME/.aws/**",
+        "$HOME/.gnupg",
+        "$HOME/.gnupg/**",
+        "$HOME/.kube",
+        "$HOME/.kube/**"
+      ]
+    },
     "process:allow-restart",
     "opener:default",
     "updater:default"
