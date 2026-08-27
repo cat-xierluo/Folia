@@ -312,8 +312,45 @@ function containsDangerousSvgMarkup(svg: string): boolean {
  * 与 containsDangerousSvgMarkup 同一取舍模式。主防线（preview 渲染层的
  * 整体 DOMPurify sanitize + hasRemovedUnsafeContent 门控）不受影响。
  */
+/**
+ * 文本级危险特征黑名单（fast-path 门）。已知取舍（ISS-205 review M1 /
+ * 静态审查 #1-#2，2026-08-27）：
+ * - 宽松匹配 `\son[a-z][\w:-]*\s*=` 会把极少数良性词形（如注释中的
+ *   `once =`）误判为危险 → 该 marker 走 DOMPurify 结构级清洗、源码被
+ *   树构建规范化——即本 PR 要消除的改写在罕见输入上仍会发生。收紧为
+ *   引号值则放行无引号 payload（onclick=alert(1) 直通保存）。两害相权
+ *   取「偏检测」：误判方向 = 维持 main 的既有行为；漏检方向 = 磁盘
+ *   留毒。与 containsDangerousSvgMarkup 同一取舍模式。
+ * - 黑名单必然补不全；磁盘文件本就含有其内容，Folia 不承诺洗稿。app
+ *   内展示面三道防线（preview transform DOMPurify / 整 IR DOM 清洗 /
+ *   导出 sanitizeHtmlExportArticleFragment）不受本门影响。
+ */
+const DANGEROUS_HTML_MARKER_RE = new RegExp(
+  [
+    '<(?:script|meta|base|link|iframe|object|embed|template)\\b',
+    '</?(?:html|head|body)\\b',
+    '\\son[a-z][\\w:-]*\\s*=',
+    '\\s(?:href|src|xlink:href|poster|srcset|formaction|action)\\s*=\\s*["\']?\\s*(?:javascript:|vbscript:|data:text/html)',
+  ].join('|'),
+  'i',
+);
+
 function containsDangerousHtmlMarker(marker: string): boolean {
-  return /<script\b|<\/?(?:html|head|body|iframe|object|embed)\b|\son[a-z][\w:-]*\s*=|\s(?:href|src|xlink:href|poster|srcset)\s*=\s*["']?\s*(?:javascript:|data:text\/html)/i.test(marker);
+  // ISS-205 review M1：属性值内的实体编码（href="&#106;avascript:…"）会被
+  // HTML parser 解码执行，纯字面匹配漏检。以「实体解码探针」复测一遍——
+  // 数字 / 十六进制实体还原为对应字符（不能只删实体：&#106;avascript 删掉
+  // 实体即断成 avascript，反而放行）；只用于检测，不改写原文本。
+  const decodedProbe = marker
+    .replace(/&(?:#\d+|#x[0-9a-fA-F]+);/gi, (entity) => {
+      const hex = /#x/i.test(entity);
+      const digits = hex ? entity.slice(3, -1) : entity.slice(2, -1);
+      const code = parseInt(digits, hex ? 16 : 10);
+      return Number.isFinite(code) && code > 0 && code <= 0x10ffff
+        ? String.fromCodePoint(code)
+        : entity;
+    });
+  return DANGEROUS_HTML_MARKER_RE.test(marker)
+    || DANGEROUS_HTML_MARKER_RE.test(decodedProbe);
 }
 
 function extractSvgInnerHtml(svgHtml: string): string {
@@ -376,7 +413,10 @@ function sanitizeHtmlBlockMarkers(root: HTMLElement): boolean {
     changed = true;
   }
 
-  getHtmlBlockNodes(root).forEach((node) => {
+  // ISS-205 review M1：marker 危险清洗覆盖 html-block 与 html-inline 两类——
+  // `<a href="&#106;avascript:…">` 这类行内标签在 Lute IR 中是 html-inline，
+  // 只扫 html-block 会整类漏过危险门。
+  getIrHtmlNodes(root).forEach((node) => {
     if (splitSvgNodes.has(node)) return;
 
     const marker = getIrHtmlMarker(node);
@@ -826,14 +866,17 @@ export function repairSplitWrapperHtmlIrPreviews(root: ParentNode): boolean {
 
     if (open.alignClass) {
       for (const mid of middles) {
-        // 跳过 SVG 专用标记（该节点已由 repairSplitSvgIrPreviews 负责）
-        // 与其它 html-block/html-inline IR 节点的对齐污染。
+        // 只向「内容性块级元素」（p / h1-h6 / table 系列等裸元素）注入对齐
+        // class。SVG 专用标记节点归 repairSplitSvgIrPreviews 管；其余带
+        // data-type 的特殊 IR 容器（code-block / math-block /
+        // yaml-front-matter 等）的字形与布局由 Vditor 自己的 CSS 控制，
+        // text-align 渗入会造成代码块观感偏移（ISS-205 review M4），
+        // html-block/html-inline 则按既有规则一律跳过。
         if (!(mid instanceof HTMLElement)) continue;
         if (mid.classList.contains(FOLIA_IR_SVG_ROOT_CLASS)
           || mid.classList.contains(FOLIA_IR_SVG_FRAGMENT_CLASS)) continue;
-        const dataType = mid.getAttribute('data-type');
         if (mid.classList.contains('vditor-ir__node')
-          && (dataType === 'html-block' || dataType === 'html-inline')) continue;
+          && mid.getAttribute('data-type')) continue;
         mid.classList.add(open.alignClass);
         changed = true;
       }

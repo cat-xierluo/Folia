@@ -659,11 +659,60 @@ describe('sanitizeVditorIrHtml marker 保真 (ISS-205 数据损坏修复)', () =
     expect(markdown).toBe('<div align="right">\n\n正文段落\n\n</div>\n');
   });
 
-  it('含危险特征的 marker 仍被结构级清洗（快路径不降低安全性）', () => {
+  it('已知 on*/script 危险特征仍被剥除（非黑名单完整性证明，纵深取舍见 containsDangerousHtmlMarker 注释）', () => {
     const { lute, html } = createIrHtml('<div onload="alert(1)">\n\nx\n\n</div>');
     const result = sanitizeVditorIrHtml(html);
     const markdown = lute.VditorIRDOM2Md(result.html);
     expect(markdown).not.toContain('onload');
     expect(markdown).not.toContain('alert(');
+  });
+});
+
+describe('ISS-205 review 加固：黑名单补强与对齐注入收窄', () => {
+  it('实体编码的危险 URL 属性被检出并清洗（&#106;avascript: 绕过载荷）', () => {
+    const { lute, html } = createIrHtml('<a href="&#106;avascript:alert(1)">点我</a>\n');
+    const result = sanitizeVditorIrHtml(html);
+    const markdown = lute.VditorIRDOM2Md(result.html);
+    expect(result.securityChanged).toBe(true);
+    expect(markdown.toLowerCase()).not.toContain('javascript:');
+  });
+
+  it('meta/base/link 元标签进入危险路径并被剥除', () => {
+    const { lute, html } = createIrHtml('<meta http-equiv="refresh" content="0;url=http://evil">\n');
+    const result = sanitizeVditorIrHtml(html);
+    const markdown = lute.VditorIRDOM2Md(result.html);
+    expect(result.securityChanged).toBe(true);
+    expect(markdown).not.toContain('http-equiv');
+  });
+
+  it('包裹组内的 code-block / math-block 等特殊 IR 节点不吃对齐 class', () => {
+    const md = [
+      '<div align="right">',
+      '',
+      '```js',
+      'const a = 1;',
+      '```',
+      '',
+      '落款文字',
+      '',
+      '</div>',
+    ].join('\n');
+    const { html } = createIrHtml(md);
+    const sanitized = sanitizeVditorIrHtml(html);
+    const root = document.createElement('div');
+    root.innerHTML = sanitized.html;
+
+    repairSplitWrapperHtmlIrPreviews(root);
+
+    // 围栏(无论折叠形态其容器 data-type="code-block")不带对齐 class
+    const codeContainers = Array.from(
+      root.querySelectorAll<HTMLElement>('[data-type="code-block"], [data-type="code-block"] .vditor-ir__node'),
+    );
+    for (const el of codeContainers) {
+      expect(el.className).not.toContain('folia-html-align-');
+    }
+    // 普通文字段仍正确拿到 right
+    expect(Array.from(root.querySelectorAll('.folia-html-align-right')).map((e) => e.textContent))
+      .toContain('落款文字');
   });
 });
