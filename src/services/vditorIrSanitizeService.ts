@@ -798,17 +798,17 @@ function parseWrapperOpenMarker(text: string | null): WrapperOpenInfo | null {
   const rawAlign = (alignMatch?.[1] ?? alignMatch?.[2] ?? alignMatch?.[3] ?? '').toLowerCase();
   const fromAttr = ALIGN_CLASS_MAP[rawAlign] ?? null;
   if (fromAttr) return { tag: match[1].toLowerCase(), alignClass: fromAttr };
-  // style 回退：取 style 属性值内首个 text-align 声明。属性值可能含 `>`?
-  // 不——WRAPPER_OPEN_RE 的 attrs 段排除 `<>`，与既有边界一致（含尖括号
-  // 的属性值 give-up 保横条，安全失败方向）。
+  // style 回退：取 style 属性值内最后一个 text-align 声明（CSS 层叠
+  // 「后者胜」）。属性值可能含 `>`? 不——WRAPPER_OPEN_RE 的 attrs 段排除
+  // `<>`，与既有边界一致（含尖括号的属性值 give-up 保横条，安全失败方向）。
   const styleMatch = /style\s*=\s*(?:"([^"]*)"|'([^']*)')/i.exec(attrs);
   const styleValue = (styleMatch?.[1] ?? styleMatch?.[2] ?? '').toLowerCase();
   // 取最后一个 text-align 声明（CSS 层叠「后者胜」）；g 标志正则需手动
   // 重置 lastIndex，避免跨调用状态残留。
   let styledAlign = '';
   STYLE_TEXT_ALIGN_RE.lastIndex = 0;
-  for (const match of styleValue.matchAll(STYLE_TEXT_ALIGN_RE)) {
-    styledAlign = match[1]?.toLowerCase() ?? '';
+  for (const alignDecl of styleValue.matchAll(STYLE_TEXT_ALIGN_RE)) {
+    styledAlign = alignDecl[1]?.toLowerCase() ?? '';
   }
   return { tag: match[1].toLowerCase(), alignClass: ALIGN_CLASS_MAP[styledAlign] ?? null };
 }
