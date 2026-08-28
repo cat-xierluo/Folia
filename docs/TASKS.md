@@ -34,12 +34,6 @@
 
 ### 缺陷类
 
-#### ✅ ISS-198 sessionStore 持久化无预算控制 → localStorage 配额静默失效（已 PR #148，2026-08-28 squash merge 2258c3c；docxHtml 剥离 + 2MB 预算降级 + lastSavedContent 清空 + StatusBar 失败提示 + 修复既有测试假绿；review 迟到,以 diff 逐文件复核 + CI 双绿决策合并)
-
-- **发现:** `src/services/sessionStore.ts` 只对 `content > 256KB` 做降级清空；`docxHtml`（中型 docx 转出的 HTML 可达数百 KB~数 MB）与 `lastSavedContent` 不设限双份存储。每次 800ms 防抖 `JSON.stringify(session)` 触发 QuotaExceededError 后被 catch 静默吞掉。
-- **影响:** 打开中等体积 docx 或积累多个大文档后，所有 tab 的草稿恢复 / 最近文件无声失效，用户无感知直到丢内容。
-- **建议:** toPersisted 对 `docxHtml` 一律剥离（重启可重转）；超预算时从最大 tab 起剥 content；失败时发诊断事件提示。另评估「打开 docx 即将其挂为只读预览」的产品口径。
-
 #### ⬜ ISS-199 useSession 跨窗口事件监听按每键重绑
 
 - **发现:** `src/hooks/useSession.ts` 监听 effect 以 `[state.tabs]` 为依赖——打字每键都触发 cleanup/unlisten + 动态 import + 重新 listen，监听空窗期可能错过 `window:closed` / `tab:merge-back` 事件。同模式散布于 AppLayout 键盘快捷键 effect（依赖含每键重建的 handleSave 等）。
@@ -50,27 +44,6 @@
 
 - **发现:** (1) `AppLayout.tsx` 关窗确认流的 `let closing = false` 是 effect 局部变量、deps 含 tabs——dirty 弹窗期间 autosave 改变 tabs 触发重绑后可并发进入第二条关闭流，孤儿 promise；(2) `handleOpenPath` / 快捷键调用 async handler 无 catch、fileService 仅对 oversized/denied-path 两类弹提示，文件被移走 / 编码异常 / 磁盘满等全部 unhandled rejection。
 - **建议:** closing 提升为 ref 级标志；handleOpenPath/handleSave 包统一 toast / 原生 message 兜底。
-
-#### ✅ ISS-205 多行 HTML 块（div align 等）在 IR 编辑器被 Lute 按空行拆块 → 对齐丢失 + 空节点浅色条（已 PR #137，2026-08-27 squash merge 09745ad，Issue #136 随关；CI 双绿 + 756 单测 + 真机四项验证；顺带修复 marker 保存改写的数据损坏缺陷）
-
-- **发现:** 用户报《260826 民事起诉状》落款 `<div align="right">…</div>`（标签与内容间有空行，合法 CommonMark 写法）在 Folia 编辑器不右对齐，且所有含 HTML 的文件出现「更浅颜色背景」横条。2026-08-27 Playwright + Lute 双路实证根因：Vditor `mode: 'ir'` 的内核 Lute 在生成 IR DOM 时**按空行把一个 HTML block 拆成多个独立 `[data-type="html-block"]` 节点**（同 ISS-63 已知行为，`repairSplitSvgIrPreviews` 只对 `<svg>` 做了重组）。拆块后开/闭标签成为孤立空节点，中间段落升为编辑器顶层直接子元素——脱离任何 div 祖先链，`align` 自然失效。
-- **影响:** 编辑视图中落款/居中标题等靠 HTML 包裹实现的对齐全失效；每个被拆空的 html-block 节点渲染为 27px 高（`.vditor-ir__preview { min-height:27px }`）、底色 `--surface`（oklch(99% 0.005 80)，比纸面主背景更浅）的全宽空条——即用户看到的「浅色背景」。预览/导出路径不受影响：Lute `MarkdownStr` 连续 HTML 输出嵌套完整（`<div align="right"><p>具状人…</p></div>`），DOMPurify 白名单含 `align`。
-- **对照:** Typora 类编辑器把整段 raw HTML 合并解析为单个渲染块，故无此现象；GitHub 渲染同样正常（连续 HTML 流）。
-- **建议:** 方向 A——在 vditorIrSanitizeService 增加 div/section 等通用「拆散组重组」逻辑（仿 SVG 方案但需解决中间段落可编辑性问题，SVG 式隐藏片段会把正文藏掉，可能需要仅隐藏孤立开/闭标签节点的 preview 条而非合并）；方向 B——先做 CSS 止血：空内容的 html-block preview 不再撑 27px 浅色条（`display:none` 或 min-height:0），对齐问题另行评估。修复涉及编辑核心行为，走 Issue → PR → 真机回归（含 SVG 场景不回归）。
-- **证据:** 临时 e2e spec 实测（已删，结论记录于此）：3 个 html-block 节点、markers 序列化为 `<div align="right"></div>` 与空串、段落祖先链均为 `P`（顶层）、textAlign start；三段真实源文件 Lute 转换输出见上方「预览路径不受影响」。
-
-#### ✅ ISS-207 `<div style="text-align:…">` 包裹块拆散后对齐不恢复（已 PR #141，2026-08-27 squash merge 87d74d4，Issue #140 随关；单测 +3 / e2e +1 / 真机双写法验证）
-
-- **发现:** ISS-205 review（M3,APPROVE）指出 `style="text-align:…"` 写法与 `align` 属性写法同被 Lute 拆块，但开标签只解析 `align`，style 变体的对齐不恢复（横条隐藏已生效）。GitHub/Typora 均正常渲染该写法。
-- **建议:** `repairSplitWrapperHtmlIrPreviews` 在 `ALIGN_ATTR_RE` 未命中时回退解析 style 内 `text-align`，映射既有 `folia-html-align-*` class，机制零改动。验收见 Issue #140。
-
-#### ✅ ISS-206 asset 协议 scope 仅 $HOME → 非 HOME 目录文档的本地图全部「图片数据损坏」（已 PR #142，2026-08-27 squash merge be69205，Issue #138 随关；采方案 2 受控 data URL 通路：Rust 命令 read_media_as_data_url 四层约束 + 前端缓存/in-flight 去重重写；Rust 44/44 + TS 764/764 + 真机三写法大图渲染验证）
-
-- **发现:** 2026-08-27 真机实证：`![img](/tmp/sample.png)` 等指向 `$HOME` 之外的本地图片全部显示「图片数据损坏」占位，与空格/%20 编码无关。dev 日志直接报 `[tauri::protocol::asset][ERROR] asset protocol not configured to allow the path`。
-- **根因:** `tauri.conf.json` assetProtocol scope 仅有 `$HOME/**/*`；/tmp、外置卷等一律被 Tauri 拒绝。相对路径文档放在非 HOME 目录同样命中（解析后仍落在受限路径）。main 与 fix 分支行为一致，存量限制非回归。
-- **候选:** 方向推荐「受控 Rust 命令读字节转 data URI」（复用 isSensitivePath 守卫 + 扩展名白名单），与 ISS-201 fs 收口同向；或 scope 扩容（/private/tmp 等逐项）+ 文档引导。详见 Issue #138。
-
-#### ✅ ISS-208 图片诊断 banner 陈旧聚合——加载成功后旧错误不清除（已 PR #147，2026-08-28 squash merge 3c54772，Issue #146 随关；对称 load 监听 + WeakMap 主查找双索引；过程中两个单测假绿真 bug 被 review M2 与真机复测先后抓出并收口；真机全链路判定通过）
 
 #### ⬜ ISS-209 降级 tab 恢复与 autosave 竞态——重读窗口内理论上可 saveFile('') 覆盖磁盘文件（Issue #149）
 
@@ -105,6 +78,34 @@
 - `licenseService.ts` 内测授权码硬编码于随发行版分发的 JS bundle（`YWXLAW` 明文可提取、license state 可离线伪造）。本地内测场景下接受的权衡；若未来商业化需换签名码（public key 校验）。
 
 ---
+
+#### ✅ ISS-198 sessionStore 持久化无预算控制 → localStorage 配额静默失效（已 PR #148，2026-08-28 squash merge 2258c3c；docxHtml 剥离 + 2MB 预算降级 + lastSavedContent 清空 + StatusBar 失败提示 + 修复既有测试假绿；review 迟到,以 diff 逐文件复核 + CI 双绿决策合并)
+
+- **发现:** `src/services/sessionStore.ts` 只对 `content > 256KB` 做降级清空；`docxHtml`（中型 docx 转出的 HTML 可达数百 KB~数 MB）与 `lastSavedContent` 不设限双份存储。每次 800ms 防抖 `JSON.stringify(session)` 触发 QuotaExceededError 后被 catch 静默吞掉。
+- **影响:** 打开中等体积 docx 或积累多个大文档后，所有 tab 的草稿恢复 / 最近文件无声失效，用户无感知直到丢内容。
+- **建议:** toPersisted 对 `docxHtml` 一律剥离（重启可重转）；超预算时从最大 tab 起剥 content；失败时发诊断事件提示。另评估「打开 docx 即将其挂为只读预览」的产品口径。
+
+#### ✅ ISS-205 多行 HTML 块（div align 等）在 IR 编辑器被 Lute 按空行拆块 → 对齐丢失 + 空节点浅色条（已 PR #137，2026-08-27 squash merge 09745ad，Issue #136 随关；CI 双绿 + 756 单测 + 真机四项验证；顺带修复 marker 保存改写的数据损坏缺陷）
+
+- **发现:** 用户报《260826 民事起诉状》落款 `<div align="right">…</div>`（标签与内容间有空行，合法 CommonMark 写法）在 Folia 编辑器不右对齐，且所有含 HTML 的文件出现「更浅颜色背景」横条。2026-08-27 Playwright + Lute 双路实证根因：Vditor `mode: 'ir'` 的内核 Lute 在生成 IR DOM 时**按空行把一个 HTML block 拆成多个独立 `[data-type="html-block"]` 节点**（同 ISS-63 已知行为，`repairSplitSvgIrPreviews` 只对 `<svg>` 做了重组）。拆块后开/闭标签成为孤立空节点，中间段落升为编辑器顶层直接子元素——脱离任何 div 祖先链，`align` 自然失效。
+- **影响:** 编辑视图中落款/居中标题等靠 HTML 包裹实现的对齐全失效；每个被拆空的 html-block 节点渲染为 27px 高（`.vditor-ir__preview { min-height:27px }`）、底色 `--surface`（oklch(99% 0.005 80)，比纸面主背景更浅）的全宽空条——即用户看到的「浅色背景」。预览/导出路径不受影响：Lute `MarkdownStr` 连续 HTML 输出嵌套完整（`<div align="right"><p>具状人…</p></div>`），DOMPurify 白名单含 `align`。
+- **对照:** Typora 类编辑器把整段 raw HTML 合并解析为单个渲染块，故无此现象；GitHub 渲染同样正常（连续 HTML 流）。
+- **建议:** 方向 A——在 vditorIrSanitizeService 增加 div/section 等通用「拆散组重组」逻辑（仿 SVG 方案但需解决中间段落可编辑性问题，SVG 式隐藏片段会把正文藏掉，可能需要仅隐藏孤立开/闭标签节点的 preview 条而非合并）；方向 B——先做 CSS 止血：空内容的 html-block preview 不再撑 27px 浅色条（`display:none` 或 min-height:0），对齐问题另行评估。修复涉及编辑核心行为，走 Issue → PR → 真机回归（含 SVG 场景不回归）。
+- **证据:** 临时 e2e spec 实测（已删，结论记录于此）：3 个 html-block 节点、markers 序列化为 `<div align="right"></div>` 与空串、段落祖先链均为 `P`（顶层）、textAlign start；三段真实源文件 Lute 转换输出见上方「预览路径不受影响」。
+
+#### ✅ ISS-207 `<div style="text-align:…">` 包裹块拆散后对齐不恢复（已 PR #141，2026-08-27 squash merge 87d74d4，Issue #140 随关；单测 +3 / e2e +1 / 真机双写法验证）
+
+- **发现:** ISS-205 review（M3,APPROVE）指出 `style="text-align:…"` 写法与 `align` 属性写法同被 Lute 拆块，但开标签只解析 `align`，style 变体的对齐不恢复（横条隐藏已生效）。GitHub/Typora 均正常渲染该写法。
+- **建议:** `repairSplitWrapperHtmlIrPreviews` 在 `ALIGN_ATTR_RE` 未命中时回退解析 style 内 `text-align`，映射既有 `folia-html-align-*` class，机制零改动。验收见 Issue #140。
+
+#### ✅ ISS-206 asset 协议 scope 仅 $HOME → 非 HOME 目录文档的本地图全部「图片数据损坏」（已 PR #142，2026-08-27 squash merge be69205，Issue #138 随关；采方案 2 受控 data URL 通路：Rust 命令 read_media_as_data_url 四层约束 + 前端缓存/in-flight 去重重写；Rust 44/44 + TS 764/764 + 真机三写法大图渲染验证）
+
+- **发现:** 2026-08-27 真机实证：`![img](/tmp/sample.png)` 等指向 `$HOME` 之外的本地图片全部显示「图片数据损坏」占位，与空格/%20 编码无关。dev 日志直接报 `[tauri::protocol::asset][ERROR] asset protocol not configured to allow the path`。
+- **根因:** `tauri.conf.json` assetProtocol scope 仅有 `$HOME/**/*`；/tmp、外置卷等一律被 Tauri 拒绝。相对路径文档放在非 HOME 目录同样命中（解析后仍落在受限路径）。main 与 fix 分支行为一致，存量限制非回归。
+- **候选:** 方向推荐「受控 Rust 命令读字节转 data URI」（复用 isSensitivePath 守卫 + 扩展名白名单），与 ISS-201 fs 收口同向；或 scope 扩容（/private/tmp 等逐项）+ 文档引导。详见 Issue #138。
+
+#### ✅ ISS-208 图片诊断 banner 陈旧聚合——加载成功后旧错误不清除（已 PR #147，2026-08-28 squash merge 3c54772，Issue #146 随关；对称 load 监听 + WeakMap 主查找双索引；过程中两个单测假绿真 bug 被 review M2 与真机复测先后抓出并收口；真机全链路判定通过）
+
 
 ### 已归档完成项（ISS-087 撤销 / ISS-132~140 核实归档，2026-08-14）
 

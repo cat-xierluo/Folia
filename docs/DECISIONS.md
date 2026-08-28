@@ -36,6 +36,31 @@
 
 > ⚠️ **2026-08-14 数据恢复说明**：本文件 DEC-065 ~ DEC-137 正文因一次 `git stash pop` 误操作覆盖丢失（local 文件，git 无历史备份）。以下已从 CHANGELOG.md（权威变更记录）重建决策骨架——编号/ISS/PR/版本/结论可追溯，但部分早期条目（v0.3.10~v0.4.3，CHANGELOG 未逐条标 DEC 号）按版本聚合；完整根因分析详见 CHANGELOG 对应版本段与 PR。代码无损失（全部已合并）。排列沿用本文件既有降序惯例（新决策在前），与 DEC-064→DEC-001 衔接。
 
+### [DEC-141] - 2026-08-28 - 编辑器 HTML 拆块重组机制 + 本地媒体受控 data URL 通路（ISS-205/206，PR #137~#145）
+
+**背景**：2026-08-27~28 连续修复两组用户报告缺陷，各引入一项影响后续同类问题的机制级决策，合并为一条 DEC 记录（增量修复 ISS-207/208/198 依惯例仅留 CHANGELOG）。
+
+**决策一（ISS-205，PR #137/#139/#141）：Lute IR 按空行拆散多行 HTML 包裹块 → 「视觉层重组」而非 DOM 嵌套重排。**
+
+根因：Vditor IR 内核 Lute 把 `<div align>`（标签与内容间有空行，合法 CommonMark）拆成多个独立 `html-block` 节点，开/闭标签成孤立空节点（27px 浅色横条）、中间段落脱离 div 祖先链致 `align` 失效；预览/导出路径（Lute 连续 HTML 输出）不受影响。
+
+决策要点：
+1. **IR DOM 保持线性**——`VditorIRDOM2Md` 按序反序列化，任何嵌套重排都破坏 round-trip。修复采用视觉层重组：孤立开/闭标签节点加 class 隐藏（同 folia-ir-svg-fragment-hidden 先例），marker 原样保留，源码不变；对齐语义由「开标签解析 align / style text-align → 中间块级元素注入 folia-html-align-* class」恢复，class 注入的 round-trip 安全性由 DOMPurify 白名单含 class + Lute 忽略未知 class 证明。
+2. **sanitize marker 保真快路径**（数据损坏级存量缺陷顺带修复）：`sanitizeHtmlBlockMarkers` 原对每条 marker 文本走 DOMPurify 树构建——孤立开标签被补全闭合、孤立闭标签被丢弃，**编辑器内一动即静默改写用户磁盘源码**。改为文本级危险特征检测（标签/事件属性/危险协议黑名单 + 实体解码探针），干净 marker 逐字直通；危险命中才走结构级清洗。取舍书面化：宽松 `on*` 匹配存在罕见良性误判（退回 DOMPurify 路径 = 旧行为），收紧引号则放行无引号 payload——取偏检测。
+3. **危险门覆盖 html-inline**：`<a>` 等行内标签在 Lute IR 是 html-inline 节点，只扫 html-block 整类漏过（review M1 实证）。
+4. 已知边界：嵌套同名组按线性首配对处理，不支持跨组嵌套语义；空 marker 万能闭界（app 序列化形态）有 e2e ground truth 支持维持现状。
+
+**决策二（ISS-206，PR #142~#145）：本地媒体解析弃 asset 协议，改受控 Rust 命令读字节转 data URL。**
+
+根因：`tauri.conf.json` assetProtocol scope 仅 `$HOME/**`，scope 外（/tmp、外置卷）图片一律 `asset protocol not configured to allow the path` →「图片数据损坏」占位。
+
+决策要点：
+1. **不扩 scope,改通路**——asset scope 白名单机制上无法表达「任意用户路径」,逐项枚举不现实且扩大攻击面;`read_media_as_data_url` 命令端四层约束（绝对路径 + 媒体专用黑名单〔完整对齐前端 SENSITIVE_PATH 列表,含 /private/etc、.ssh 段级,表层+canonicalize 双查〕、扩展名白名单 png/jpg/svg/avif 等 9 类、20MB 上限、失败统一 Err→前端保留原 src 走占位）,与 ISS-201「持久 IO 收敛自定义命令」同向。
+2. **前端配套**:模块级 path→dataURL 缓存(500 上限)+ 30s TTL 失败负缓存(防重复空 invoke,过期自动重试)+ in-flight 并发去重;错误诊断 banner 与 load 事件对称收敛(ISS-208,元素级 WeakMap 主查找——error↔load 间 src 会从原始路径变为 data URL,src 关联必然 miss)。
+3. **代价与边界**:data URL 进 DOM(大图内存 4/3 膨胀,20MB 上限封顶);svg 在 `<img>` 中浏览器禁脚本,安全;负缓存使「文件稍后创建」场景有最长 30s 感知延迟,接受。
+
+**验证**:ISS-205/206/207/208 累计单测 756→771,真机(tauri dev WKWebView)逐议题判定(落款右对齐/横条消失/三路径大图渲染/banner 全链路收敛),CI 双绿。已知残留:ISS-209(降级恢复与 autosave 竞态,Issue #149)。
+
 ### [DEC-140] - 2026-08-16 - 转录工具生成的「目标含空格」图片不渲染：读盘装载层空格归一化（ISS-194）
 
 **背景**：用户打开听悟转录的课程文档（94 张 PPT 截图，路径形如 `![PPT 幻灯片 1](./260815 Agent + Skill：法律工作的AI变革-杨卫薪律师_slides/slide_001.webp)`，目录名含空格 / `+` / 全角冒号），图片全部不渲染、按原始语法文本显示。#128（DEC-138）已支持绝对路径图片，相对路径 + `convertFileSrc` + asset 协议链路均有单测，初步怀疑路径解析；实测排除——问题在 Markdown 解析层。
