@@ -40,7 +40,7 @@
 - **影响:** tear-off 场景偶发丢回收事件；无谓的绑定开销。
 - **建议:** 监听器内经 ref 读最新 state（`stateRef` 已存在），effect 依赖收敛为 `[]` / 稳定项。
 
-#### ✅ ISS-200 关窗确认流 closing 守卫可被重绑击穿 + 通用 IO 错误用户零反馈（已 PR #152，2026-08-28 squash merge d512f62；closingRef 跨重绑 + notifyIoError 三语原生提示；review 迟到超时,以 diff 三点复核〔ref 等价性/catch 误伤/save 失败语义〕+ CI 双绿决策合并）
+#### ✅ ISS-200 关窗确认流 closing 守卫可被重绑击穿 + 通用 IO 错误用户零反馈（已 PR #152 + #154，2026-08-28 merge d512f62/788803d；closingRef 跨重绑 + notifyIoError 三语原生提示；#152 因 review 迟到按复核路径合并后被 review 抓出 2 MAJOR〔双重弹窗/假测试〕,#154 全部落地并撤回不实证据——「diff 复核 + CI」路径对跨文件交互改动不充分,此后此类一律等 review）
 
 - **发现:** (1) `AppLayout.tsx` 关窗确认流的 `let closing = false` 是 effect 局部变量、deps 含 tabs——dirty 弹窗期间 autosave 改变 tabs 触发重绑后可并发进入第二条关闭流，孤儿 promise；(2) `handleOpenPath` / 快捷键调用 async handler 无 catch、fileService 仅对 oversized/denied-path 两类弹提示，文件被移走 / 编码异常 / 磁盘满等全部 unhandled rejection。
 - **建议:** closing 提升为 ref 级标志；handleOpenPath/handleSave 包统一 toast / 原生 message 兜底。
