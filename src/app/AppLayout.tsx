@@ -956,17 +956,6 @@ export function AppLayout() {
     });
   }, [isTauriRuntime, settings.autoUpdateCheck, autoUpdateCheckStarted, startBackgroundUpdateDownload]);
 
-  useEffect(() => {
-    if (!settings.autoSave || !file.path || !file.dirty || file.fileType === 'docx') return;
-    const timeout = window.setTimeout(() => {
-      void import('../services/fileService')
-        .then(({ saveFile }) => saveFile(file))
-        .then((updated) => updateActiveFile(() => updated))
-        .catch((e) => console.error('Auto-save failed:', e));
-    }, 800);
-    return () => window.clearTimeout(timeout);
-  }, [file, settings.autoSave, updateActiveFile]);
-
   // ISS-188：监听文件外部修改 → 自动 reload / 提示手动 reload。
   //
   // 数据流：Rust notify::recommended_watcher → src-tauri/src/lib.rs 发出
@@ -1142,6 +1131,22 @@ export function AppLayout() {
     && !!activeTab.file.path
     && !activeTab.file.content
     && !(activeTab.file.fileType === 'docx' && activeTab.file.docxHtml);
+
+  // ISS-209 / Issue #149:重读窗口(reloading)内禁止 autosave——降级恢复 tab
+  // 持久化时带 dirty=true 且 content='',若 800ms tick 在磁盘内容回填前触发,
+  // saveFile(file) 会以空 content 覆盖磁盘文件。reloading 由 activeTab 派生,
+  // 重读完成自然解除。本 effect 须位于 reloading 定义之后(const 无前向引用)。
+  useEffect(() => {
+    if (reloading) return;
+    if (!settings.autoSave || !file.path || !file.dirty || file.fileType === 'docx') return;
+    const timeout = window.setTimeout(() => {
+      void import('../services/fileService')
+        .then(({ saveFile }) => saveFile(file))
+        .then((updated) => updateActiveFile(() => updated))
+        .catch((e) => console.error('Auto-save failed:', e));
+    }, 800);
+    return () => window.clearTimeout(timeout);
+  }, [file, settings.autoSave, updateActiveFile, reloading]);
 
   useEffect(() => {
     if (!isTauriRuntime) return;
