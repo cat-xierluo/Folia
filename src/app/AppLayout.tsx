@@ -496,6 +496,10 @@ export function AppLayout() {
   // 用户零反馈。这里统一弹原生 message(与 fileService 既有惯例同用
   // plugin-dialog + i18n),文案含动作名与错误摘要,不再静默。
   const notifyIoError = useCallback(async (action: 'open' | 'save', error: unknown) => {
+    // ISS-200 review MAJOR-1:fileService 对 oversized / denied-path 已弹原生
+    // 提示后才 throw,这里跳过,避免同一错误连弹两个对话框。
+    const { isAlreadyNotifiedFileError } = await import('../services/fileService');
+    if (isAlreadyNotifiedFileError(error)) return;
     if (!isTauriRuntime) {
       console.error(`[ISS-200] ${action} failed:`, error);
       return;
@@ -519,19 +523,23 @@ export function AppLayout() {
   }, [isTauriRuntime]);
 
   const handleOpenPath = useCallback(async (path: string) => {
+    let opened;
     try {
+      // ISS-200 review NIT-4:try 只包 IO 调用——后续 setState / TOC 提取等
+      // 纯前端逻辑的异常不属于「打开文件失败」,不应弹 IO 提示。
       const { openPath } = await import('../services/fileService');
-      const opened = await openPath(path, settings.defaultEncoding);
-      openInNewTab(opened);
-      cancelPendingTocRefresh();
-      setToc(opened.fileType === 'docx' ? [] : extractMarkdownToc(opened.content));
-      setLastOpenedPath(path);
-      setHtmlPresentationVisible(false);
+      opened = await openPath(path, settings.defaultEncoding);
     } catch (error) {
       // ISS-200:fileService 只弹 oversized/denied-path 两类,其余(文件被移走/
       // 编码异常/磁盘满)在此兜底,不再 unhandled rejection。
       await notifyIoError('open', error);
+      return;
     }
+    openInNewTab(opened);
+    cancelPendingTocRefresh();
+    setToc(opened.fileType === 'docx' ? [] : extractMarkdownToc(opened.content));
+    setLastOpenedPath(path);
+    setHtmlPresentationVisible(false);
   }, [settings.defaultEncoding, cancelPendingTocRefresh, openInNewTab, notifyIoError]);
 
   const handleSave = useCallback(async () => {
@@ -563,10 +571,11 @@ export function AppLayout() {
 
   const handleSaveAs = useCallback(async () => {
     if (file.fileType === 'docx') return;
-    const { saveFileAs } = await import('../services/fileService');
-    const updated = await saveFileAs(file);
-    updateActiveFile(() => updated);
-    if (updated.path) setLastOpenedPath(updated.path);
+    try {
+      const { saveFileAs } = await import('../services/fileService');
+      const updated = await saveFileAs(file);
+      updateActiveFile(() => updated);
+      if (updated.path) setLastOpenedPath(updated.path);
     // DEC-119 决策 7：另存为到新路径后，把 pending 图片落盘到新路径的
     // <doc>.assets/ 并更新 content。saveFileAs 已写入旧 content，这里
     // 落盘后再写一次（含相对路径的 content）。
@@ -583,7 +592,12 @@ export function AppLayout() {
         updateActiveFile(() => rewritten);
       }
     }
-  }, [file, updateActiveFile, imageAssetStore]);
+    } catch (error) {
+      // ISS-200 review MINOR-3:另存为失败(路径不可写/磁盘满)兜底提示,
+      // 与 handleSave 同语义,不再 unhandled rejection。
+      await notifyIoError('save', error);
+    }
+  }, [file, updateActiveFile, imageAssetStore, notifyIoError]);
 
   // Issue #68：按 tabId 落盘指定标签（退出 / 关闭确认循环里用于保存非 active 标签）。
   // 复用 saveFile 底层写盘 + 图片落盘逻辑，但不依赖 active 状态——直接从 session.tabs

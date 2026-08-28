@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { openPath, saveFile } from './fileService';
+import { isAlreadyNotifiedFileError, openPath, saveFile } from './fileService';
 import type { OpenedFile } from '../types/document';
 
 const tauriCoreMock = vi.hoisted(() => ({
@@ -192,5 +192,20 @@ describe('fileService', () => {
     await expect(openPath('/Users/demo/perm.md', 'UTF-8')).rejects.toThrow();
 
     expect(dialogMock.message).not.toHaveBeenCalled();
+  });
+});
+
+// ISS-200 review MAJOR-1:oversized / denied-path 两类错误在 fileService 内
+// 已弹原生提示后才 throw,AppLayout 兜底通知必须跳过,否则双重弹窗。
+describe('isAlreadyNotifiedFileError (ISS-200 review MAJOR-1)', () => {
+  it('oversized / denied-path 错误被识别为已提示(兜底应跳过)', () => {
+    expect(isAlreadyNotifiedFileError(new Error('file too large: 12345678 bytes exceeds the 10485760 byte limit'))).toBe(true);
+    expect(isAlreadyNotifiedFileError(new Error('path is on the denied roots list: /etc/passwd'))).toBe(true);
+  });
+
+  it('其余 IO 错误不误判(兜底应弹提示)', () => {
+    expect(isAlreadyNotifiedFileError(new Error('No such file or directory'))).toBe(false);
+    expect(isAlreadyNotifiedFileError(new Error('disk full'))).toBe(false);
+    expect(isAlreadyNotifiedFileError('文件过大')).toBe(false);
   });
 });
