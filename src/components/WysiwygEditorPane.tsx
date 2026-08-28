@@ -799,6 +799,12 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
 
     const aggregate: RenderDiagnostic[] = [];
     const seen = new Set<string>();
+    // ISS-208 真机复测修正:error 与 load 之间 img 的 src 会变(error 时是
+    // 原始路径,resolver 写回 data URL 后 load 携带 data: src),按 src 关联
+    // 必然 miss。元素级 WeakMap 为主查找(两事件之间元素身份稳定),src Map
+    // 仅作重建节点跨元素兜底。
+    const diagByElement = new WeakMap<HTMLImageElement, RenderDiagnostic>();
+    const diagBySrc = new Map<string, RenderDiagnostic>();
 
     const classifyError = (img: HTMLImageElement, error: boolean): RenderDiagnostic | null => {
       const src = img.currentSrc || img.src || '';
@@ -818,12 +824,6 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
       };
     };
 
-    // ISS-208 + review M2:src → 诊断条目关联。review 指出纯元素级 WeakMap
-    // 在「error → Vditor 重建节点 → 新节点同 src 瞬时失败被 seen 去重跳过 →
-    // 恢复后 load 清不掉」时序下有残留;改为 Map 按 src 关联,重建路径下
-    // 任何节点成功加载都能移除该 src 的错误条目。
-    const diagBySrc = new Map<string, RenderDiagnostic>();
-
     const handleImgError = (event: Event): void => {
       const target = event.target as Element | null;
       if (!(target instanceof HTMLImageElement)) return;
@@ -835,18 +835,19 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
       if (!diag) return;
       if (seen.has(src)) {
         // 重建节点/重复失败:不重复入列,但必须把「最新 diag 对象引用」
-        // 写回 map——否则后续 load 以新引用查 aggregate.indexOf 会落空,
-        // 只删 map 不删数组,banner 残留(_ISS-208 review M2 收口点)。
+        // 写回两条索引——否则后续 load 查不到关联,banner 残留(_review M2)。
         const existing = diagBySrc.get(src);
         if (existing) {
           const at = aggregate.indexOf(existing);
           if (at >= 0) aggregate[at] = diag;
         }
+        diagByElement.set(target, diag);
         diagBySrc.set(src, diag);
         return;
       }
       seen.add(src);
       aggregate.push(diag);
+      diagByElement.set(target, diag);
       diagBySrc.set(src, diag);
       setImageDiagnostics([...aggregate]);
     };
@@ -859,8 +860,12 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
       if (!(target instanceof HTMLImageElement)) return;
       const src = target.currentSrc || target.src || '';
       if (!src) return;
-      const diag = diagBySrc.get(src);
+      // 主查找:元素级(error 与 load 之间元素身份稳定,src 可能已从原始
+      // 路径变为 data URL);兜底:src 级(重建节点的 src 命中旧错误)。
+      const diag = diagByElement.get(target) ?? diagBySrc.get(src);
       if (!diag) return;
+      diagByElement.delete(target);
+      diagBySrc.delete(src);
       diagBySrc.delete(src);
       const index = aggregate.indexOf(diag);
       if (index >= 0) {

@@ -1634,6 +1634,50 @@ describe('WysiwygEditorPane 图片诊断 banner (ISS-208 陈旧聚合)', () => {
     vi.clearAllMocks();
   });
 
+  it('resolver 写回 data URL 后 load 的 src 与 error 时不同,仍按元素清除错误(真机复测场景)', async () => {
+    let root: Root | null = null;
+
+    await act(async () => {
+      root = createRoot(host);
+      root.render(
+        renderWithProvider(
+          React.createElement(WysiwygEditorPane, {
+            source: '正文',
+            onChange: () => undefined,
+          }),
+        ),
+      );
+      await flushMicrotasks();
+    });
+
+    const irHost = host.querySelector<HTMLElement>('.vditor-ir');
+    expect(irHost).not.toBeNull();
+
+    // img 以原始路径加载失败 → banner 出现
+    const img = document.createElement('img');
+    img.src = '/tmp/broken.png';
+    irHost!.append(img);
+    await act(async () => {
+      img.dispatchEvent(new Event('error', { bubbles: false }));
+      await flushMicrotasks();
+    });
+    expect(host.textContent).toContain('找不到图片');
+
+    // resolver 修复:就地改写 src 为 data URL(元素身份不变),加载成功
+    await act(async () => {
+      img.src = 'data:image/png;base64,AAA=';
+      img.dispatchEvent(new Event('load', { bubbles: false }));
+      await flushMicrotasks();
+    });
+    // 关键断言:load 携带的 src(=data URL)与 error 时不同,但元素级关联
+    // 仍应找到 diag 并清除 banner(WeakMap 主查找;src Map miss 不影响)。
+    expect(host.textContent).not.toContain('找不到图片');
+
+    await act(async () => {
+      root?.unmount();
+    });
+  });
+
   it('同一 src 先 error 后 load 成功时,陈旧错误从 banner 移除', async () => {
     let root: Root | null = null;
 
