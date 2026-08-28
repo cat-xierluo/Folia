@@ -81,7 +81,10 @@ export function useSession() {
   useEffect(() => {
     const windowLabel = detectCurrentWindowLabel();
     const isMain = windowLabel === 'main';
-    const tabsById = Object.fromEntries(state.tabs.map((t) => [t.id, t] as const));
+    // ISS-199:tab 快照移入各 handler 经 stateRef 现算(而非闭包捕获 state.tabs),
+    // 让本 effect 依赖收敛为 []——原 [state.tabs] 依赖令打字每键都 unlisten +
+    // 重新 listen,监听空窗期可能丢 window:closed / tab:merge-back 事件。
+    const liveTabsById = () => Object.fromEntries(stateRef.current.tabs.map((t) => [t.id, t] as const));
 
     const unlistens: Array<() => void> = [];
 
@@ -96,10 +99,10 @@ export function useSession() {
       unlistens.push(onTabMergeBack((payload: TabMergeBackPayload) => {
         if (payload.targetLabel !== windowLabel) return;
         // 优先用 payload 携带的 tab 数据；缺失时尝试本地缓存；都没有则放弃。
-        const incoming = payload.tab ?? tabsById[payload.tabId];
+        const incoming = payload.tab ?? liveTabsById()[payload.tabId];
         if (!incoming) return;
         // 去重：若本地已有同 id tab，忽略（避免重复）。
-        if (state.tabs.some((t) => t.id === incoming.id)) return;
+        if (stateRef.current.tabs.some((t) => t.id === incoming.id)) return;
         dispatch({ type: 'receiveTab', tab: incoming });
       }));
 
@@ -109,7 +112,7 @@ export function useSession() {
         dispatch({
           type: 'windowClosed',
           remainingTabIds: payload.remainingTabIds,
-          tabsById,
+          tabsById: liveTabsById(),
         });
       }));
 
@@ -127,7 +130,7 @@ export function useSession() {
       unlistens.push(onTabDropRequested(async (payload) => {
         // 只处理「我作为源窗口被请求合并」的情况。
         if (payload.sourceLabel !== windowLabel) return;
-        const cached = tabsById[payload.tabId];
+        const cached = liveTabsById()[payload.tabId];
         if (!cached) {
           console.warn('useSession: drop-requested for unknown tab', payload.tabId);
           return;
@@ -143,7 +146,7 @@ export function useSession() {
         });
         dispatch({ type: 'removeTabById', id: payload.tabId });
         // 自身窗口 tab 移空：主动关窗（让 Rust 走 close 路径触发 window:closed 兜底）。
-        if (state.tabs.length <= 1) {
+        if (stateRef.current.tabs.length <= 1) {
           await closeWin(windowLabel);
         }
       }));
@@ -152,7 +155,8 @@ export function useSession() {
     return () => {
       for (const fn of unlistens) fn();
     };
-  }, [state.tabs]);
+    // ISS-199:[] —— 监听器经 stateRef 读最新 state,不随每键编辑重绑。
+  }, []);
 
   // ISS-164：独立窗口关窗前同步 tab 列表给 Rust，便于关闭时 emit 准确 remainingTabIds。
   useEffect(() => {
