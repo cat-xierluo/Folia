@@ -204,6 +204,11 @@ export function AppLayout() {
     [settings.locale],
   );
   const reopenAttempted = useRef(false);
+  // ISS-200:关窗确认流防重入标志。必须用 ref 而非 effect 局部 let——
+  // 守卫 effect 的 deps 含 tabs/handleSave,dirty 弹窗期间 autosave 改变
+  // tabs 会重绑 effect,局部变量随之重置,第二条关闭流可并发进入
+  // (孤儿 promise:旧弹窗的 resolve 再也等不到)。ref 跨重绑存活。
+  const closingRef = useRef(false);
   // ISS-72：用 state 而非 ref，让"关闭再打开自动检查"开关后能重触发检查。
   // ref 在 effect 依赖里不会触发重渲染，开关切回 on 时 useEffect 不会重跑。
   const [autoUpdateCheckStarted, setAutoUpdateCheckStarted] = useState(false);
@@ -486,15 +491,48 @@ export function AppLayout() {
     }
   }, [settings.defaultEncoding, cancelPendingTocRefresh, openInNewTab]);
 
+  // ISS-200:通用 IO 错误兜底——fileService 只对 oversized/denied-path 两类
+  // 弹原生提示,其余(文件被移走/编码异常/磁盘满)此前全部 unhandled rejection、
+  // 用户零反馈。这里统一弹原生 message(与 fileService 既有惯例同用
+  // plugin-dialog + i18n),文案含动作名与错误摘要,不再静默。
+  const notifyIoError = useCallback(async (action: 'open' | 'save', error: unknown) => {
+    if (!isTauriRuntime) {
+      console.error(`[ISS-200] ${action} failed:`, error);
+      return;
+    }
+    try {
+      const [{ message }, { getSettings }, { translate }] = await Promise.all([
+        import('@tauri-apps/plugin-dialog'),
+        import('../services/settingsService'),
+        import('../services/i18n'),
+      ]);
+      const locale = getSettings().locale;
+      const detail = error instanceof Error ? error.message : String(error);
+      await message(translate(locale, action === 'open' ? 'ioErrorOpenPrefix' : 'ioErrorSavePrefix') + detail, {
+        title: translate(locale, 'ioErrorTitle'),
+        kind: 'error',
+      });
+    } catch (notifyError) {
+      // 提示本身失败(极端:dialog 插件不可用)只留日志,不再抛。
+      console.error(`[ISS-200] ${action} failed and notify failed:`, error, notifyError);
+    }
+  }, []);
+
   const handleOpenPath = useCallback(async (path: string) => {
-    const { openPath } = await import('../services/fileService');
-    const opened = await openPath(path, settings.defaultEncoding);
-    openInNewTab(opened);
-    cancelPendingTocRefresh();
-    setToc(opened.fileType === 'docx' ? [] : extractMarkdownToc(opened.content));
-    setLastOpenedPath(path);
-    setHtmlPresentationVisible(false);
-  }, [settings.defaultEncoding, cancelPendingTocRefresh, openInNewTab]);
+    try {
+      const { openPath } = await import('../services/fileService');
+      const opened = await openPath(path, settings.defaultEncoding);
+      openInNewTab(opened);
+      cancelPendingTocRefresh();
+      setToc(opened.fileType === 'docx' ? [] : extractMarkdownToc(opened.content));
+      setLastOpenedPath(path);
+      setHtmlPresentationVisible(false);
+    } catch (error) {
+      // ISS-200:fileService 只弹 oversized/denied-path 两类,其余(文件被移走/
+      // 编码异常/磁盘满)在此兜底,不再 unhandled rejection。
+      await notifyIoError('open', error);
+    }
+  }, [settings.defaultEncoding, cancelPendingTocRefresh, openInNewTab, notifyIoError]);
 
   const handleSave = useCallback(async () => {
     if (file.fileType === 'docx') return;
@@ -513,10 +551,15 @@ export function AppLayout() {
         fileToSave = { ...file, content: nextContent };
       }
     }
-    const updated = await saveFile(fileToSave);
-    updateActiveFile(() => updated);
-    if (updated.path) setLastOpenedPath(updated.path);
-  }, [file, updateActiveFile, imageAssetStore]);
+    try {
+      const updated = await saveFile(fileToSave);
+      updateActiveFile(() => updated);
+      if (updated.path) setLastOpenedPath(updated.path);
+    } catch (error) {
+      // ISS-200:保存失败(磁盘满/权限/文件被移走)兜底提示,不再静默。
+      await notifyIoError('save', error);
+    }
+  }, [file, updateActiveFile, imageAssetStore, notifyIoError]);
 
   const handleSaveAs = useCallback(async () => {
     if (file.fileType === 'docx') return;
@@ -866,7 +909,7 @@ export function AppLayout() {
     if (!isTauriRuntime) return;
     let cancelled = false;
     let unlisten: (() => void) | undefined;
-    let closing = false; // 防重入：用户连点红绿灯时只处理一次。
+    // ISS-200:防重入标志提升为 closingRef(跨 effect 重绑存活),见上方声明。
 
     void Promise.all([
       import('@tauri-apps/api/core'),
@@ -875,14 +918,14 @@ export function AppLayout() {
       const listener = await listen<{ label: string }>('request:confirm-close', async (event) => {
         // 只处理本窗口的关闭请求（多窗口场景下事件会广播，各窗口各管各的）。
         if (event.payload.label !== windowLabel) return;
-        if (closing) return;
-        closing = true;
+        if (closingRef.current) return;
+        closingRef.current = true;
         try {
           const dirtyTabs = tabs.filter((t) => t.file.dirty);
           for (const tab of dirtyTabs) {
             const result = await confirmCloseDirty(tab.file.name);
             if (result === 'cancel') {
-              closing = false;
+              closingRef.current = false;
               return; // 用户取消，保持窗口打开。
             }
             if (result === 'save') {
@@ -894,7 +937,7 @@ export function AppLayout() {
           await invoke('confirm_close');
         } catch (error) {
           console.warn('confirm-close flow failed:', error);
-          closing = false;
+          closingRef.current = false;
         }
       });
 
