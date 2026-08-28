@@ -164,7 +164,6 @@ describe('sessionStore.saveSession', () => {
     saveSession(session);
     const raw = JSON.parse(localStorage.getItem(SESSION_STORAGE_KEY)!) as PersistedSession;
     const big = raw.tabs.find((t) => t.id === 'big')!;
-    const mid = raw.tabs.find((t) => t.id === 'mid')!;
     const s = raw.tabs.find((t) => t.id === 'small')!;
     // 总量 500KB+300KB+1KB 超预算：应至少剥掉最大（500KB）；剥掉一个后若仍超预算则继续剥。
     expect(big.draftPersisted).toBe(false);

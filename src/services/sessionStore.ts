@@ -39,6 +39,13 @@ export function loadSession(): SessionState {
   }
 }
 
+/** 剥离 docxHtml 的文件浅拷贝（rest 解构会产生未使用变量，eslint 无 `_` 前缀豁免）。 */
+function omitDocxHtml(file: Tab['file']): Tab['file'] {
+  const clone: Tab['file'] = { ...file };
+  delete clone.docxHtml;
+  return clone;
+}
+
 /** 降级 tab 的持久化形态：draftPersisted=false，内容清空只存 path，磁盘内容激活时可重读/重转。 */
 function degradeTab(tab: Tab): Tab {
   return {
@@ -64,7 +71,7 @@ function degradeTab(tab: Tab): Tab {
 function toPersisted(session: SessionState): PersistedSession {
   const tabs: Tab[] = session.tabs.map((tab) => {
     // docx 转出的 HTML 可达数百 KB~数 MB，仅预览用且激活时可从磁盘重转，不进入持久化。
-    const { docxHtml: _docxHtml, ...fileWithoutDocxHtml } = tab.file;
+    const fileWithoutDocxHtml = omitDocxHtml(tab.file);
     // 单 tab 草稿 > DRAFT_PERSIST_MAX_BYTES（256KB）降级为只存 path（ISS-159 规则）。
     // lastSavedContent 与 content 同规模，双份存储是配额超限主因之一，一并清空——
     // 重启激活时从磁盘重读并整体替换 file，dirty 按磁盘内容重算，不误标。
