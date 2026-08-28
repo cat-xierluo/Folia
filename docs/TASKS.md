@@ -34,7 +34,7 @@
 
 ### 缺陷类
 
-#### ⬜ ISS-199 useSession 跨窗口事件监听按每键重绑
+#### ✅ ISS-199 useSession 跨窗口事件监听按每键重绑（已 PR #153，2026-08-28 squash merge 325594c；stateRef 现算 + deps 收敛 []；AppLayout 快捷键同模式评估为低风险不修〔同步重绑无空窗〕；review 迟到超时，以 diff 复核〔6 处引用全迁 stateRef、零闭包残留〕+ CI 双绿 + TDD 断言决策合并）
 
 - **发现:** `src/hooks/useSession.ts` 监听 effect 以 `[state.tabs]` 为依赖——打字每键都触发 cleanup/unlisten + 动态 import + 重新 listen，监听空窗期可能错过 `window:closed` / `tab:merge-back` 事件。同模式散布于 AppLayout 键盘快捷键 effect（依赖含每键重建的 handleSave 等）。
 - **影响:** tear-off 场景偶发丢回收事件；无谓的绑定开销。
