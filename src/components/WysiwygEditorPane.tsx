@@ -818,41 +818,56 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
       };
     };
 
-    // ISS-208：img → 诊断条目关联。RenderDiagnostic 是共享类型不携带 src,
-    // 用 WeakMap 按 img 元素精确关联,banner 移除时张冠李戴风险为零;
-    // img 节点被 Vditor 重建后旧条目自然可被 GC,无需手动清理。
-    const diagByImg = new WeakMap<HTMLImageElement, RenderDiagnostic>();
+    // ISS-208 + review M2:src → 诊断条目关联。review 指出纯元素级 WeakMap
+    // 在「error → Vditor 重建节点 → 新节点同 src 瞬时失败被 seen 去重跳过 →
+    // 恢复后 load 清不掉」时序下有残留;改为 Map 按 src 关联,重建路径下
+    // 任何节点成功加载都能移除该 src 的错误条目。
+    const diagBySrc = new Map<string, RenderDiagnostic>();
 
     const handleImgError = (event: Event): void => {
       const target = event.target as Element | null;
       if (!(target instanceof HTMLImageElement)) return;
       const src = target.currentSrc || target.src || '';
-      if (!src || seen.has(src)) return;
-      seen.add(src);
+      if (!src) return;
+      // 同 src 重复 error 更新条目（不重复入列），保证 aggregate 单条且
+      // 后续 load 可按 src 移除（重建节点/重复失败均覆盖）。
       const diag = classifyError(target, true);
-      if (diag) {
-        aggregate.push(diag);
-        diagByImg.set(target, diag);
-        setImageDiagnostics([...aggregate]);
+      if (!diag) return;
+      if (seen.has(src)) {
+        // 重建节点/重复失败:不重复入列,但必须把「最新 diag 对象引用」
+        // 写回 map——否则后续 load 以新引用查 aggregate.indexOf 会落空,
+        // 只删 map 不删数组,banner 残留(_ISS-208 review M2 收口点)。
+        const existing = diagBySrc.get(src);
+        if (existing) {
+          const at = aggregate.indexOf(existing);
+          if (at >= 0) aggregate[at] = diag;
+        }
+        diagBySrc.set(src, diag);
+        return;
       }
+      seen.add(src);
+      aggregate.push(diag);
+      diagBySrc.set(src, diag);
+      setImageDiagnostics([...aggregate]);
     };
 
-    // ISS-208：与 error 对称的 load 监听——同一 img 后来加载成功
-    // （data URL 写回 / 文件恢复 / 重试补载）时移除它自己的陈旧错误，
-    // banner 实时收敛；按 WeakMap 精确关联，不影响其他 img 的错误。
+    // ISS-208：与 error 对称的 load 监听——同一 src 后来加载成功
+    // （data URL 写回 / 文件恢复 / 重试补载）时移除它的陈旧错误，
+    // banner 实时收敛；按 src 关联，不影响其他 img 的错误。
     const handleImgLoad = (event: Event): void => {
       const target = event.target as Element | null;
       if (!(target instanceof HTMLImageElement)) return;
-      const diag = diagByImg.get(target);
+      const src = target.currentSrc || target.src || '';
+      if (!src) return;
+      const diag = diagBySrc.get(src);
       if (!diag) return;
-      diagByImg.delete(target);
+      diagBySrc.delete(src);
       const index = aggregate.indexOf(diag);
       if (index >= 0) {
         aggregate.splice(index, 1);
         setImageDiagnostics([...aggregate]);
       }
-      const src = target.currentSrc || target.src || '';
-      if (src) seen.delete(src);
+      seen.delete(src);
     };
 
     host.addEventListener('error', handleImgError, true);

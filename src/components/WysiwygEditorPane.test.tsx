@@ -1723,3 +1723,73 @@ describe('WysiwygEditorPane 图片诊断 banner (ISS-208 陈旧聚合)', () => {
     });
   });
 });
+
+describe('WysiwygEditorPane 图片诊断 banner (ISS-208 review M2: 重建+去重路径)', () => {
+  let host: HTMLDivElement;
+
+  beforeEach(() => {
+    vditorCalls.length = 0;
+    setValueCalls.length = 0;
+    focusCalls.length = 0;
+    host = document.createElement('div');
+    document.body.append(host);
+  });
+
+  afterEach(() => {
+    host.remove();
+    vi.clearAllMocks();
+  });
+
+  it('src 已入列后,重建节点同 src 失败被去重,但其 load 成功仍清除错误', async () => {
+    let root: Root | null = null;
+
+    await act(async () => {
+      root = createRoot(host);
+      root.render(
+        renderWithProvider(
+          React.createElement(WysiwygEditorPane, {
+            source: '正文',
+            onChange: () => undefined,
+          }),
+        ),
+      );
+      await flushMicrotasks();
+    });
+
+    const irHost = host.querySelector<HTMLElement>('.vditor-ir');
+    expect(irHost).not.toBeNull();
+
+    // 第一张 img:加载失败 → banner 出现
+    const imgA = document.createElement('img');
+    imgA.src = 'https://cdn.example.com/reused.png';
+    irHost!.append(imgA);
+    await act(async () => {
+      imgA.dispatchEvent(new Event('error', { bubbles: false }));
+      await flushMicrotasks();
+    });
+    expect(host.textContent).toContain('找不到图片');
+
+    // 模拟 Vditor 重建:移除旧节点,创建新 img 同 src,瞬时失败被 seen 去重跳过
+    imgA.remove();
+    const imgB = document.createElement('img');
+    imgB.src = 'https://cdn.example.com/reused.png';
+    irHost!.append(imgB);
+    await act(async () => {
+      imgB.dispatchEvent(new Event('error', { bubbles: false }));
+      await flushMicrotasks();
+    });
+    // 去重语义:banner 仍只有该 src 一条错误(不重复入列)
+    expect(host.textContent).toContain('找不到图片');
+
+    // 新节点恢复加载成功 → 按 src 关联应清除错误(review M2 收口点)
+    await act(async () => {
+      imgB.dispatchEvent(new Event('load', { bubbles: false }));
+      await flushMicrotasks();
+    });
+    expect(host.textContent).not.toContain('找不到图片');
+
+    await act(async () => {
+      root?.unmount();
+    });
+  });
+});
