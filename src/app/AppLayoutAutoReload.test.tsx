@@ -580,12 +580,17 @@ describe('AppLayout ISS-209 降级恢复 autosave 竞态', () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
+    // review MINOR-1 变异验证:settingsService 默认 autoSave:false,不开启则
+    // autosave effect 无条件早退、守卫删掉测试也 PASS(空转覆盖)。必须显式
+    // 开启 autosave 才能让本用例真正锁死「重读窗口内 tick 不触发 saveFile」。
+    localStorage.setItem('folia-settings', JSON.stringify({ autoSave: true }));
     host = document.createElement('div');
     document.body.append(host);
   });
   afterEach(() => {
     vi.useRealTimers();
     vi.clearAllMocks();
+    localStorage.removeItem('folia-settings');
     host.remove();
   });
 
