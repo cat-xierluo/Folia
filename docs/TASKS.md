@@ -70,6 +70,8 @@
 - **根因:** `tauri.conf.json` assetProtocol scope 仅有 `$HOME/**/*`；/tmp、外置卷等一律被 Tauri 拒绝。相对路径文档放在非 HOME 目录同样命中（解析后仍落在受限路径）。main 与 fix 分支行为一致，存量限制非回归。
 - **候选:** 方向推荐「受控 Rust 命令读字节转 data URI」（复用 isSensitivePath 守卫 + 扩展名白名单），与 ISS-201 fs 收口同向；或 scope 扩容（/private/tmp 等逐项）+ 文档引导。详见 Issue #138。
 
+#### ✅ ISS-208 图片诊断 banner 陈旧聚合——加载成功后旧错误不清除（已 PR #147，2026-08-28 squash merge 3c54772，Issue #146 随关；对称 load 监听 + WeakMap 主查找双索引；过程中两个单测假绿真 bug 被 review M2 与真机复测先后抓出并收口；真机全链路判定通过）
+
 ### 收口 / 演进类
 
 #### ⬜ ISS-201 fs 插件彻底收口：持久 IO 全部走自定义命令
