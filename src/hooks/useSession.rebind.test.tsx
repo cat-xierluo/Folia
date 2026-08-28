@@ -2,7 +2,7 @@
 // ISS-199:useSession 跨窗口事件监听 effect 原以 [state.tabs] 为依赖——打字
 // 每键都触发 unlisten + 动态 import + 重新 listen,监听空窗期可能丢
 // window:closed / tab:merge-back 事件。修复后依赖收敛,重渲染不重绑。
-import React, { act } from 'react';
+import React, { act, useEffect } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useSession } from './useSession';
@@ -24,14 +24,19 @@ vi.mock('../services/tabWindowService', () => listenSpies);
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
+// 经 props 传入真 useRef(react-hooks/immutability 只豁免 useRef 返回值,
+// 手写 { current } 字面量不识别)。
+const sessionProbeRef: { current: ReturnType<typeof useSession> | null } = { current: null };
+
 function Probe({ bump }: { bump: number }) {
   void bump;
   const session = useSession();
-  sessionProbeRef.current = session;
+  // react-hooks 规则:渲染期不得写 ref/外部变量,经 effect 同步 probe。
+  useEffect(() => {
+    sessionProbeRef.current = session;
+  }, [session]);
   return null;
 }
-
-const sessionProbeRef: { current: ReturnType<typeof useSession> | null } = { current: null };
 
 function makeFile(path: string): OpenedFile {
   return { path, name: path.split('/').pop() ?? 'x.md', content: 'c', dirty: false, lastSavedContent: 'c', fileType: 'markdown' };
