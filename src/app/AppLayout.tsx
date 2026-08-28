@@ -1122,12 +1122,13 @@ export function AppLayout() {
 
   // 大文件降级 tab（draftPersisted=false 且 content 被清空）：激活时从磁盘重读内容，
   // 修复降级重启后空白编辑器。失败（文件被删/移）标记 pathInvalid 并提示另存为（ISS-42）。
+  // docx 降级 tab（ISS-198：docxHtml 不再持久化）走同一路径重转 docx→HTML。
   // reloading 由 activeTab 派生（draftPersisted=false + content 空 = 重读中），避免 effect 内 set state。
   const { markPathInvalid } = session;
   useEffect(() => {
     if (!activeTab || activeTab.draftPersisted) return;
     if (!activeTab.file.path || activeTab.file.content) return;
-    if (activeTab.file.fileType === 'docx') return;
+    if (activeTab.file.fileType === 'docx' && activeTab.file.docxHtml) return;
     let cancelled = false;
     void import('../services/fileService')
       .then(({ openPath }) => openPath(activeTab.file.path, settings.defaultEncoding))
@@ -1140,7 +1141,7 @@ export function AppLayout() {
     && !activeTab.draftPersisted
     && !!activeTab.file.path
     && !activeTab.file.content
-    && activeTab.file.fileType !== 'docx';
+    && !(activeTab.file.fileType === 'docx' && activeTab.file.docxHtml);
 
   useEffect(() => {
     if (!isTauriRuntime) return;
@@ -1460,6 +1461,7 @@ export function AppLayout() {
         dirty={file.dirty}
         draftPersisted={session.activeTab?.draftPersisted}
         pathInvalid={session.activeTab?.pathInvalid}
+        sessionPersistFailedAt={session.persistFailedAt}
         reloading={reloading}
         externalChangeBlocked={externalChangeBlocked}
         onExternalChangeReload={handleExternalChangeReload}

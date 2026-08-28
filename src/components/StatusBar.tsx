@@ -12,6 +12,8 @@ type StatusBarProps = {
   draftPersisted?: boolean;
   /** 文件路径失效（磁盘文件被删 / 移动，重读失败）时为 true，提示「文件已丢失」并提供另存为。 */
   pathInvalid?: boolean;
+  /** ISS-198：最近一次会话持久化失败的时间戳（null = 正常）。非 null 时提示「会话未能持久化」。 */
+  sessionPersistFailedAt?: number | null;
   /** 大文件重读期间为 true，提示「重新加载中」。 */
   reloading?: boolean;
   /** pathInvalid 时点击「另存为」的回调。 */
@@ -35,6 +37,7 @@ export function StatusBar({
   dirty,
   draftPersisted,
   pathInvalid,
+  sessionPersistFailedAt,
   reloading,
   onSaveAs,
   externalChangeBlocked,
@@ -97,9 +100,12 @@ export function StatusBar({
       ? { text: t('reloadingLabel'), tone: 'info' }
       : pathInvalid
         ? { text: t('fileLostLabel'), tone: 'error', action: true }
-        : draftPersisted === false
-          ? { text: t('draftTooLargeLabel'), tone: 'warn' }
-          : null;
+        : sessionPersistFailedAt != null
+          // ISS-198：localStorage 写入失败（配额用尽 / 隐私模式），草稿恢复与最近文件已停更。
+          ? { text: t('sessionPersistFailedLabel'), tone: 'warn' }
+          : draftPersisted === false
+            ? { text: t('draftTooLargeLabel'), tone: 'warn' }
+            : null;
 
   return (
     <div className="status-bar">

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer, useRef } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import type { OpenedFile } from '../types/document';
 import { createEmptyFile } from '../types/document';
 import type { Tab, EditorMode, RightPanelMode } from '../types/session';
@@ -45,8 +45,13 @@ export function useSession() {
   useEffect(() => { stateRef.current = state; }, [state]);
 
   // state 变化后 debounce 持久化草稿（含未保存内容）；卸载时清理定时器。
+  // 持久化失败（存储配额用尽等，ISS-198）记录时间戳，StatusBar 据此提示「会话未能持久化」。
+  const [persistFailedAt, setPersistFailedAt] = useState<number | null>(null);
   useEffect(() => {
-    const timer = setTimeout(() => saveSession(state), 800);
+    const timer = setTimeout(() => {
+      const ok = saveSession(state);
+      setPersistFailedAt(ok ? null : Date.now());
+    }, 800);
     return () => clearTimeout(timer);
   }, [state]);
 
@@ -302,6 +307,8 @@ export function useSession() {
     editorMode: (activeTab?.editorMode ?? 'wysiwyg') as EditorMode,
     rightPanelMode: (activeTab?.rightPanelMode ?? 'none') as RightPanelMode,
     showHomePage: activeTab?.isPlaceholder ?? false,
+    // 最近一次会话持久化失败的时间戳（null = 正常）。StatusBar 据此提示 ISS-198。
+    persistFailedAt,
     openInNewTab,
     newBlankTab,
     switchTab,
