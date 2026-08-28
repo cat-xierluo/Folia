@@ -1617,3 +1617,109 @@ describe('WysiwygEditorPane 代码块复制按钮 (ISS-190)', () => {
     });
   });
 });
+
+describe('WysiwygEditorPane 图片诊断 banner (ISS-208 陈旧聚合)', () => {
+  let host: HTMLDivElement;
+
+  beforeEach(() => {
+    vditorCalls.length = 0;
+    setValueCalls.length = 0;
+    focusCalls.length = 0;
+    host = document.createElement('div');
+    document.body.append(host);
+  });
+
+  afterEach(() => {
+    host.remove();
+    vi.clearAllMocks();
+  });
+
+  it('同一 src 先 error 后 load 成功时,陈旧错误从 banner 移除', async () => {
+    let root: Root | null = null;
+
+    await act(async () => {
+      root = createRoot(host);
+      root.render(
+        renderWithProvider(
+          React.createElement(WysiwygEditorPane, {
+            source: '正文',
+            onChange: () => undefined,
+          }),
+        ),
+      );
+      await flushMicrotasks();
+    });
+
+    const irHost = host.querySelector<HTMLElement>('.vditor-ir');
+    expect(irHost).not.toBeNull();
+
+    // 模拟一张 img 先加载失败(banner 出现「找不到图片」)
+    const img = document.createElement('img');
+    img.src = 'https://cdn.example.com/pic.png';
+    img.alt = '图';
+    irHost!.appendChild(img);
+
+    await act(async () => {
+      img.dispatchEvent(new Event('error', { bubbles: true }));
+      await flushMicrotasks();
+    });
+
+    expect(host.textContent).toContain('找不到图片');
+
+    // 资源恢复:同一 src 加载成功 → 陈旧错误应被移除(banner 收敛)
+    await act(async () => {
+      img.dispatchEvent(new Event('load', { bubbles: true }));
+      await flushMicrotasks();
+    });
+
+    expect(host.textContent).not.toContain('找不到图片');
+
+    await act(async () => {
+      root?.unmount();
+    });
+  });
+
+  it('load 事件不误清其他 src 的错误(仅移除自身)', async () => {
+    let root: Root | null = null;
+
+    await act(async () => {
+      root = createRoot(host);
+      root.render(
+        renderWithProvider(
+          React.createElement(WysiwygEditorPane, {
+            source: '正文',
+            onChange: () => undefined,
+          }),
+        ),
+      );
+      await flushMicrotasks();
+    });
+
+    const irHost = host.querySelector<HTMLElement>('.vditor-ir');
+    const imgA = document.createElement('img');
+    imgA.src = 'https://cdn.example.com/a.png';
+    const imgB = document.createElement('img');
+    imgB.src = 'https://cdn.example.com/b.png';
+    irHost!.append(imgA, imgB);
+
+    await act(async () => {
+      imgA.dispatchEvent(new Event('error', { bubbles: true }));
+      imgB.dispatchEvent(new Event('error', { bubbles: true }));
+      await flushMicrotasks();
+    });
+
+    expect(host.textContent).toContain('找不到图片');
+
+    // 只有 A 恢复:B 的错误必须保留
+    await act(async () => {
+      imgA.dispatchEvent(new Event('load', { bubbles: true }));
+      await flushMicrotasks();
+    });
+
+    expect(host.textContent).toContain('找不到图片');
+
+    await act(async () => {
+      root?.unmount();
+    });
+  });
+});

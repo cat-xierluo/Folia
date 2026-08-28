@@ -818,6 +818,11 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
       };
     };
 
+    // ISS-208：img → 诊断条目关联。RenderDiagnostic 是共享类型不携带 src,
+    // 用 WeakMap 按 img 元素精确关联,banner 移除时张冠李戴风险为零;
+    // img 节点被 Vditor 重建后旧条目自然可被 GC,无需手动清理。
+    const diagByImg = new WeakMap<HTMLImageElement, RenderDiagnostic>();
+
     const handleImgError = (event: Event): void => {
       const target = event.target as Element | null;
       if (!(target instanceof HTMLImageElement)) return;
@@ -827,13 +832,34 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
       const diag = classifyError(target, true);
       if (diag) {
         aggregate.push(diag);
+        diagByImg.set(target, diag);
         setImageDiagnostics([...aggregate]);
       }
     };
 
+    // ISS-208：与 error 对称的 load 监听——同一 img 后来加载成功
+    // （data URL 写回 / 文件恢复 / 重试补载）时移除它自己的陈旧错误，
+    // banner 实时收敛；按 WeakMap 精确关联，不影响其他 img 的错误。
+    const handleImgLoad = (event: Event): void => {
+      const target = event.target as Element | null;
+      if (!(target instanceof HTMLImageElement)) return;
+      const diag = diagByImg.get(target);
+      if (!diag) return;
+      diagByImg.delete(target);
+      const index = aggregate.indexOf(diag);
+      if (index >= 0) {
+        aggregate.splice(index, 1);
+        setImageDiagnostics([...aggregate]);
+      }
+      const src = target.currentSrc || target.src || '';
+      if (src) seen.delete(src);
+    };
+
     host.addEventListener('error', handleImgError, true);
+    host.addEventListener('load', handleImgLoad, true);
     return () => {
       host.removeEventListener('error', handleImgError, true);
+      host.removeEventListener('load', handleImgLoad, true);
     };
   }, []);
 
