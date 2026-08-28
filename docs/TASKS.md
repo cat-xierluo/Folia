@@ -34,7 +34,7 @@
 
 ### 缺陷类
 
-#### ⬜ ISS-198 sessionStore 持久化无预算控制 → localStorage 配额静默失效
+#### ✅ ISS-198 sessionStore 持久化无预算控制 → localStorage 配额静默失效（已 PR #148，2026-08-28 squash merge 2258c3c；docxHtml 剥离 + 2MB 预算降级 + lastSavedContent 清空 + StatusBar 失败提示 + 修复既有测试假绿；review 迟到,以 diff 逐文件复核 + CI 双绿决策合并)
 
 - **发现:** `src/services/sessionStore.ts` 只对 `content > 256KB` 做降级清空；`docxHtml`（中型 docx 转出的 HTML 可达数百 KB~数 MB）与 `lastSavedContent` 不设限双份存储。每次 800ms 防抖 `JSON.stringify(session)` 触发 QuotaExceededError 后被 catch 静默吞掉。
 - **影响:** 打开中等体积 docx 或积累多个大文档后，所有 tab 的草稿恢复 / 最近文件无声失效，用户无感知直到丢内容。
