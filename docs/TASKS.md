@@ -72,6 +72,10 @@
 
 #### ✅ ISS-208 图片诊断 banner 陈旧聚合——加载成功后旧错误不清除（已 PR #147，2026-08-28 squash merge 3c54772，Issue #146 随关；对称 load 监听 + WeakMap 主查找双索引；过程中两个单测假绿真 bug 被 review M2 与真机复测先后抓出并收口；真机全链路判定通过）
 
+#### ⬜ ISS-209 降级 tab 恢复与 autosave 竞态——重读窗口内理论上可 saveFile('') 覆盖磁盘文件（Issue #149）
+
+- **发现:** PR #148 review MINOR-1:降级恢复 tab 带 dirty=true 时,重读 effect(异步)与 autosave 800ms 定时器有竞态,重读超 800ms 理论可清空磁盘文件。main 既有同类窗口(ISS-42),#148 扩大暴露面;docx 免疫。修法推荐抑制 autosave(重读窗口)或重置 dirty,验收见 Issue #149。
+
 ### 收口 / 演进类
 
 #### ⬜ ISS-201 fs 插件彻底收口：持久 IO 全部走自定义命令
