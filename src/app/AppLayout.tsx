@@ -516,7 +516,7 @@ export function AppLayout() {
       // 提示本身失败(极端:dialog 插件不可用)只留日志,不再抛。
       console.error(`[ISS-200] ${action} failed and notify failed:`, error, notifyError);
     }
-  }, []);
+  }, [isTauriRuntime]);
 
   const handleOpenPath = useCallback(async (path: string) => {
     try {

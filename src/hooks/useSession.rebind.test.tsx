@@ -27,11 +27,11 @@ vi.mock('../services/tabWindowService', () => listenSpies);
 function Probe({ bump }: { bump: number }) {
   void bump;
   const session = useSession();
-  sessionProbe.current = session;
+  sessionProbeRef.current = session;
   return null;
 }
 
-const sessionProbe: { current: ReturnType<typeof useSession> | null } = { current: null };
+const sessionProbeRef: { current: ReturnType<typeof useSession> | null } = { current: null };
 
 function makeFile(path: string): OpenedFile {
   return { path, name: path.split('/').pop() ?? 'x.md', content: 'c', dirty: false, lastSavedContent: 'c', fileType: 'markdown' };
@@ -66,7 +66,7 @@ describe('useSession ISS-199 监听不随 tabs 重绑', () => {
     // 模拟用户连续打开多个 tab(state.tabs 每次变化)
     for (let i = 0; i < 3; i += 1) {
       await act(async () => {
-        sessionProbe.current?.openInNewTab(makeFile(`/tmp/f${i}.md`));
+        sessionProbeRef.current?.openInNewTab(makeFile(`/tmp/f${i}.md`));
         await flushMicro();
       });
     }
