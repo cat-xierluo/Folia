@@ -51,6 +51,15 @@ const OVERSIZED_FILE_PATTERN = /file too large/i;
 // fileService.test.ts 的 BACKEND_DENIED_PATH_ERROR。
 const DENIED_PATH_PATTERN = /denied roots list/i;
 
+// ISS-200 review MAJOR-1:fileService 对 oversized / denied-path 错误已弹
+// 原生提示后才 throw。AppLayout 的 notifyIoError 兜底需跳过这两类,否则
+// 用户对同一错误连看两个对话框。导出此判定作为单一事实来源(pattern 与
+// 上方两个内部 pattern 保持同步)。
+export function isAlreadyNotifiedFileError(error: unknown): boolean {
+  const text = error instanceof Error ? error.message : String(error);
+  return OVERSIZED_FILE_PATTERN.test(text) || DENIED_PATH_PATTERN.test(text);
+}
+
 function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
