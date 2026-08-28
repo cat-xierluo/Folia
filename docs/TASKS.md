@@ -45,7 +45,7 @@
 - **发现:** (1) `AppLayout.tsx` 关窗确认流的 `let closing = false` 是 effect 局部变量、deps 含 tabs——dirty 弹窗期间 autosave 改变 tabs 触发重绑后可并发进入第二条关闭流，孤儿 promise；(2) `handleOpenPath` / 快捷键调用 async handler 无 catch、fileService 仅对 oversized/denied-path 两类弹提示，文件被移走 / 编码异常 / 磁盘满等全部 unhandled rejection。
 - **建议:** closing 提升为 ref 级标志；handleOpenPath/handleSave 包统一 toast / 原生 message 兜底。
 
-#### ⬜ ISS-209 降级 tab 恢复与 autosave 竞态——重读窗口内理论上可 saveFile('') 覆盖磁盘文件（Issue #149）
+#### ✅ ISS-209 降级 tab 恢复与 autosave 竞态——重读窗口内理论上可 saveFile('') 覆盖磁盘文件（已 PR #150，2026-08-28 squash merge 22cf2fe，Issue #149 随关；reloading 守卫零新增状态；review MINOR-1 空转测试已修〔变异验证〕，MINOR-2 残留窗口登记 Issue #151〕）
 
 - **发现:** PR #148 review MINOR-1:降级恢复 tab 带 dirty=true 时,重读 effect(异步)与 autosave 800ms 定时器有竞态,重读超 800ms 理论可清空磁盘文件。main 既有同类窗口(ISS-42),#148 扩大暴露面;docx 免疫。修法推荐抑制 autosave(重读窗口)或重置 dirty,验收见 Issue #149。
 
