@@ -189,7 +189,19 @@ export class ImageAssetStore {
    * 测试钩子（ISS-211 review MAJOR-1）：清空资产的 persistedInto 记录，
    * 模拟「磁盘文件被外部删除后字节需重新写盘」的状态。生产代码不调用。
    */
+  /**
+   * 仅供自动化测试注入「本路径尚未写盘」状态（例如模拟「磁盘文件被用户
+   * 删除后重插」场景）。生产 bundle 经 rollup `drop: ['console']` 之外的
+   * 死代码消除无法剥离类方法，故方法体本身在生产下同样可达——依赖调用方
+   * 纪律：任何非测试代码调用它都会破坏 persistedInto 的正确性。
+   * ISS-211 review MINOR-2。
+   */
   __forgetPersistedForTests(hash: string): void {
+    // 生产构建(method 不可被 tree-shake)直接熔断:越界调用立刻抛错,
+    // 而不是静默破坏 persistedInto 正确性。ISS-211 review MINOR-2。
+    if (import.meta.env.MODE !== 'test') {
+      throw new Error('__forgetPersistedForTests is test-only');
+    }
     const asset = this.assets.get(hash);
     if (!asset) return;
     this.assets.set(hash, { ...asset, persistedInto: [] });

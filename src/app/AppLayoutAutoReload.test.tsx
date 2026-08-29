@@ -33,6 +33,18 @@ const fileServiceMock = vi.hoisted(() => ({
   saveFileAs: vi.fn(),
 }));
 
+// ISS-210:mock persist 服务,观测 autosave 是否真的调用它(而非仅透传)。
+const persistMock = vi.hoisted(() => ({
+  persistPendingImageAssets: vi.fn(),
+  replaceBlobUrlsWithRelativePaths: vi.fn(
+    (content: string, replacements: Array<{ objectUrl: string; relativePath: string }>) => {
+      let next = content;
+      for (const r of replacements) next = next.replaceAll(r.objectUrl, r.relativePath);
+      return next;
+    },
+  ),
+}));
+
 // 测试替身：useSession 返回受控 session 状态。
 // 通过可变 state 对象驱动：测试中调用 sessionState.activate(path, dirty) 切 tab。
 import type { OpenedFile } from '../types/document';
@@ -126,6 +138,7 @@ vi.mock('@tauri-apps/api/core', () => tauriCoreMock);
 vi.mock('@tauri-apps/api/event', () => tauriEventMock);
 
 vi.mock('../services/fileService', () => fileServiceMock);
+vi.mock('../services/imageAssetPersistenceService', () => persistMock);
 
 // 直接 mock fileWatchService：把「fileWatchService 内部 async listen 时序」与
 // 「AppLayout 对 watch 事件的反应」解耦。onWatchChanged 注册的 listener 存入
@@ -680,7 +693,7 @@ describe('AppLayout ISS-210 autosave 接入图片落盘', () => {
     sessionState.updateCount = 0;
   }
 
-  it('autosave tick 后 saveFile 收到的 content 已把 blob: 替换为相对路径', async () => {
+  it('autosave tick 先调 persistPendingImageAssets,替换结果进入 saveFile(变异验证:删 persist 步骤必红)', async () => {
     activateDirtyTab('/Users/demo/纪要.md', '![img](blob:pending-1)');
     fileServiceMock.saveFile.mockClear();
     fileServiceMock.saveFile.mockImplementation(async (file: { path: string; content: string }) => ({
@@ -688,6 +701,11 @@ describe('AppLayout ISS-210 autosave 接入图片落盘', () => {
       dirty: false,
       lastSavedContent: file.content,
     }));
+    // persist 返回一条替换:blob:pending-1 → ./纪要.assets/pending-1.png
+    persistMock.persistPendingImageAssets.mockResolvedValue({
+      replacements: [{ objectUrl: 'blob:pending-1', relativePath: './纪要.assets/pending-1.png' }],
+      failures: [],
+    });
     let root: Root | null = null;
 
     await act(async () => {
@@ -700,11 +718,17 @@ describe('AppLayout ISS-210 autosave 接入图片落盘', () => {
       await flushPromises();
     });
 
+    // 锚点 1:autosave 必须调用 persist(删除 persist 步骤的变异 → 此断言红)
+    expect(persistMock.persistPendingImageAssets).toHaveBeenCalledTimes(1);
+    expect(persistMock.persistPendingImageAssets).toHaveBeenCalledWith(
+      expect.anything(),
+      '/Users/demo/纪要.md',
+      '![img](blob:pending-1)',
+    );
+    // 锚点 2:saveFile 收到的是替换后的 content(绕过 replaceBlob 的变异 → 此断言红)
     expect(fileServiceMock.saveFile).toHaveBeenCalledTimes(1);
     const saved = fileServiceMock.saveFile.mock.calls[0][0] as { path: string; content: string };
-    // 非 Tauri(vitest jsdom)环境 persist 为空操作快路径,content 原样透传;
-    // Tauri 环境下由 imageAssetPersistenceService 把 blob: 改写为相对路径。
-    expect(typeof saved.content).toBe('string');
+    expect(saved.content).toBe('![img](./纪要.assets/pending-1.png)');
     expect(saved.path).toBe('/Users/demo/纪要.md');
 
     await act(async () => {
