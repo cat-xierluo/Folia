@@ -61,7 +61,7 @@
 
 **验证**:ISS-205/206/207/208 累计单测 756→771,真机(tauri dev WKWebView)逐议题判定(落款右对齐/横条消失/三路径大图渲染/banner 全链路收敛),CI 双绿。已知残留:ISS-209(降级恢复与 autosave 竞态,Issue #149)。
 
-### [DEC-141] - 2026-08-29 - TypeScript 全量 strict + 测试文件纳入 typecheck（ISS-203）
+### [DEC-142] - 2026-08-29 - TypeScript 全量 strict + 测试文件纳入 typecheck（ISS-203）
 
 **背景**：ISS-203 登记时（代码审计）发现 `tsconfig.app.json` / `tsconfig.node.json` 均未开 `strict`（`noImplicitAny` / `strictNullChecks` 缺省关闭），建议分两步迁移。动手前实测改变结论：**生产代码 96 文件在 full strict 下零错误**——卡片「先 strictNullChecks 再其余开关」的两步走不需要，一步到位。
 
