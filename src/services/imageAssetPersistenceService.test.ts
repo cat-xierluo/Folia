@@ -207,7 +207,7 @@ describe('persistPendingImageAssets', () => {
     store.assets.set(asset.hash, { ...stored, persistedInto: [] });
 
     const content2 = '![](./doc.assets/a.png)';
-    const second = await persistPendingImageAssets(store, '/work/doc.md', content2);
+    await persistPendingImageAssets(store, '/work/doc.md', content2);
 
     // 修复前:content2 无 blob 锚点 → replacements 空 → 字节永不落盘(死链)
     expect(invokeMock).toHaveBeenCalledTimes(2);
