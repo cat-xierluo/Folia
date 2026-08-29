@@ -79,7 +79,7 @@ describe('persistPendingImageAssets', () => {
   });
 
   it('returns empty result when no assets referenced by content', async () => {
-    const invokeMock = useInvokeMock();
+    useInvokeMock();
     const store = new ImageAssetStore();
     const result = await persistPendingImageAssets(store, '/work/doc.md', '# 无图文档');
     expect(result.replacements).toHaveLength(0);
@@ -87,7 +87,7 @@ describe('persistPendingImageAssets', () => {
   });
 
   it('skips in non-Tauri environment (no __TAURI_INTERNALS__)', async () => {
-    const invokeMock = useInvokeMock();
+    useInvokeMock();
     const store = new ImageAssetStore();
     const asset = await store.registerPending(new Uint8Array([1]), 'a.png', 'image/png');
     const result = await persistPendingImageAssets(store, '/work/doc.md', `![](${asset.objectUrl})`);
