@@ -95,12 +95,12 @@
 - **发现:** CI 只跑前端(typecheck/lint/test + playwright e2e),src-tauri 的 Rust 侧测试无 CI 门槛,lib.rs 安全校验逻辑回归不可见。注:计数按平台不同——ubuntu 53 / macOS 54(源码 55 个 #[test],2 个 macOS 专属 cfg 掉;lib.rs 末段 1 个 #[cfg(not(macos))] 测试因 CI 缺失此前从未在任何机器跑过,本 PR 顺带激活)。
 - **建议:** CI 增加 cargo test job（可复用 ISS-179 Phase 4 已有的 Rust 构建缓存模式）。
 
-#### ✅ ISS-210 autosave 不落盘 pending 图片（已并入 fix/iss210-211-image-persistence 分支,2026-08-29;autosave tick 前接入 persistPendingImageAssets + blob 替换,与 handleSave 同语义;ISS-209 reloading 守卫保持前置）
+#### ✅ ISS-210 autosave 不落盘 pending 图片（已 PR #158,2026-08-29 squash merge 7f97177;autosave tick 前接入 persistPendingImageAssets + blob 替换,与 handleSave 同语义;ISS-209 reloading 守卫保持前置;review 双 reviewer 独立变异验证 APPROVE——初版集成测试假绿被 reviewer-158 抓出后重写为真测试）
 
 - **发现:** autosave effect 直接 `saveFile(file)`,未调用 persistPendingImageAssets。开启 autosave 时含 blob: 引用的脏文档以死链 content 写盘,直到手动保存才修复。
 - **建议:** autosave 路径接入与 handleSave 相同的 persistPendingImageAssets 流程(注意与 ISS-209 reloading 守卫的交互)。
 
-#### ✅ ISS-211 persisted 资产跨文档重插路径（已并入 fix/iss210-211-image-persistence 分支,2026-08-29;MediaInsertionOptions.docPath + deriveDocBaseName 重算;WysiwygEditorPane 以 filePath prop 传入;新增 mediaInsertionService.test.ts 3 例 TDD）
+#### ✅ ISS-211 persisted 资产跨文档重插路径（已 PR #158,2026-08-29 squash merge 7f97177;MediaInsertionOptions.docPath + deriveDocBaseName 重算;persist 过滤增 persisted 相对路径锚点补写分支——reviewer-133 跨 PR 发现的隐性死链 MAJOR 一并闭环;观察项:persisted 分支字符串匹配理论上可覆盖手工同名相对路径,窗口极窄不阻塞）
 
 - **发现:** registerPending 按 hash 去重返回已有资产(state 可能为 persisted);insertForMarkdown 无条件写出 `./.assets/name.png`,registerImageAsset 的 docBaseName='' 无调用方填充（mediaInsertionService.ts:54）。
 - **建议:** 跨文档插入时按新文档重算相对路径或强制走重新落盘。
