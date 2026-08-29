@@ -67,6 +67,12 @@
 - **背景:** ISS-197（PR #135）以 deny-only scope 补位，但插件面仍保留 `fs:allow-read/write-*`。「allow 空 = 放行一切」的根因在 ACL 模型本身，敏感目录之外的任意路径读写依旧不受约束。
 - **路径:** fileService（`saveFileAs` 二次写入）、wordExportService（writeFile）、wechatPreviewService（writeTextFile/save+readTextFile）、htmlPresentationService（readLocalResource）四处调用面改走受控 Rust 命令（扩展名白名单 + 黑名单复用），然后从 capabilities 删除 4 条 fs allow-*。
 - **注意:** 迁移前后须真机回归全部涉盘流程（NOT_VERIFIED 清单见 CHANGELOG ISS-197 条目）。
+- **收口（2026-08-29）:** Rust 新增 write_binary_export（.docx 白名单+denied-root+独立 MAX_EXPORT_BYTES=200MB,与资产上限分离防「升级后导不出」回归）与 read_presentation_resource（独立 PRESENTATION_RESOURCE_EXTENSIONS 白名单覆盖图片/JS/CSS/视频/音频/字体——review MAJOR-1:复用图片白名单会让演示页非图片资源全部静默失效）;前端 5 调用面切换;capabilities 删除 fs 插件全部权限,契约测试锚定「插件面零残留」;word 导出链贯穿 docPath 上下文,相对图片解析为绝对路径（review MAJOR-2,%20 解码与 htmlPresentationService 同语义）;导出失败接 notifyIoError 三语言提示（review MAJOR-3:此前 catch 只有 console.error,用户零感知）。review MINOR 登记:①write_binary_export 的 Vec<u8> JSON 序列化 IPC 内存峰值（与 read 侧 tauri::ipc::Response 优化不对称,后续用 Request/ResponseBody 收敛）;②PRESENTATION_RESOURCE_EXTENSIONS 无直接 Rust 单测（经 e2e/手测覆盖）。**NOT_VERIFIED（真机,移交用户）:** Word 导出（含 >20MB 图文文档）、微信导出、另存为、HTML 演示本地资源（重点 JS/CSS/视频内联）、Word 导出内嵌本地图片。
+
+#### ⬜ ISS-215 write_binary_export IPC 序列化内存峰值（ISS-201 review MINOR-1,2026-08-29）
+
+- **发现:** write_binary_export 的 bytes 走 Vec<u8> JSON 数字数组序列化,大 docx（200MB 级）导出有数倍内存峰值,与 read 侧已用 tauri::ipc::Response 的优化不对称。
+- **建议:** 改用 tauri::ipc::Request/ResponseBody 收敛;顺带为 PRESENTATION_RESOURCE_EXTENSIONS 补直接 Rust 单测（review MINOR-2）。
 
 #### ⬜ ISS-213 release.yml 的 rust-cache workdir 同款失效（ISS-212 review 顺带发现,2026-08-29）
 
