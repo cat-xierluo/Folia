@@ -34,12 +34,12 @@ describe('resolveLocalImages (ISS-206 data URL 通路)', () => {
 
   beforeEach(() => {
     invokedPaths.length = 0;
-    originalInternals = (window as Record<string, unknown>).__TAURI_INTERNALS__;
-    (window as Record<string, unknown>).__TAURI_INTERNALS__ = {};
+    originalInternals = (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
+    (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
   });
 
   afterEach(() => {
-    (window as Record<string, unknown>).__TAURI_INTERNALS__ = originalInternals;
+    (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = originalInternals;
     vi.restoreAllMocks();
   });
 

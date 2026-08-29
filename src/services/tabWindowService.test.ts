@@ -163,8 +163,8 @@ describe('tearOffTabToWindow', () => {
     expect(coreMock.invoke).toHaveBeenCalledWith('create_tab_window', expect.objectContaining({
       initialTabIds: ['tab-1'],
     }));
-    const label = (coreMock.invoke.mock.calls[0][1] as { label: string }).label;
-    expect(label).toMatch(/^tab-window-/);
+    const invokeArgs = coreMock.invoke.mock.calls[0] as unknown as [string, { label: string }];
+    expect(invokeArgs[1].label).toMatch(/^tab-window-/);
   });
 
   it('invoke 抛错时透传给调用方', async () => {
