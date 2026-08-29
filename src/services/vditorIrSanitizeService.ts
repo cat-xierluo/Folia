@@ -300,6 +300,59 @@ function containsDangerousSvgMarkup(svg: string): boolean {
   return /<script\b|<foreignObject\b|\son[a-z][\w:-]*\s*=|\s(?:href|xlink:href)\s*=\s*["']?\s*javascript:/i.test(svg);
 }
 
+/**
+ * ISS-205：文本级危险特征快检，决定 html-block marker 是否需要进入
+ * DOMPurify 结构级清洗。
+ *
+ * marker 是「原始 HTML 源码的转义文本」而非可独立成立的文档——孤立开标签、
+ * 孤立闭标签（跨空行包裹块的常态）经 DOMPurify 的树构建会被补全闭合 /
+ * 直接丢弃，marker 文本一旦被规范化，保存 round-trip 就把用户源码改写为
+ * 语义损坏的形式（div 提前闭合 + 闭标签丢失）。因此干净的 marker 必须逐字
+ * 保真直通；只有检出危险特征时才值得以「源码被重排」为代价换安全剥除——
+ * 与 containsDangerousSvgMarkup 同一取舍模式。主防线（preview 渲染层的
+ * 整体 DOMPurify sanitize + hasRemovedUnsafeContent 门控）不受影响。
+ */
+/**
+ * 文本级危险特征黑名单（fast-path 门）。已知取舍（ISS-205 review M1 /
+ * 静态审查 #1-#2，2026-08-27）：
+ * - 宽松匹配 `\son[a-z][\w:-]*\s*=` 会把极少数良性词形（如注释中的
+ *   `once =`）误判为危险 → 该 marker 走 DOMPurify 结构级清洗、源码被
+ *   树构建规范化——即本 PR 要消除的改写在罕见输入上仍会发生。收紧为
+ *   引号值则放行无引号 payload（onclick=alert(1) 直通保存）。两害相权
+ *   取「偏检测」：误判方向 = 维持 main 的既有行为；漏检方向 = 磁盘
+ *   留毒。与 containsDangerousSvgMarkup 同一取舍模式。
+ * - 黑名单必然补不全；磁盘文件本就含有其内容，Folia 不承诺洗稿。app
+ *   内展示面三道防线（preview transform DOMPurify / 整 IR DOM 清洗 /
+ *   导出 sanitizeHtmlExportArticleFragment）不受本门影响。
+ */
+const DANGEROUS_HTML_MARKER_RE = new RegExp(
+  [
+    '<(?:script|meta|base|link|iframe|object|embed|template)\\b',
+    '</?(?:html|head|body)\\b',
+    '\\son[a-z][\\w:-]*\\s*=',
+    '\\s(?:href|src|xlink:href|poster|srcset|formaction|action)\\s*=\\s*["\']?\\s*(?:javascript:|vbscript:|data:text/html)',
+  ].join('|'),
+  'i',
+);
+
+function containsDangerousHtmlMarker(marker: string): boolean {
+  // ISS-205 review M1：属性值内的实体编码（href="&#106;avascript:…"）会被
+  // HTML parser 解码执行，纯字面匹配漏检。以「实体解码探针」复测一遍——
+  // 数字 / 十六进制实体还原为对应字符（不能只删实体：&#106;avascript 删掉
+  // 实体即断成 avascript，反而放行）；只用于检测，不改写原文本。
+  const decodedProbe = marker
+    .replace(/&(?:#\d+|#x[0-9a-fA-F]+);/gi, (entity) => {
+      const hex = /#x/i.test(entity);
+      const digits = hex ? entity.slice(3, -1) : entity.slice(2, -1);
+      const code = parseInt(digits, hex ? 16 : 10);
+      return Number.isFinite(code) && code > 0 && code <= 0x10ffff
+        ? String.fromCodePoint(code)
+        : entity;
+    });
+  return DANGEROUS_HTML_MARKER_RE.test(marker)
+    || DANGEROUS_HTML_MARKER_RE.test(decodedProbe);
+}
+
 function extractSvgInnerHtml(svgHtml: string): string {
   const root = document.createElement('div');
   root.innerHTML = svgHtml;
@@ -360,7 +413,10 @@ function sanitizeHtmlBlockMarkers(root: HTMLElement): boolean {
     changed = true;
   }
 
-  getHtmlBlockNodes(root).forEach((node) => {
+  // ISS-205 review M1：marker 危险清洗覆盖 html-block 与 html-inline 两类——
+  // `<a href="&#106;avascript:…">` 这类行内标签在 Lute IR 中是 html-inline，
+  // 只扫 html-block 会整类漏过危险门。
+  getIrHtmlNodes(root).forEach((node) => {
     if (splitSvgNodes.has(node)) return;
 
     const marker = getIrHtmlMarker(node);
@@ -378,6 +434,11 @@ function sanitizeHtmlBlockMarkers(root: HTMLElement): boolean {
       }
       return;
     }
+
+    // ISS-205：不含危险特征的 marker 逐字保真（见 containsDangerousHtmlMarker
+    // 注释——DOMPurify 树构建会补全孤立开标签 / 丢弃孤立闭标签，静默损坏
+    // 用户源码）。危险特征命中时仍走结构级清洗，安全优先。
+    if (!containsDangerousHtmlMarker(original)) return;
 
     const sanitized = sanitizeForVditor(original);
     if (sanitized !== original) {
@@ -675,6 +736,171 @@ export function repairSvgIrPreviewsFromMarkdown(root: ParentNode, markdown: stri
       changed = true;
     }
   });
+
+  return changed;
+}
+
+/**
+ * ISS-205：修复被 Lute 按空行拆散的多行 HTML 包裹块（`<div align=…>`）。
+ *
+ * Lute IR 把「开标签 / （空行分隔的内容）/ 闭标签」拆成多个独立
+ * html-block 节点，产生两个问题：
+ *   1. 孤立的开/闭标签 preview 渲染为空，仍占 min-height:27px +
+ *      --surface 底色 → 用户看到的全宽浅色横条；
+ *   2. 中间段落升为编辑器顶层直接子元素，脱离任何 div 祖先链，
+ *      `align` 属性失效（落款不再右对齐）。
+ *
+ * 修复采用「视觉层重组」而非真实 DOM 嵌套：Vditor IR DOM 必须保持
+ * 线性结构（VditorIRDOM2Md 按序反序列化），嵌套重排会破坏 round-trip。
+ * 因此：
+ *   - 开/闭标签节点整体隐藏（新增 class，同 folia-ir-svg-fragment-hidden
+ *     先例，display:none 取消浅色横条）；marker 原样保留 → 源码不变；
+ *   - 从开标签 marker 解析 `align`，向中间块级元素注入对齐 class，
+ *     由 CSS 恢复 text-align。class 注入的 round-trip 安全性已由
+ *     folia-ir-svg-root 先例（DOMPurify 白名单含 class、Lute 忽略未知
+ *     class）证明，并有单测锁定。
+ *
+ * 已知边界：嵌套包裹组按线性兄弟配对处理（首个同名闭标签收口），不支持
+ * 跨组嵌套语义；SVG 组（folia-ir-svg-root/-fragment）不参与本修复。
+ */
+
+export const FOLIA_IR_HTML_WRAPPER_HIDDEN_CLASS = 'folia-ir-html-wrap-hidden';
+export const FOLIA_IR_HTML_ALIGN_RIGHT_CLASS = 'folia-html-align-right';
+export const FOLIA_IR_HTML_ALIGN_CENTER_CLASS = 'folia-html-align-center';
+export const FOLIA_IR_HTML_ALIGN_LEFT_CLASS = 'folia-html-align-left';
+
+const WRAPPER_TAG_RE = '(?:div|p|section|blockquote)';
+// 开标签两种形态：A. wasm 原生 `<div align="right">`；B. app 内序列化时
+// 被补全的自闭合空壳 `<div align="right"></div>`（实测两者都会出现）。
+const WRAPPER_OPEN_RE = new RegExp(`^<(${WRAPPER_TAG_RE})((?:\\s[^<>]*)?)>(?:</\\1>)?$`, 'i');
+const WRAPPER_CLOSE_RE = new RegExp(`^</(${WRAPPER_TAG_RE})>$`, 'i');
+const ALIGN_ATTR_RE = /\balign\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/i;
+// ISS-207：`style="text-align: right"` 与 `align` 属性是同一对齐意图的两种
+// 常见写法（GitHub / Typora 均支持），align 未命中时回退解析 style。
+// post-merge review M2：CSS 层叠语义是「后者胜」，多个 text-align 声明取
+// 最后一个（exec 首个会与浏览器实际渲染背离）。
+const STYLE_TEXT_ALIGN_RE = /text-align\s*:\s*([a-z]+)/gi;
+
+const ALIGN_CLASS_MAP: Record<string, string> = {
+  right: FOLIA_IR_HTML_ALIGN_RIGHT_CLASS,
+  center: FOLIA_IR_HTML_ALIGN_CENTER_CLASS,
+  left: FOLIA_IR_HTML_ALIGN_LEFT_CLASS,
+};
+
+type WrapperOpenInfo = { tag: string; alignClass: string | null };
+
+function parseWrapperOpenMarker(text: string | null): WrapperOpenInfo | null {
+  if (text === null) return null;
+  const match = WRAPPER_OPEN_RE.exec(text.trim());
+  if (!match) return null;
+  const attrs = match[2] ?? '';
+  const alignMatch = ALIGN_ATTR_RE.exec(attrs);
+  const rawAlign = (alignMatch?.[1] ?? alignMatch?.[2] ?? alignMatch?.[3] ?? '').toLowerCase();
+  const fromAttr = ALIGN_CLASS_MAP[rawAlign] ?? null;
+  if (fromAttr) return { tag: match[1].toLowerCase(), alignClass: fromAttr };
+  // style 回退：取 style 属性值内最后一个 text-align 声明（CSS 层叠
+  // 「后者胜」）。属性值可能含 `>`? 不——WRAPPER_OPEN_RE 的 attrs 段排除
+  // `<>`，与既有边界一致（含尖括号的属性值 give-up 保横条，安全失败方向）。
+  const styleMatch = /style\s*=\s*(?:"([^"]*)"|'([^']*)')/i.exec(attrs);
+  const styleValue = (styleMatch?.[1] ?? styleMatch?.[2] ?? '').toLowerCase();
+  // 取最后一个 text-align 声明（CSS 层叠「后者胜」）；g 标志正则需手动
+  // 重置 lastIndex，避免跨调用状态残留。
+  let styledAlign = '';
+  STYLE_TEXT_ALIGN_RE.lastIndex = 0;
+  for (const alignDecl of styleValue.matchAll(STYLE_TEXT_ALIGN_RE)) {
+    styledAlign = alignDecl[1]?.toLowerCase() ?? '';
+  }
+  return { tag: match[1].toLowerCase(), alignClass: ALIGN_CLASS_MAP[styledAlign] ?? null };
+}
+
+function isWrapperCloseMarker(text: string | null, tag: string): boolean {
+  // 形态 A：显式 `</div>`；形态 B：序列化后 marker 为空串。
+  if (text === null) return false;
+  const trimmed = text.trim();
+  if (trimmed === '') return true;
+  const match = WRAPPER_CLOSE_RE.exec(trimmed);
+  return match !== null && match[1].toLowerCase() === tag;
+}
+
+function clearWrapperRepairClasses(root: ParentNode): boolean {
+  let changed = false;
+  const selector = [
+    FOLIA_IR_HTML_WRAPPER_HIDDEN_CLASS,
+    FOLIA_IR_HTML_ALIGN_RIGHT_CLASS,
+    FOLIA_IR_HTML_ALIGN_CENTER_CLASS,
+    FOLIA_IR_HTML_ALIGN_LEFT_CLASS,
+  ].map((cls) => `.${cls}`).join(', ');
+  root.querySelectorAll<HTMLElement>(selector).forEach((element) => {
+    element.classList.remove(
+      FOLIA_IR_HTML_WRAPPER_HIDDEN_CLASS,
+      FOLIA_IR_HTML_ALIGN_RIGHT_CLASS,
+      FOLIA_IR_HTML_ALIGN_CENTER_CLASS,
+      FOLIA_IR_HTML_ALIGN_LEFT_CLASS,
+    );
+    changed = true;
+  });
+  return changed;
+}
+
+export function repairSplitWrapperHtmlIrPreviews(root: ParentNode): boolean {
+  let changed = clearWrapperRepairClasses(root);
+  const nodes = getHtmlBlockNodes(root);
+  const visited = new Set<HTMLElement>();
+
+  for (const openNode of nodes) {
+    if (visited.has(openNode)) continue;
+    const open = parseWrapperOpenMarker(getIrHtmlMarkerText(openNode));
+    if (!open) continue;
+
+    // 从开节点沿兄弟链向后收集中间内容，首个配对闭界收口；到文档尾仍未
+    // 命中即悬挂开标签（用户输入进行中的常态），give-up 保持原状。
+    const middles: Element[] = [];
+    // 闭界仅在 isHtmlBlock(isWrapperCloseMarker) 分支赋值，current 已被
+    // instanceof HTMLElement 判定（TS 无法跨循环窄化，赋值点显式断言）。
+    let closeNode: HTMLElement | null = null;
+    let current = openNode.nextElementSibling;
+    while (current) {
+      const isHtmlBlock = current.classList.contains('vditor-ir__node')
+        && current.getAttribute('data-type') === 'html-block'
+        && current instanceof HTMLElement;
+      const marker = isHtmlBlock ? getIrHtmlMarkerText(current as HTMLElement) : null;
+      if (isWrapperCloseMarker(marker, open.tag)) {
+        closeNode = current as HTMLElement;
+        break;
+      }
+      // 嵌套同名开标签不做递归配对，仅标记已消费防止后续轮次重复成组。
+      if (isHtmlBlock && parseWrapperOpenMarker(marker)) {
+        visited.add(current as HTMLElement);
+      }
+      middles.push(current);
+      current = current.nextElementSibling;
+    }
+    if (!closeNode) continue;
+
+    visited.add(openNode);
+    visited.add(closeNode);
+    openNode.classList.add(FOLIA_IR_HTML_WRAPPER_HIDDEN_CLASS);
+    closeNode.classList.add(FOLIA_IR_HTML_WRAPPER_HIDDEN_CLASS);
+    changed = true;
+
+    if (open.alignClass) {
+      for (const mid of middles) {
+        // 只向「内容性块级元素」（p / h1-h6 / table 系列等裸元素）注入对齐
+        // class。SVG 专用标记节点归 repairSplitSvgIrPreviews 管；其余带
+        // data-type 的特殊 IR 容器（code-block / math-block /
+        // yaml-front-matter 等）的字形与布局由 Vditor 自己的 CSS 控制，
+        // text-align 渗入会造成代码块观感偏移（ISS-205 review M4），
+        // html-block/html-inline 则按既有规则一律跳过。
+        if (!(mid instanceof HTMLElement)) continue;
+        if (mid.classList.contains(FOLIA_IR_SVG_ROOT_CLASS)
+          || mid.classList.contains(FOLIA_IR_SVG_FRAGMENT_CLASS)) continue;
+        if (mid.classList.contains('vditor-ir__node')
+          && mid.getAttribute('data-type')) continue;
+        mid.classList.add(open.alignClass);
+        changed = true;
+      }
+    }
+  }
 
   return changed;
 }

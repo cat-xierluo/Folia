@@ -12,14 +12,13 @@ import { describe, expect, it } from 'vitest';
 
 // 为 docx 解析链路提供最小 DOM。仅本文件作用域，不影响其他测试。
 const dom = new JSDOM('<!DOCTYPE html><html><body></body></html>');
-(globalThis as typeof globalThis & { document?: Document }).document = dom.window.document;
-(globalThis as typeof globalThis & { window?: typeof dom.window }).window = dom.window;
-(globalThis as typeof globalThis & { DOMParser?: typeof dom.window.DOMParser }).DOMParser =
-  dom.window.DOMParser;
+const globals = globalThis as unknown as Record<string, unknown>;
+globals.document = dom.window.document;
+globals.window = dom.window;
+globals.DOMParser = dom.window.DOMParser;
 // `Node.TEXT_NODE` 等常量在 htmlTableModel.ts 里被直接引用，node 环境没有这些 DOM 常量。
-(globalThis as typeof globalThis & { Node?: typeof dom.window.Node }).Node = dom.window.Node;
-(globalThis as typeof globalThis & { Element?: typeof dom.window.Element }).Element =
-  dom.window.Element;
+globals.Node = dom.window.Node;
+globals.Element = dom.window.Element;
 
 import { DEFAULT_PRESET_ID, getPreset } from './config';
 import { markdownToDocx } from './parser';

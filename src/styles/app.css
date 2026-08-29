@@ -1299,6 +1299,26 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   display: none !important;
 }
 
+/* ===== ISS-205 多行 HTML 包裹块（<div align>）视觉重组 =====
+   Lute IR 按空行把包裹块拆成孤立开/闭标签节点：隐藏两者取消空 preview 的
+   min-height 浅色横条；中间段落由 service 注入对齐 class，还原 align 语义
+   （IR DOM 保持线性结构不动 round-trip 安全，class 注入与 svg-root 同型）。 */
+.wysiwyg-editor-pane .folia-ir-html-wrap-hidden {
+  display: none !important;
+}
+
+.wysiwyg-editor-pane .folia-html-align-right {
+  text-align: right;
+}
+
+.wysiwyg-editor-pane .folia-html-align-center {
+  text-align: center;
+}
+
+.wysiwyg-editor-pane .folia-html-align-left {
+  text-align: left;
+}
+
 .wysiwyg-editor-pane .folia-ir-svg-root > .vditor-ir__preview {
   overflow-x: auto;
 }

@@ -12,7 +12,7 @@ import { useSettings } from '../hooks/useSettings';
 import { translate } from '../services/i18n';
 import { resolveLocalImages } from '../services/localImageResolver';
 import { openExternalUrl } from '../services/urlOpener';
-import { repairSvgIrPreviewsFromMarkdown, sanitizeVditorIrHtml } from '../services/vditorIrSanitizeService';
+import { repairSplitWrapperHtmlIrPreviews, repairSvgIrPreviewsFromMarkdown, sanitizeVditorIrHtml } from '../services/vditorIrSanitizeService';
 import { useImageAssetStore } from '../context/useImageAssetStore';
 import {
   pickImageFiles,
@@ -402,6 +402,10 @@ function sanitizeIrDom(editor: import('vditor').default | null, markdownSource: 
     restoreSelectionOffsets(ir, snap);
   }
   repairSvgIrPreviewsFromMarkdown(ir, markdownSource);
+  // ISS-205：多行 HTML 包裹块（<div align> 等）被 Lute 按空行拆散后的
+  // 视觉重组——隐藏孤立开/闭标签横条 + 中间段落注入对齐 class。与 SVG
+  // 修复同一挂接时机（sanitize 后、异步代码块重渲染前），round-trip 安全。
+  repairSplitWrapperHtmlIrPreviews(ir);
   // ISS-63 / DEC-118：sanitize 完成后重跑 Vditor 内部代码块渲染器，让
   // mermaid / echarts 等异步产物写入 sanitize 后的新 IR DOM 活节点（绕
   // 开 detached-node 竞争）。Try/catch 防 unhandled rejection + 卸载竞态
@@ -795,6 +799,12 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
 
     const aggregate: RenderDiagnostic[] = [];
     const seen = new Set<string>();
+    // ISS-208 真机复测修正:error 与 load 之间 img 的 src 会变(error 时是
+    // 原始路径,resolver 写回 data URL 后 load 携带 data: src),按 src 关联
+    // 必然 miss。元素级 WeakMap 为主查找(两事件之间元素身份稳定),src Map
+    // 仅作重建节点跨元素兜底。
+    const diagByElement = new WeakMap<HTMLImageElement, RenderDiagnostic>();
+    const diagBySrc = new Map<string, RenderDiagnostic>();
 
     const classifyError = (img: HTMLImageElement, error: boolean): RenderDiagnostic | null => {
       const src = img.currentSrc || img.src || '';
@@ -818,18 +828,58 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
       const target = event.target as Element | null;
       if (!(target instanceof HTMLImageElement)) return;
       const src = target.currentSrc || target.src || '';
-      if (!src || seen.has(src)) return;
-      seen.add(src);
+      if (!src) return;
+      // 同 src 重复 error 更新条目（不重复入列），保证 aggregate 单条且
+      // 后续 load 可按 src 移除（重建节点/重复失败均覆盖）。
       const diag = classifyError(target, true);
-      if (diag) {
-        aggregate.push(diag);
+      if (!diag) return;
+      if (seen.has(src)) {
+        // 重建节点/重复失败:不重复入列,但必须把「最新 diag 对象引用」
+        // 写回两条索引——否则后续 load 查不到关联,banner 残留(_review M2)。
+        const existing = diagBySrc.get(src);
+        if (existing) {
+          const at = aggregate.indexOf(existing);
+          if (at >= 0) aggregate[at] = diag;
+        }
+        diagByElement.set(target, diag);
+        diagBySrc.set(src, diag);
+        return;
+      }
+      seen.add(src);
+      aggregate.push(diag);
+      diagByElement.set(target, diag);
+      diagBySrc.set(src, diag);
+      setImageDiagnostics([...aggregate]);
+    };
+
+    // ISS-208：与 error 对称的 load 监听——同一 src 后来加载成功
+    // （data URL 写回 / 文件恢复 / 重试补载）时移除它的陈旧错误，
+    // banner 实时收敛；按 src 关联，不影响其他 img 的错误。
+    const handleImgLoad = (event: Event): void => {
+      const target = event.target as Element | null;
+      if (!(target instanceof HTMLImageElement)) return;
+      const src = target.currentSrc || target.src || '';
+      if (!src) return;
+      // 主查找:元素级(error 与 load 之间元素身份稳定,src 可能已从原始
+      // 路径变为 data URL);兜底:src 级(重建节点的 src 命中旧错误)。
+      const diag = diagByElement.get(target) ?? diagBySrc.get(src);
+      if (!diag) return;
+      diagByElement.delete(target);
+      diagBySrc.delete(src);
+      diagBySrc.delete(src);
+      const index = aggregate.indexOf(diag);
+      if (index >= 0) {
+        aggregate.splice(index, 1);
         setImageDiagnostics([...aggregate]);
       }
+      seen.delete(src);
     };
 
     host.addEventListener('error', handleImgError, true);
+    host.addEventListener('load', handleImgLoad, true);
     return () => {
       host.removeEventListener('error', handleImgError, true);
+      host.removeEventListener('load', handleImgLoad, true);
     };
   }, []);
 

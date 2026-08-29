@@ -654,7 +654,7 @@ describe('WysiwygEditorPane 内联 SVG 显示 + sanitize (ISS-168 编辑器部�
       vi.mocked(htmlTableBlockService.classifyHtmlTableBlocks).mockImplementation(
         () => ({
           complex: [
-            { index: 0, html: '<table rowspan="2" onclick="alert(1)"><tr><td>原始（含 onclick）</td></tr></table>' },
+            { index: 0, start: 0, end: 1, html: '<table rowspan="2" onclick="alert(1)"><tr><td>原始（含 onclick）</td></tr></table>' },
           ],
           simple: [],
         }),
@@ -1611,6 +1611,226 @@ describe('WysiwygEditorPane 代码块复制按钮 (ISS-190)', () => {
 
     // 编辑器实例不应被重建（旧实现此处为 2：destroy + new Vditor）
     expect(vditorCalls).toHaveLength(1);
+
+    await act(async () => {
+      root?.unmount();
+    });
+  });
+});
+
+describe('WysiwygEditorPane 图片诊断 banner (ISS-208 陈旧聚合)', () => {
+  let host: HTMLDivElement;
+
+  beforeEach(() => {
+    vditorCalls.length = 0;
+    setValueCalls.length = 0;
+    focusCalls.length = 0;
+    host = document.createElement('div');
+    document.body.append(host);
+  });
+
+  afterEach(() => {
+    host.remove();
+    vi.clearAllMocks();
+  });
+
+  it('resolver 写回 data URL 后 load 的 src 与 error 时不同,仍按元素清除错误(真机复测场景)', async () => {
+    let root: Root | null = null;
+
+    await act(async () => {
+      root = createRoot(host);
+      root.render(
+        renderWithProvider(
+          React.createElement(WysiwygEditorPane, {
+            source: '正文',
+            onChange: () => undefined,
+          }),
+        ),
+      );
+      await flushMicrotasks();
+    });
+
+    const irHost = host.querySelector<HTMLElement>('.vditor-ir');
+    expect(irHost).not.toBeNull();
+
+    // img 以原始路径加载失败 → banner 出现
+    const img = document.createElement('img');
+    img.src = '/tmp/broken.png';
+    irHost!.append(img);
+    await act(async () => {
+      img.dispatchEvent(new Event('error', { bubbles: false }));
+      await flushMicrotasks();
+    });
+    expect(host.textContent).toContain('找不到图片');
+
+    // resolver 修复:就地改写 src 为 data URL(元素身份不变),加载成功
+    await act(async () => {
+      img.src = 'data:image/png;base64,AAA=';
+      img.dispatchEvent(new Event('load', { bubbles: false }));
+      await flushMicrotasks();
+    });
+    // 关键断言:load 携带的 src(=data URL)与 error 时不同,但元素级关联
+    // 仍应找到 diag 并清除 banner(WeakMap 主查找;src Map miss 不影响)。
+    expect(host.textContent).not.toContain('找不到图片');
+
+    await act(async () => {
+      root?.unmount();
+    });
+  });
+
+  it('同一 src 先 error 后 load 成功时,陈旧错误从 banner 移除', async () => {
+    let root: Root | null = null;
+
+    await act(async () => {
+      root = createRoot(host);
+      root.render(
+        renderWithProvider(
+          React.createElement(WysiwygEditorPane, {
+            source: '正文',
+            onChange: () => undefined,
+          }),
+        ),
+      );
+      await flushMicrotasks();
+    });
+
+    const irHost = host.querySelector<HTMLElement>('.vditor-ir');
+    expect(irHost).not.toBeNull();
+
+    // 模拟一张 img 先加载失败(banner 出现「找不到图片」)
+    const img = document.createElement('img');
+    img.src = 'https://cdn.example.com/pic.png';
+    img.alt = '图';
+    irHost!.appendChild(img);
+
+    await act(async () => {
+      img.dispatchEvent(new Event('error', { bubbles: true }));
+      await flushMicrotasks();
+    });
+
+    expect(host.textContent).toContain('找不到图片');
+
+    // 资源恢复:同一 src 加载成功 → 陈旧错误应被移除(banner 收敛)
+    await act(async () => {
+      img.dispatchEvent(new Event('load', { bubbles: true }));
+      await flushMicrotasks();
+    });
+
+    expect(host.textContent).not.toContain('找不到图片');
+
+    await act(async () => {
+      root?.unmount();
+    });
+  });
+
+  it('load 事件不误清其他 src 的错误(仅移除自身)', async () => {
+    let root: Root | null = null;
+
+    await act(async () => {
+      root = createRoot(host);
+      root.render(
+        renderWithProvider(
+          React.createElement(WysiwygEditorPane, {
+            source: '正文',
+            onChange: () => undefined,
+          }),
+        ),
+      );
+      await flushMicrotasks();
+    });
+
+    const irHost = host.querySelector<HTMLElement>('.vditor-ir');
+    const imgA = document.createElement('img');
+    imgA.src = 'https://cdn.example.com/a.png';
+    const imgB = document.createElement('img');
+    imgB.src = 'https://cdn.example.com/b.png';
+    irHost!.append(imgA, imgB);
+
+    await act(async () => {
+      imgA.dispatchEvent(new Event('error', { bubbles: true }));
+      imgB.dispatchEvent(new Event('error', { bubbles: true }));
+      await flushMicrotasks();
+    });
+
+    expect(host.textContent).toContain('找不到图片');
+
+    // 只有 A 恢复:B 的错误必须保留
+    await act(async () => {
+      imgA.dispatchEvent(new Event('load', { bubbles: true }));
+      await flushMicrotasks();
+    });
+
+    expect(host.textContent).toContain('找不到图片');
+
+    await act(async () => {
+      root?.unmount();
+    });
+  });
+});
+
+describe('WysiwygEditorPane 图片诊断 banner (ISS-208 review M2: 重建+去重路径)', () => {
+  let host: HTMLDivElement;
+
+  beforeEach(() => {
+    vditorCalls.length = 0;
+    setValueCalls.length = 0;
+    focusCalls.length = 0;
+    host = document.createElement('div');
+    document.body.append(host);
+  });
+
+  afterEach(() => {
+    host.remove();
+    vi.clearAllMocks();
+  });
+
+  it('src 已入列后,重建节点同 src 失败被去重,但其 load 成功仍清除错误', async () => {
+    let root: Root | null = null;
+
+    await act(async () => {
+      root = createRoot(host);
+      root.render(
+        renderWithProvider(
+          React.createElement(WysiwygEditorPane, {
+            source: '正文',
+            onChange: () => undefined,
+          }),
+        ),
+      );
+      await flushMicrotasks();
+    });
+
+    const irHost = host.querySelector<HTMLElement>('.vditor-ir');
+    expect(irHost).not.toBeNull();
+
+    // 第一张 img:加载失败 → banner 出现
+    const imgA = document.createElement('img');
+    imgA.src = 'https://cdn.example.com/reused.png';
+    irHost!.append(imgA);
+    await act(async () => {
+      imgA.dispatchEvent(new Event('error', { bubbles: false }));
+      await flushMicrotasks();
+    });
+    expect(host.textContent).toContain('找不到图片');
+
+    // 模拟 Vditor 重建:移除旧节点,创建新 img 同 src,瞬时失败被 seen 去重跳过
+    imgA.remove();
+    const imgB = document.createElement('img');
+    imgB.src = 'https://cdn.example.com/reused.png';
+    irHost!.append(imgB);
+    await act(async () => {
+      imgB.dispatchEvent(new Event('error', { bubbles: false }));
+      await flushMicrotasks();
+    });
+    // 去重语义:banner 仍只有该 src 一条错误(不重复入列)
+    expect(host.textContent).toContain('找不到图片');
+
+    // 新节点恢复加载成功 → 按 src 关联应清除错误(review M2 收口点)
+    await act(async () => {
+      imgB.dispatchEvent(new Event('load', { bubbles: false }));
+      await flushMicrotasks();
+    });
+    expect(host.textContent).not.toContain('找不到图片');
 
     await act(async () => {
       root?.unmount();

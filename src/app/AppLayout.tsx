@@ -204,6 +204,11 @@ export function AppLayout() {
     [settings.locale],
   );
   const reopenAttempted = useRef(false);
+  // ISS-200:关窗确认流防重入标志。必须用 ref 而非 effect 局部 let——
+  // 守卫 effect 的 deps 含 tabs/handleSave,dirty 弹窗期间 autosave 改变
+  // tabs 会重绑 effect,局部变量随之重置,第二条关闭流可并发进入
+  // (孤儿 promise:旧弹窗的 resolve 再也等不到)。ref 跨重绑存活。
+  const closingRef = useRef(false);
   // ISS-72：用 state 而非 ref，让"关闭再打开自动检查"开关后能重触发检查。
   // ref 在 effect 依赖里不会触发重渲染，开关切回 on 时 useEffect 不会重跑。
   const [autoUpdateCheckStarted, setAutoUpdateCheckStarted] = useState(false);
@@ -486,15 +491,56 @@ export function AppLayout() {
     }
   }, [settings.defaultEncoding, cancelPendingTocRefresh, openInNewTab]);
 
+  // ISS-200:通用 IO 错误兜底——fileService 只对 oversized/denied-path 两类
+  // 弹原生提示,其余(文件被移走/编码异常/磁盘满)此前全部 unhandled rejection、
+  // 用户零反馈。这里统一弹原生 message(与 fileService 既有惯例同用
+  // plugin-dialog + i18n),文案含动作名与错误摘要,不再静默。
+  const notifyIoError = useCallback(async (action: 'open' | 'save', error: unknown) => {
+    // ISS-200 review MAJOR-1:fileService 对 oversized / denied-path 已弹原生
+    // 提示后才 throw,这里跳过,避免同一错误连弹两个对话框。
+    const { isAlreadyNotifiedFileError } = await import('../services/fileService');
+    if (isAlreadyNotifiedFileError(error)) return;
+    if (!isTauriRuntime) {
+      console.error(`[ISS-200] ${action} failed:`, error);
+      return;
+    }
+    try {
+      const [{ message }, { getSettings }, { translate }] = await Promise.all([
+        import('@tauri-apps/plugin-dialog'),
+        import('../services/settingsService'),
+        import('../services/i18n'),
+      ]);
+      const locale = getSettings().locale;
+      const detail = error instanceof Error ? error.message : String(error);
+      await message(translate(locale, action === 'open' ? 'ioErrorOpenPrefix' : 'ioErrorSavePrefix') + detail, {
+        title: translate(locale, 'ioErrorTitle'),
+        kind: 'error',
+      });
+    } catch (notifyError) {
+      // 提示本身失败(极端:dialog 插件不可用)只留日志,不再抛。
+      console.error(`[ISS-200] ${action} failed and notify failed:`, error, notifyError);
+    }
+  }, [isTauriRuntime]);
+
   const handleOpenPath = useCallback(async (path: string) => {
-    const { openPath } = await import('../services/fileService');
-    const opened = await openPath(path, settings.defaultEncoding);
+    let opened;
+    try {
+      // ISS-200 review NIT-4:try 只包 IO 调用——后续 setState / TOC 提取等
+      // 纯前端逻辑的异常不属于「打开文件失败」,不应弹 IO 提示。
+      const { openPath } = await import('../services/fileService');
+      opened = await openPath(path, settings.defaultEncoding);
+    } catch (error) {
+      // ISS-200:fileService 只弹 oversized/denied-path 两类,其余(文件被移走/
+      // 编码异常/磁盘满)在此兜底,不再 unhandled rejection。
+      await notifyIoError('open', error);
+      return;
+    }
     openInNewTab(opened);
     cancelPendingTocRefresh();
     setToc(opened.fileType === 'docx' ? [] : extractMarkdownToc(opened.content));
     setLastOpenedPath(path);
     setHtmlPresentationVisible(false);
-  }, [settings.defaultEncoding, cancelPendingTocRefresh, openInNewTab]);
+  }, [settings.defaultEncoding, cancelPendingTocRefresh, openInNewTab, notifyIoError]);
 
   const handleSave = useCallback(async () => {
     if (file.fileType === 'docx') return;
@@ -515,17 +561,23 @@ export function AppLayout() {
         fileToSave = { ...file, content: nextContent };
       }
     }
-    const updated = await saveFile(fileToSave);
-    updateActiveFile(() => updated);
-    if (updated.path) setLastOpenedPath(updated.path);
-  }, [file, updateActiveFile, imageAssetStore]);
+    try {
+      const updated = await saveFile(fileToSave);
+      updateActiveFile(() => updated);
+      if (updated.path) setLastOpenedPath(updated.path);
+    } catch (error) {
+      // ISS-200:保存失败(磁盘满/权限/文件被移走)兜底提示,不再静默。
+      await notifyIoError('save', error);
+    }
+  }, [file, updateActiveFile, imageAssetStore, notifyIoError]);
 
   const handleSaveAs = useCallback(async () => {
     if (file.fileType === 'docx') return;
-    const { saveFileAs } = await import('../services/fileService');
-    const updated = await saveFileAs(file);
-    updateActiveFile(() => updated);
-    if (updated.path) setLastOpenedPath(updated.path);
+    try {
+      const { saveFileAs } = await import('../services/fileService');
+      const updated = await saveFileAs(file);
+      updateActiveFile(() => updated);
+      if (updated.path) setLastOpenedPath(updated.path);
     // DEC-119 决策 7：另存为到新路径后，把 pending 图片落盘到新路径的
     // <doc>.assets/ 并更新 content。saveFileAs 已写入旧 content，这里
     // 落盘后再写一次（含相对路径的 content）。
@@ -542,7 +594,12 @@ export function AppLayout() {
         updateActiveFile(() => rewritten);
       }
     }
-  }, [file, updateActiveFile, imageAssetStore]);
+    } catch (error) {
+      // ISS-200 review MINOR-3:另存为失败(路径不可写/磁盘满)兜底提示,
+      // 与 handleSave 同语义,不再 unhandled rejection。
+      await notifyIoError('save', error);
+    }
+  }, [file, updateActiveFile, imageAssetStore, notifyIoError]);
 
   // Issue #68：按 tabId 落盘指定标签（退出 / 关闭确认循环里用于保存非 active 标签）。
   // 复用 saveFile 底层写盘 + 图片落盘逻辑，但不依赖 active 状态——直接从 session.tabs
@@ -869,7 +926,7 @@ export function AppLayout() {
     if (!isTauriRuntime) return;
     let cancelled = false;
     let unlisten: (() => void) | undefined;
-    let closing = false; // 防重入：用户连点红绿灯时只处理一次。
+    // ISS-200:防重入标志提升为 closingRef(跨 effect 重绑存活),见上方声明。
 
     void Promise.all([
       import('@tauri-apps/api/core'),
@@ -878,14 +935,14 @@ export function AppLayout() {
       const listener = await listen<{ label: string }>('request:confirm-close', async (event) => {
         // 只处理本窗口的关闭请求（多窗口场景下事件会广播，各窗口各管各的）。
         if (event.payload.label !== windowLabel) return;
-        if (closing) return;
-        closing = true;
+        if (closingRef.current) return;
+        closingRef.current = true;
         try {
           const dirtyTabs = tabs.filter((t) => t.file.dirty);
           for (const tab of dirtyTabs) {
             const result = await confirmCloseDirty(tab.file.name);
             if (result === 'cancel') {
-              closing = false;
+              closingRef.current = false;
               return; // 用户取消，保持窗口打开。
             }
             if (result === 'save') {
@@ -897,7 +954,7 @@ export function AppLayout() {
           await invoke('confirm_close');
         } catch (error) {
           console.warn('confirm-close flow failed:', error);
-          closing = false;
+          closingRef.current = false;
         }
       });
 
@@ -958,17 +1015,6 @@ export function AppLayout() {
       onUpdateAvailable: (result) => startBackgroundUpdateDownload('auto', result),
     });
   }, [isTauriRuntime, settings.autoUpdateCheck, autoUpdateCheckStarted, startBackgroundUpdateDownload]);
-
-  useEffect(() => {
-    if (!settings.autoSave || !file.path || !file.dirty || file.fileType === 'docx') return;
-    const timeout = window.setTimeout(() => {
-      void import('../services/fileService')
-        .then(({ saveFile }) => saveFile(file))
-        .then((updated) => updateActiveFile(() => updated))
-        .catch((e) => console.error('Auto-save failed:', e));
-    }, 800);
-    return () => window.clearTimeout(timeout);
-  }, [file, settings.autoSave, updateActiveFile]);
 
   // ISS-188：监听文件外部修改 → 自动 reload / 提示手动 reload。
   //
@@ -1125,12 +1171,13 @@ export function AppLayout() {
 
   // 大文件降级 tab（draftPersisted=false 且 content 被清空）：激活时从磁盘重读内容，
   // 修复降级重启后空白编辑器。失败（文件被删/移）标记 pathInvalid 并提示另存为（ISS-42）。
+  // docx 降级 tab（ISS-198：docxHtml 不再持久化）走同一路径重转 docx→HTML。
   // reloading 由 activeTab 派生（draftPersisted=false + content 空 = 重读中），避免 effect 内 set state。
   const { markPathInvalid } = session;
   useEffect(() => {
     if (!activeTab || activeTab.draftPersisted) return;
     if (!activeTab.file.path || activeTab.file.content) return;
-    if (activeTab.file.fileType === 'docx') return;
+    if (activeTab.file.fileType === 'docx' && activeTab.file.docxHtml) return;
     let cancelled = false;
     void import('../services/fileService')
       .then(({ openPath }) => openPath(activeTab.file.path, settings.defaultEncoding))
@@ -1143,7 +1190,23 @@ export function AppLayout() {
     && !activeTab.draftPersisted
     && !!activeTab.file.path
     && !activeTab.file.content
-    && activeTab.file.fileType !== 'docx';
+    && !(activeTab.file.fileType === 'docx' && activeTab.file.docxHtml);
+
+  // ISS-209 / Issue #149:重读窗口(reloading)内禁止 autosave——降级恢复 tab
+  // 持久化时带 dirty=true 且 content='',若 800ms tick 在磁盘内容回填前触发,
+  // saveFile(file) 会以空 content 覆盖磁盘文件。reloading 由 activeTab 派生,
+  // 重读完成自然解除。本 effect 须位于 reloading 定义之后(const 无前向引用)。
+  useEffect(() => {
+    if (reloading) return;
+    if (!settings.autoSave || !file.path || !file.dirty || file.fileType === 'docx') return;
+    const timeout = window.setTimeout(() => {
+      void import('../services/fileService')
+        .then(({ saveFile }) => saveFile(file))
+        .then((updated) => updateActiveFile(() => updated))
+        .catch((e) => console.error('Auto-save failed:', e));
+    }, 800);
+    return () => window.clearTimeout(timeout);
+  }, [file, settings.autoSave, updateActiveFile, reloading]);
 
   useEffect(() => {
     if (!isTauriRuntime) return;
@@ -1463,6 +1526,7 @@ export function AppLayout() {
         dirty={file.dirty}
         draftPersisted={session.activeTab?.draftPersisted}
         pathInvalid={session.activeTab?.pathInvalid}
+        sessionPersistFailedAt={session.persistFailedAt}
         reloading={reloading}
         externalChangeBlocked={externalChangeBlocked}
         onExternalChangeReload={handleExternalChangeReload}

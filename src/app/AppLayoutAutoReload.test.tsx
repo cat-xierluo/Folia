@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import React, { act } from 'react';
+import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppLayout } from './AppLayout';
@@ -570,5 +570,72 @@ describe('AppLayout ISS-189 dirty 抑制窗口集成', () => {
     // tab-1 也未被写入（reload 被丢弃，不会写回 tab-1）
     const tab1 = sessionState.tabs.find((t) => t.id === 'tab-1');
     expect(tab1?.file.content).toBe('tab-1 初始');
+  });
+});
+// ISS-209 / Issue #149:降级恢复 tab(draftPersisted=false + content='' + dirty=true)
+// 的重读窗口内,autosave 800ms tick 不得触发 saveFile——否则以空 content 覆盖
+// 磁盘文件(数据丢失)。修法:autosave 守卫加 reloading 条件。
+describe('AppLayout ISS-209 降级恢复 autosave 竞态', () => {
+  let host: HTMLDivElement;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    // review MINOR-1 变异验证:settingsService 默认 autoSave:false,不开启则
+    // autosave effect 无条件早退、守卫删掉测试也 PASS(空转覆盖)。必须显式
+    // 开启 autosave 才能让本用例真正锁死「重读窗口内 tick 不触发 saveFile」。
+    localStorage.setItem('folia-settings', JSON.stringify({ autoSave: true }));
+    host = document.createElement('div');
+    document.body.append(host);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.clearAllMocks();
+    localStorage.removeItem('folia-settings');
+    host.remove();
+  });
+
+  function activateDegradedTab(path: string): void {
+    sessionState.tabs = [{
+      id: 'tab-1',
+      editorMode: 'wysiwyg',
+      rightPanelMode: 'none',
+      draftPersisted: false,
+      isPlaceholder: false,
+      file: {
+        path,
+        name: path.split('/').pop() ?? 'degraded.md',
+        content: '',
+        dirty: true,
+        lastSavedContent: '',
+        fileType: 'markdown',
+      },
+    }];
+    sessionState.activeTabId = 'tab-1';
+    sessionState.updateCount = 0;
+  }
+
+  it('重读窗口内 autosave tick 不触发 saveFile(防空 content 覆盖磁盘)', async () => {
+    activateDegradedTab('/Users/demo/degraded.md');
+    fileServiceMock.saveFile.mockClear();
+    let root: Root | null = null;
+
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AppLayout />);
+      await flushPromises();
+    });
+
+    // autosave 800ms tick 落在重读窗口内(不推进 openPath 的 resolve)
+    await act(async () => {
+      vi.advanceTimersByTime(900);
+      await flushPromises();
+    });
+
+    // 修复前:dirty=true → saveFile(file) 以 content='' 落盘 → 清空磁盘
+    expect(fileServiceMock.saveFile).not.toHaveBeenCalled();
+
+    await act(async () => {
+      root?.unmount();
+    });
   });
 });

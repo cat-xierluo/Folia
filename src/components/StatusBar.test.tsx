@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import React, { act } from 'react';
+import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { StatusBar } from './StatusBar';
@@ -45,7 +45,7 @@ describe('StatusBar', () => {
     vi.clearAllTimers();
   });
 
-  function render(props: { filePath: string; dirty?: boolean; draftPersisted?: boolean; pathInvalid?: boolean; reloading?: boolean; onSaveAs?: () => void }) {
+  function render(props: { filePath: string; dirty?: boolean; draftPersisted?: boolean; pathInvalid?: boolean; sessionPersistFailedAt?: number | null; reloading?: boolean; onSaveAs?: () => void }) {
     act(() => {
       root.render(
         <StatusBar
@@ -53,6 +53,7 @@ describe('StatusBar', () => {
           dirty={props.dirty ?? false}
           draftPersisted={props.draftPersisted}
           pathInvalid={props.pathInvalid}
+          sessionPersistFailedAt={props.sessionPersistFailedAt}
           reloading={props.reloading}
           onSaveAs={props.onSaveAs}
         />,
@@ -209,6 +210,18 @@ describe('StatusBar', () => {
   it('draftPersisted=true 正常状态不显示 notice', () => {
     render({ filePath: '/tmp/a.md', draftPersisted: true });
     expect(host.querySelector('.status-notice')).toBeNull();
+  });
+
+  it('ISS-198：sessionPersistFailedAt 非 null 时显示「会话未能持久化」警告，优先级高于草稿过大', () => {
+    render({ filePath: '/tmp/a.md', sessionPersistFailedAt: Date.now(), draftPersisted: false });
+    const notice = host.querySelector('.status-notice');
+    expect(notice?.textContent).toContain('会话未能持久化');
+    expect(notice?.getAttribute('data-notice')).toBe('warn');
+  });
+
+  it('ISS-198：sessionPersistFailedAt 为 null 时不显示该提示（回落草稿过大）', () => {
+    render({ filePath: '/tmp/a.md', sessionPersistFailedAt: null, draftPersisted: false });
+    expect(host.querySelector('.status-notice')?.textContent).toContain('草稿过大');
   });
 
   // ===== ISS-90：长路径中段折叠显示 =====
