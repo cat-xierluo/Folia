@@ -37,7 +37,7 @@
 #### ✅ ISS-197 fs 插件 deny-only scope + write_managed_asset 强制约束（已 PR #135，2026-08-29 squash merge 5c97cd1；对抗式 review 设计确认正确、0 阻塞；LOW 加固项并入 ISS-201、deny 大小写真机验证移交 NOT_VERIFIED）
 
 - **发现:** Tauri v2 ACL「allow 列表为空 = 放行一切」,capabilities 4 条 fs:allow-* 无 scope 约束,lib.rs 自定义命令的白名单/黑名单可被 `invoke('plugin:fs|read_file',…)` 直接绕过。
-- **修复:** deny-only fs:scope（/etc /private/etc /dev /private/dev \$HOME/{.ssh,.aws,.gnupg,.kube} 含 /** 变体）+ write_managed_asset 五层校验（绝对路径/denied-root/20MB 上限/rel 恰两段/图片扩展名白名单 + canonicalize 防 .. 逃逸）+ read_opened_document 绝对路径强制；Rust/前端 derive_doc_base_name parity 专项测试；54 Rust 测试全过。
+- **修复:** deny-only fs:scope（/etc /private/etc /dev /private/dev $HOME/{.ssh,.aws,.gnupg,.kube} 含 /** 变体）+ write_managed_asset 五层校验（绝对路径/denied-root/20MB 上限/rel 恰两段/图片扩展名白名单 + canonicalize 防 .. 逃逸）+ read_opened_document 绝对路径强制；Rust/前端 derive_doc_base_name parity 专项测试；54 Rust 测试全过。
 - **review 跟进:** LOW——write_managed_asset canonicalize(parent) 的末段 symlink 窗口（并入 ISS-201 评估）；deny 规则大小写/真实挂载点的 WKWebView 真机验证（NOT_VERIFIED 移交用户）；`cargo test` 纳入 CI 建议另立跟进。
 
 #### ✅ ISS-196 图片资产按当前文档内容锚定落盘——跨 tab 污染数据丢失（已 PR #133，2026-08-29 squash merge 8a1d0e0；对抗式 review APPROVE 0 MAJOR；MINOR-1 文本写盘失败后 blob 引用无自愈登记为已知跟进、MINOR-2/3 存量问题另立 ISS-210/211）
