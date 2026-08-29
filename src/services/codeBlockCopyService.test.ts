@@ -200,7 +200,7 @@ describe('codeBlockCopyService · attachCodeBlockCopy', () => {
 
     const button = overlay.querySelector<HTMLButtonElement>(`.${CODE_COPY_TRIGGER_CLASS}`);
     expect(button).not.toBeNull();
-    expect(button.classList.contains(CODE_COPY_TRIGGER_VISIBLE_CLASS)).toBe(false);
+    expect(button!.classList.contains(CODE_COPY_TRIGGER_VISIBLE_CLASS)).toBe(false);
   });
 
   it('鼠标移出代码块 → 按钮隐藏（失去 is-visible）', () => {

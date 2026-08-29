@@ -4,7 +4,13 @@ All notable changes of this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **TypeScript 全量开启 `strict`（ISS-203）**：`tsconfig.app.json` / `tsconfig.node.json` 开启 `strict: true`；**测试文件从此纳入 typecheck**——此前 `tsconfig.app.json` 把 `*.test.ts(x)` 整体 `exclude`，测试代码从未被 `npm run typecheck` 编译过（盲区）。实测生产代码 96 文件 full strict 零错误，49 条 strict 错误全部落在测试文件：24 个测试文件逐条修类型（未使用 `React` 默认导入 12 处〔jsx: react-jsx 下本就不需要〕、updater/downloadAppUpdate 与 classifyHtmlTableBlocks 等 mock 泛型签名落后于现行 API、docx `rootKey` protected 字段经 unknown 通道断言、TS 控制流对闭包赋值的 never 收窄等），语义零改动、测试意图不变。新增 `config/tsconfig.test.json`（strict + vite/client + node types）接入 `tsc -b` project references，`npm run typecheck` 现覆盖生产 + 测试 + 构建脚本三类代码。验证：781/781 单测、lint/typecheck/build 全绿。附带产出：`npm audit` 恢复可运行（根因为 hermes npm 自带 arborist 8.0.5 的 `edgesOut` 缺陷，改用 homebrew npm 规避，见 TASKS ISS-204 备注）。
+
 ### Fixed
+
+- **升级 dompurify 3.4.3 → 3.4.14（1 moderate 安全公告）**：`npm audit` 恢复后报告双公告（IN_PLACE 模式经 realm-bound `instanceof` 检查遗留可执行标记 + clobbered root 属性保留，可致 XSS）。Folia 的 sanitize 为主防线（DOMPurify 白名单 + Vditor Lute XSS 过滤），及时跟进。升级后 `npm audit` 0 vulnerabilities；sanitize/导出相关单测全量回归通过（781/781）。
 
 - **ISS-200 review 跟进修复：双重弹窗（MAJOR-1）+ 假测试证据撤回（MAJOR-2）+ handleSaveAs 漏网（MINOR-3）**：独立 review（PR #152 合并后送达）发现三处问题并全部修复。(1) **双重弹窗**：fileService 对 oversized / denied-path 错误已弹原生提示后才 throw，而 #152 的 `notifyIoError` 兜底未排除这两类 → 用户对同一错误连看两个对话框。修：fileService 导出 `isAlreadyNotifiedFileError`（pattern 单一事实源），兜底通知前跳过已提示错误。(2) **假测试撤回**：#152 新增的「契约测试」经 review 变异验证为假绿（唯一触发路径 reopen 调用点本就有 catch，不存在 unhandled rejection；删掉修复代码测试照样通过）且被误写入 CHANGELOG 当验收证据——已删除该测试并如实修正 CHANGELOG；另补 `isAlreadyNotifiedFileError` 2 项真实单测（oversized/denied 命中、普通 IO 错误不误判）锁定 MAJOR-1 行为。(3) **handleSaveAs 包 catch**：另存为失败（路径不可写/磁盘满）此前仍 unhandled rejection，与 handleSave 同语义兜底。(4) NIT：handleOpenPath 的 try 收窄到只包 openPath IO 调用（setState/TOC 提取等前端逻辑异常不再误弹「打开文件失败」）。流程教训已沉淀：review 报告未到期间按「diff 复核 + CI」合并的决策路径，在 #152 上被证明不充分——复核聚焦了迁移等价性而漏掉了跨文件交互（fileService 弹提示语义），此后此类双文件交互改动一律等 review。测试：fileService 10/10（+2）；全量见 CI。
 - **修复跨窗口事件监听随每次按键重绑、tear-off 场景偶发丢回收事件的问题（ISS-199）**：`useSession` 的跨窗口事件订阅 effect 以 `[state.tabs]` 为依赖——打字每键都触发 cleanup/unlisten + 动态 import + 重新 listen，重绑的异步窗口期可能错过 `window:closed` / `tab:merge-back`（独立窗口关闭后 tab 未被主窗口收回）。修复：tab 快照（`tabsById` / 去重判断 / 移空关窗判断）全部改为 handler 内经 `stateRef` 现算，effect 依赖收敛为 `[]`，一次注册全程存活。**范围取舍**：TASKS 同时提到的 AppLayout 快捷键 effect 同模式重绑经评估**不在本次范围**——其重绑为同步 remove/add（无动态 import、无监听空窗，事件不丢）且 handler 依赖最新闭包是正确语义，ref 化反而破坏 12 个 handler 的依赖追踪。测试：新增 `useSession.rebind.test.tsx`（3 轮 openInNewTab 后四个监听各只注册 1 次；修前实测 4 次）；780/780 全量、typecheck/lint 0 error。

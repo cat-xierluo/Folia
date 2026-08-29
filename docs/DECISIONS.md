@@ -61,6 +61,23 @@
 
 **验证**:ISS-205/206/207/208 累计单测 756→771,真机(tauri dev WKWebView)逐议题判定(落款右对齐/横条消失/三路径大图渲染/banner 全链路收敛),CI 双绿。已知残留:ISS-209(降级恢复与 autosave 竞态,Issue #149)。
 
+### [DEC-141] - 2026-08-29 - TypeScript 全量 strict + 测试文件纳入 typecheck（ISS-203）
+
+**背景**：ISS-203 登记时（代码审计）发现 `tsconfig.app.json` / `tsconfig.node.json` 均未开 `strict`（`noImplicitAny` / `strictNullChecks` 缺省关闭），建议分两步迁移。动手前实测改变结论：**生产代码 96 文件在 full strict 下零错误**——卡片「先 strictNullChecks 再其余开关」的两步走不需要，一步到位。
+
+**根因性发现（本次最有价值产出）**：49 条 strict 错误全部落在测试文件。不是测试写得烂,而是**测试文件被 `tsconfig.app.json` 的 `exclude` 完全排除在 typecheck 之外**——`npm run typecheck` 从未编译过任何 `*.test.ts(x)`。CI 的 typecheck 门槛对约半数代码文件（167 中 71 个测试文件）是空转,与 ISS-200「假测试」教训同构：工具链覆盖面缺口比单点缺陷更危险。
+
+**决策**：
+
+1. **一步到位 full strict**：两个 tsconfig 直接 `strict: true`（不额外开 `noUncheckedIndexedAccess`,数组索引访问面大、收益/噪音比不划算,后续可单独评估）。
+2. **测试纳入 typecheck**：新增 `config/tsconfig.test.json`（strict + `types: ["vite/client", "node"]` + DOM.Iterable）,接入 `tsc -b` project references。测试文件从 app config 的 exclude 移到独立 project,`npm run typecheck` 现覆盖生产 + 测试 + 构建脚本三类。
+3. **修测试类型语义零改动**：24 文件 49 条逐条修——未使用 `React` 默认导入 12 处（`jsx: react-jsx` 本就不需要）;mock 泛型签名落后于现行 API（`downloadAppUpdate` 零参泛型 → 真实 `(update, onProgress?)` 签名）;props 漂移（`PreviewPane` 补必填 `tocIds`、`classifyHtmlTableBlocks` mock 补 `start/end`、`CustomThemePreset` 导入源改 `themePresets`、preset 字面量 `satisfies HtmlExportPreset`）;docx `rootKey` 为库 protected 字段,经 `as unknown as { rootKey: string }` 通道断言（与 formatter.test 既有 helper 同思路）;TS 控制流不追踪闭包赋值导致的 never 收窄,读取处显式 cast。**不改任何测试断言与意图**。
+4. **顺带产出**：`npm audit` 恢复可运行——根因为 hermes npm 自带 arborist 8.0.5 的 `edgesOut` 缺陷（`rm -rf node_modules && npm ci` 不能解,换 homebrew npm 规避,已记 ISS-204 备注）;audit 报 dompurify ≤3.4.12 双 XSS 公告,升级 3.4.3→3.4.14（sanitize 主防线依赖,全量回归）。
+
+**影响**：此后新增测试代码受 strict 约束;typecheck 时间增加一个 project（增量编译,可接受）;`as unknown` 双跳断言在测试内出现但均有注释说明通道原因。lint（`@typescript-eslint/no-unused-vars` 不豁免下划线前缀）与 strict 联动约束新增代码风格。
+
+**验证**：strict 全量编译 167 文件 0 error;`npm test` 781/781;lint 0 error;`npm run build` 通过;`npm audit` 0 vulnerabilities。
+
 ### [DEC-140] - 2026-08-16 - 转录工具生成的「目标含空格」图片不渲染：读盘装载层空格归一化（ISS-194）
 
 **背景**：用户打开听悟转录的课程文档（94 张 PPT 截图，路径形如 `![PPT 幻灯片 1](./260815 Agent + Skill：法律工作的AI变革-杨卫薪律师_slides/slide_001.webp)`，目录名含空格 / `+` / 全角冒号），图片全部不渲染、按原始语法文本显示。#128（DEC-138）已支持绝对路径图片，相对路径 + `convertFileSrc` + asset 协议链路均有单测，初步怀疑路径解析；实测排除——问题在 Markdown 解析层。

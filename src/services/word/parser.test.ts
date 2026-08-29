@@ -31,7 +31,7 @@ describe('parseLines', () => {
       getPreset(DEFAULT_PRESET_ID),
     );
 
-    expect(children.map((child) => child.rootKey)).toEqual(['w:tbl', 'w:p']);
+    expect(children.map((child) => (child as unknown as { rootKey: string }).rootKey)).toEqual(['w:tbl', 'w:p']);
   });
 
   it('keeps multiple compact HTML tables as separate document children', async () => {
@@ -45,7 +45,7 @@ describe('parseLines', () => {
       getPreset(DEFAULT_PRESET_ID),
     );
 
-    expect(children.map((child) => child.rootKey)).toEqual(['w:tbl', 'w:p', 'w:tbl', 'w:p']);
+    expect(children.map((child) => (child as unknown as { rootKey: string }).rootKey)).toEqual(['w:tbl', 'w:p', 'w:tbl', 'w:p']);
   });
 
   it('converts paragraph first-line indent from character units to twips', async () => {
@@ -73,7 +73,7 @@ describe('parseLines', () => {
       getPreset(DEFAULT_PRESET_ID),
     );
 
-    expect(children.map((child) => child.rootKey)).toEqual(['w:tbl']);
+    expect(children.map((child) => (child as unknown as { rootKey: string }).rootKey)).toEqual(['w:tbl']);
   });
 
   it('converts user example 4-column markdown table to a single Word table', async () => {
@@ -86,7 +86,7 @@ describe('parseLines', () => {
       getPreset(DEFAULT_PRESET_ID),
     );
 
-    expect(children.map((child) => child.rootKey)).toEqual(['w:tbl']);
+    expect(children.map((child) => (child as unknown as { rootKey: string }).rootKey)).toEqual(['w:tbl']);
   });
 
   it('preserves markdown table surrounded by paragraphs', async () => {
@@ -105,6 +105,6 @@ describe('parseLines', () => {
       getPreset(DEFAULT_PRESET_ID),
     );
 
-    expect(children.map((child) => child.rootKey)).toEqual(['w:p', 'w:p', 'w:tbl', 'w:p']);
+    expect(children.map((child) => (child as unknown as { rootKey: string }).rootKey)).toEqual(['w:p', 'w:p', 'w:tbl', 'w:p']);
   });
 });

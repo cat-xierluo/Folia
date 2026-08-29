@@ -56,7 +56,7 @@ describe('createFormattedRuns', () => {
       getPreset('legal'),
     );
 
-    const hyperlink = runs.find((run) => run.rootKey === 'w:externalHyperlink') as
+    const hyperlink = runs.find((run) => (run as unknown as { rootKey: string }).rootKey === 'w:externalHyperlink') as
       | { options?: { link?: string; children?: unknown[] } }
       | undefined;
 

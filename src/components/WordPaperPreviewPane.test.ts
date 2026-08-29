@@ -3,6 +3,7 @@ import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getPreset } from '../services/word/config';
+import type { PresetConfig } from '../services/word/types';
 import { createWordPreviewArtifact } from '../services/wordPreviewArtifactService';
 import { applyWordPreviewPresetPostprocess, formatPageNumberText, paginateRenderedContent, WordPaperPreviewPane } from './WordPaperPreviewPane';
 
@@ -63,7 +64,7 @@ function pageContents(container: HTMLDivElement): HTMLDivElement[] {
 
 describe('paginateRenderedContent', () => {
   beforeEach(() => {
-    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function getScrollHeight() {
+    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function getScrollHeight(this: HTMLElement) {
       return measuredHeight(this);
     });
   });
@@ -217,7 +218,7 @@ describe('applyWordPreviewPresetPostprocess', () => {
         show_caption: true,
       },
       styles: {
-        mappedHeading: { font: '微软雅黑', ascii: 'Arial', size: 18, color: '445566', align: 'right' },
+        mappedHeading: { font: '微软雅黑', ascii: 'Arial', size: 18, color: '445566', align: 'right' as const },
         mappedParagraph: { font: '楷体', ascii: 'Georgia', size: 13, color: '112233', line_spacing: 1.8 },
         evidenceTable: {
           table: {
@@ -230,7 +231,7 @@ describe('applyWordPreviewPresetPostprocess', () => {
         },
         mappedCaption: { font: '黑体', ascii: 'Arial', size: 9, color: '777777' },
         mappedList: { font: '宋体', ascii: 'Arial', size: 10, color: '336699', left_indent: 30 },
-        mappedRule: { font: 'Arial', ascii: 'Arial', size: 8, color: '222222', align: 'center' },
+        mappedRule: { font: 'Arial', ascii: 'Arial', size: 8, color: '222222', align: 'center' as const },
       },
       markdown_mapping: {
         heading1: 'mappedHeading',
@@ -242,7 +243,7 @@ describe('applyWordPreviewPresetPostprocess', () => {
       html_mapping: {
         selectors: { 'table.evidence-table': 'evidenceTable' },
       },
-    };
+    } satisfies PresetConfig;
     const content = createMeasureContent(`
       <h1>映射标题</h1>
       <p>映射正文</p>
@@ -355,7 +356,7 @@ describe('ISS-182 formatPageNumberText', () => {
 
 describe('ISS-182 paginateRenderedContent 页码渲染', () => {
   beforeEach(() => {
-    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function getScrollHeight() {
+    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function getScrollHeight(this: HTMLElement) {
       return measuredHeight(this);
     });
   });

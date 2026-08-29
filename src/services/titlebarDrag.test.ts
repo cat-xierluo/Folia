@@ -15,7 +15,7 @@ function eventFor(target: Element, detail = 1, buttons = 1): MouseEvent {
     detail,
     target,
     preventDefault: vi.fn(),
-  } as MouseEvent;
+  } as unknown as MouseEvent;
 }
 
 describe('handleTitlebarMouseDown', () => {

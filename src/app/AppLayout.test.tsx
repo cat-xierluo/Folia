@@ -1,15 +1,16 @@
 // @vitest-environment jsdom
-import React, { act } from 'react';
+import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppLayout } from './AppLayout';
+import type { Update } from '@tauri-apps/plugin-updater';
 import type { UpdateCheckResult, UpdateProgress } from '../services/updateService';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const updateServiceMock = vi.hoisted(() => ({
   checkForAppUpdate: vi.fn<() => Promise<UpdateCheckResult>>(),
-  downloadAppUpdate: vi.fn<() => Promise<void>>(),
+  downloadAppUpdate: vi.fn<(update: Update, onProgress?: (progress: UpdateProgress) => void) => Promise<void>>(),
   installDownloadedAppUpdate: vi.fn<() => Promise<void>>(),
 }));
 

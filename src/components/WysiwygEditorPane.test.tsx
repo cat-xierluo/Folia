@@ -654,7 +654,7 @@ describe('WysiwygEditorPane 内联 SVG 显示 + sanitize (ISS-168 编辑器部�
       vi.mocked(htmlTableBlockService.classifyHtmlTableBlocks).mockImplementation(
         () => ({
           complex: [
-            { index: 0, html: '<table rowspan="2" onclick="alert(1)"><tr><td>原始（含 onclick）</td></tr></table>' },
+            { index: 0, start: 0, end: 1, html: '<table rowspan="2" onclick="alert(1)"><tr><td>原始（含 onclick）</td></tr></table>' },
           ],
           simple: [],
         }),

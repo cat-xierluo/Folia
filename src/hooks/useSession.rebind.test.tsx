@@ -2,7 +2,7 @@
 // ISS-199:useSession 跨窗口事件监听 effect 原以 [state.tabs] 为依赖——打字
 // 每键都触发 unlisten + 动态 import + 重新 listen,监听空窗期可能丢
 // window:closed / tab:merge-back 事件。修复后依赖收敛,重渲染不重绑。
-import React, { act, useEffect } from 'react';
+import { act, useEffect } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useSession } from './useSession';
