@@ -30,11 +30,22 @@ export interface ImageAsset {
   fileName: string;
   /** Pending = exists only in memory (object URL); persisted = on disk. */
   state: 'pending' | 'persisted';
-  /** In-memory object URL — valid until revoked. Empty for persisted assets. */
+  /**
+   * In-memory object URL..persisted 后**保留不清空、不 revoke**（ISS-196）：
+   * 同一内容 hash 去重后可能被多个未保存文档同时引用（同一窗口多 tab），
+   * 其余文档的编辑器渲染和后续保存替换都以该 URL 为锚点；bytes 本就全程
+   * 驻留内存，提前 revoke 只会打断其它 tab 的显示并制造保存竞态。
+   */
   objectUrl: string;
   /** Bytes; for pending assets we still hold them to flush later. */
   bytes: Uint8Array;
   mime: string;
+  /**
+   * 字节已落盘的文档绝对路径列表（ISS-196）。共享 hash 的资产写入 A 文档的
+   * `<A>.assets/` 后，B 文档首次保存仍需写自己的 `<B>.assets/`；
+   * 以此列表判断「对当前文档是否已写盘」，避免重复写也不漏写。
+   */
+  persistedInto?: string[];
 }
 
 export interface AssetInsertResult {
@@ -155,24 +166,22 @@ export class ImageAssetStore {
   }
 
   /**
-   * Mark an asset as persisted (e.g. after Tauri fs wrote it). Future
-   * calls to insertForMarkdown will produce a relative path instead of
-   * the temporary object URL. Revokes the in-memory object URL.
+   * Mark an asset as written to disk for `documentPath`（ISS-196）。
+   *
+   * Future calls to insertForMarkdown will produce a relative path instead of
+   * the temporary object URL. objectUrl 保留（见 ImageAsset.objectUrl 注释）：
+   * 其它文档可能仍以该 blob: 为引用锚点，其保存流程需要完成自己的落盘与替换。
    */
-  markPersisted(hash: string): void {
+  markPersisted(hash: string, documentPath?: string): void {
     const asset = this.assets.get(hash);
     if (!asset) return;
-    if (asset.objectUrl) {
-      try {
-        URL.revokeObjectURL(asset.objectUrl);
-      } catch {
-        // ignore
-      }
-    }
+    const persistedInto = documentPath
+      ? Array.from(new Set([...(asset.persistedInto ?? []), documentPath]))
+      : asset.persistedInto;
     this.assets.set(hash, {
       ...asset,
       state: 'persisted',
-      objectUrl: '',
+      persistedInto,
     });
   }
 

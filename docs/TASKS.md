@@ -30,9 +30,14 @@
 
 ## 待处理
 
-> **2026-08-27 代码审计新增**：全仓排查（Rust 命令 / capabilities / CSP / 服务层 / React hooks / 构建配置 / 依赖版本）产出以下条目。两个高危缺陷已直接 PR 修复：ISS-196（#133，图片资产跨 tab 数据丢失）、ISS-197（#135，fs 插件 ACL 补位 + write_managed_asset 强制约束）。
+> **2026-08-27 代码审计新增**：全仓排查（Rust 命令 / capabilities / CSP / 服务层 / React hooks / 构建配置 / 依赖版本）产出以下条目。两个高危缺陷的修复 PR（ISS-196 #133、ISS-197 #135）曾悬置两日未合并（TASKS 此前「已直接 PR 修复」表述误导，2026-08-29 已补流程：分支追平 main + 对抗式 review 后合并）。
 
 ### 缺陷类
+
+#### ✅ ISS-196 图片资产按当前文档内容锚定落盘——跨 tab 污染数据丢失（已 PR #133，2026-08-29 squash merge 8a1d0e0；对抗式 review APPROVE 0 MAJOR；MINOR-1 文本写盘失败后 blob 引用无自愈登记为已知跟进、MINOR-2/3 存量问题另立 ISS-210/211）
+
+- **发现:** persistPendingImageAssets 落盘时不区分资产属于哪个文档,共享 hash 的图片资产会把 A tab 的 pending 图片写进 B 文档的 `<doc>.assets/`,且 markPersisted 全局清 objectUrl 致其它 tab 引用死链。
+- **修复:** 按当前文档 content 过滤(objectUrl 唯一锚点)+ persistedInto 记录按文档判定,三分支保存入口各传对应 content。
 
 #### ✅ ISS-199 useSession 跨窗口事件监听按每键重绑（已 PR #153，2026-08-28 squash merge 325594c；stateRef 现算 + deps 收敛 []；AppLayout 快捷键同模式评估为低风险不修〔同步重绑无空窗〕；review 迟到超时，以 diff 复核〔6 处引用全迁 stateRef、零闭包残留〕+ CI 双绿 + TDD 断言决策合并）
 
@@ -73,6 +78,16 @@
 - **清单:** vite 8.1→8.2、vitest 4.1.6→4.1.11、@playwright/test & playwright 1.60→1.62、typescript-eslint 8.65→8.68、globals/eslint minor、@tauri-apps/api 2.11.0→2.11.1、vditor 3.11.2→3.11.3、~~dompurify 3.4.3→3.4.14~~（✅ 已于 2026-08-29 随 ISS-203 分支提前完成：audit 报 1 moderate〔IN_PLACE 跨 realm XSS 双公告〕，升级后 `npm audit` 0 vulnerabilities；全量单测回归通过）、docx 9.6.1→9.7.1、mammoth 1.12.1、vitejs/plugin-react 6.1.0。
 - **推进（2026-08-29,分支 chore/iss204-deps-upgrade）:** 升级 playwright 1.62.1、tauri api/cli、vitest 4.1.11、docx 9.7.1、mammoth 1.12.2、codemirror 系 4 项、lucide-react 1.35.0（15 个在用图标逐一验证存在）、jsdom 30.0.1（vitest peer `jsdom:*` 兼容,781 回归过）。**vditor 3.11.3 实测 breaking 回退保持 3.11.2**:Lute 多行 SVG 拆块算法变更（8 html-block → 4 html-block + 2 `<p>`）打破 `repairSplitSvgIrPreviews` 相邻兄弟前提,单测红——探针实证后回退,「3.11.3 迁移 + vendored(public/) 资源同步」单列评估。typescript 6→7 跨主版本仍单列;@types/node 26 与本地 node 22 不匹配不动。lockfile 与 package.json 同一提交（吸取 #155 review MAJOR 教训）;lockfile 包级 diff:2 删 3 增 + 46 项版本变更,全部归因 jsdom 29→30 依赖域放宽(undici 7→8 跨 major、@asamakjp/css-color 5→6 等)与 vitest 的 tinyrainbow,无未归因夹带（review MINOR-1 修正:此前表述「仅 jsdom 传递重排」低估变更面）。计数口径:13 处直接依赖变更含 playwright/test+cli 2 项截断在 diff 末尾,标题「11 项」为 vitest+playwright 合并工具链计数（review MINOR-2）。独立 review 复现全部关键声明（vditor 3.11.3 断链点定位到 vditorIrSanitizeService.ts:119 getNextAdjacentIrHtmlNode 的 nextElementSibling 相邻前提）,0 MAJOR 可合。验证:781/781、typecheck/lint/build、audit 0、npm ci dry-run EXIT=0、CI 双绿。
 - **备注（2026-08-29 更新）:** ~~`npm audit` 当前无法运行~~已恢复可运行。根因查明：全局 npm 位于 `~/.hermes/node`（npm 10.9.8 自带 @npmcli/arborist 8.0.5），其 `#loadPeerSet` 存在 `Cannot read properties of null (reading 'edgesOut')` 缺陷，`rm -rf node_modules && npm ci` 无法绕过；改用 `/opt/homebrew/bin/npm`（或 nvm node）一切正常。后续 npm install/audit 一律用 homebrew npm。
+
+#### ⬜ ISS-210 autosave 不落盘 pending 图片——blob: 引用以死链写盘（main 存量,ISS-196 review MINOR-2 发现,2026-08-29）
+
+- **发现:** autosave effect 直接 `saveFile(file)`,未调用 persistPendingImageAssets。开启 autosave 时含 blob: 引用的脏文档以死链 content 写盘,直到手动保存才修复。
+- **建议:** autosave 路径接入与 handleSave 相同的 persistPendingImageAssets 流程(注意与 ISS-209 reloading 守卫的交互)。
+
+#### ⬜ ISS-211 persisted 资产被重新插入其它文档时写出错误相对路径（main 存量,ISS-196 review MINOR-3 发现,2026-08-29）
+
+- **发现:** registerPending 按 hash 去重返回已有资产(state 可能为 persisted);insertForMarkdown 无条件写出 `./.assets/name.png`,registerImageAsset 的 docBaseName='' 无调用方填充（mediaInsertionService.ts:54）。
+- **建议:** 跨文档插入时按新文档重算相对路径或强制走重新落盘。
 
 ### 已接受的风险（不追踪）
 
