@@ -60,6 +60,14 @@ const MAX_OPENED_DOCUMENT_BYTES: u64 = 10 * 1024 * 1024;
 /// 异常构造的 IPC 请求把数 GB JSON 数字数组灌进内存，不是常规业务约束。
 const MAX_MANAGED_ASSET_BYTES: usize = 20 * 1024 * 1024;
 
+/// 二进制导出（write_binary_export）允许的最大字节数（ISS-201 review MAJOR-3）。
+///
+/// 与 MAX_MANAGED_ASSET_BYTES 分离：导出的 docx 是应用自身产物而非外部 IPC
+/// 输入，图文混排法律文档可轻松超过 20MB——main 上 fs writeFile 无上限，
+/// 硬套资产上限会让「曾经成功的导出」升级后静默失败（回归）。200MB 只拦
+/// 伪造 IPC 大包（威胁模型），远超真实文档量级。
+const MAX_EXPORT_BYTES: usize = 200 * 1024 * 1024;
+
 /// 受管图片资产允许的扩展名白名单（小写）。与前端媒体插入层接受的
 /// `image/*` mime 对齐取超集；超出列表的请求一律拒绝——防止伪造 IPC
 /// 把任意脚本 / 可执行内容写进 `<doc>.assets/`。
@@ -226,7 +234,7 @@ fn validate_writable_document(path: &Path) -> Result<(), String> {
 /// 共享 denied-root 黑名单，但扩展名白名单独立——.docx 不属于可打开
 /// 文档类型，不能让导出通道反过来放宽文档白名单。
 ///
-/// 字节上限复用 MAX_MANAGED_ASSET_BYTES 量级守卫，防伪造 IPC 大包。
+/// 字节上限用独立的 MAX_EXPORT_BYTES(与资产上限分离,理由见其注释)。
 #[tauri::command]
 fn write_binary_export(path: String, bytes: Vec<u8>) -> Result<(), String> {
   let path = PathBuf::from(&path);
@@ -247,11 +255,11 @@ fn write_binary_export(path: String, bytes: Vec<u8>) -> Result<(), String> {
       path.display()
     ));
   }
-  if bytes.len() > MAX_MANAGED_ASSET_BYTES {
+  if bytes.len() > MAX_EXPORT_BYTES {
     return Err(format!(
       "export payload too large: {} bytes exceeds the {} byte limit",
       bytes.len(),
-      MAX_MANAGED_ASSET_BYTES
+      MAX_EXPORT_BYTES
     ));
   }
 
@@ -1850,6 +1858,51 @@ mod tests {
   }
 
   /// macOS /private/etc 真实挂载点补黑名单（ISS-197）。
+  // ──────── ISS-201 write_binary_export ────────
+
+  #[test]
+  fn write_binary_export_accepts_docx_and_rejects_other_extensions() {
+    let dir = std::env::temp_dir().join(format!("iss201-export-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("case.docx");
+
+    write_binary_export(path.to_string_lossy().to_string(), vec![0x50, 0x4b]).unwrap();
+    assert_eq!(std::fs::read(&path).unwrap(), vec![0x50, 0x4b]);
+
+    // 非 .docx:保存对话框手键 .doc/.txt 时 Rust 直接拒绝,前端提示后不落盘
+    let doc = dir.join("case.doc");
+    let err = write_binary_export(doc.to_string_lossy().to_string(), vec![1]).unwrap_err();
+    assert!(err.contains("unsupported export extension"), "{err}");
+    assert!(!doc.exists(), "rejected export must not write the file");
+
+    let _ = std::fs::remove_dir_all(&dir);
+  }
+
+  #[test]
+  fn write_binary_export_rejects_relative_path_and_denied_root() {
+    let err = write_binary_export("relative/case.docx".into(), vec![1]).unwrap_err();
+    assert!(err.contains("absolute"), "{err}");
+
+    let err = write_binary_export("/etc/passwd.docx".into(), vec![1]).unwrap_err();
+    assert!(err.contains("denied roots list"), "{err}");
+  }
+
+  #[test]
+  fn write_binary_export_enforces_max_export_bytes() {
+    let dir = std::env::temp_dir().join(format!("iss201-export-max-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("huge.docx");
+
+    let oversized = vec![0u8; MAX_EXPORT_BYTES + 1];
+    let err = write_binary_export(path.to_string_lossy().to_string(), oversized).unwrap_err();
+    assert!(err.contains("export payload too large"), "{err}");
+    assert!(!path.exists());
+
+    let _ = std::fs::remove_dir_all(&dir);
+  }
+
   #[test]
   fn deny_prefixes_cover_private_etc_and_private_dev() {
     assert!(is_denied_root(Path::new("/private/etc/passwd.md")));

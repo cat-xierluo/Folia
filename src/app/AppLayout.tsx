@@ -495,7 +495,7 @@ export function AppLayout() {
   // 弹原生提示,其余(文件被移走/编码异常/磁盘满)此前全部 unhandled rejection、
   // 用户零反馈。这里统一弹原生 message(与 fileService 既有惯例同用
   // plugin-dialog + i18n),文案含动作名与错误摘要,不再静默。
-  const notifyIoError = useCallback(async (action: 'open' | 'save', error: unknown) => {
+  const notifyIoError = useCallback(async (action: 'open' | 'save' | 'export', error: unknown) => {
     // ISS-200 review MAJOR-1:fileService 对 oversized / denied-path 已弹原生
     // 提示后才 throw,这里跳过,避免同一错误连弹两个对话框。
     const { isAlreadyNotifiedFileError } = await import('../services/fileService');
@@ -512,7 +512,8 @@ export function AppLayout() {
       ]);
       const locale = getSettings().locale;
       const detail = error instanceof Error ? error.message : String(error);
-      await message(translate(locale, action === 'open' ? 'ioErrorOpenPrefix' : 'ioErrorSavePrefix') + detail, {
+      const prefix = action === 'open' ? 'ioErrorOpenPrefix' : action === 'export' ? 'ioErrorExportPrefix' : 'ioErrorSavePrefix';
+      await message(translate(locale, prefix) + detail, {
         title: translate(locale, 'ioErrorTitle'),
         kind: 'error',
       });
@@ -640,9 +641,12 @@ export function AppLayout() {
       const { exportToWord } = await import('../services/wordExportService');
       await exportToWord(file.content, file.name, getExportPresetConfig(), file.path);
     } catch (e) {
+      // ISS-201 review MAJOR-3:导出失败(非 .docx 扩展名/磁盘满/权限)不再
+      // 静默吞掉,与保存链同语义弹原生提示。
       console.error('Export failed:', e);
+      await notifyIoError('export', e);
     }
-  }, [file]);
+  }, [file, notifyIoError]);
 
   const handleContentChange = useCallback((value: string) => {
     // ISS-189：抑制窗口期内的 onChange（程序性 setValue 后的 input/markdownUpdated
