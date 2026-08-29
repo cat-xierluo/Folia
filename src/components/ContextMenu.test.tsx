@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import React, { createElement, act } from 'react';
+import { createElement, act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { ContextMenu, type ContextMenuProps } from './ContextMenu';
 import { computeMenuPosition } from './contextMenuPosition';

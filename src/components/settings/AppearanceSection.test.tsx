@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import React, { act } from 'react';
+import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import {
   afterEach,
@@ -17,8 +17,8 @@ import {
 import {
   getSettings,
   updateSettings,
-  type CustomThemePreset,
 } from '../../services/settingsService';
+import type { CustomThemePreset } from '../../services/themePresets';
 
 // 锁定 settingsService 中与导入/槽位相关的副作用入口；其它读写维持真实链路，
 // 让单测覆盖「契约层 ↔ UI 真实集成」。

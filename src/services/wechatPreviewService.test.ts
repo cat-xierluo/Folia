@@ -21,7 +21,7 @@ import {
   importHtmlExportPresetFromJson,
   wrapWechatArticleHtml,
 } from './wechatPreviewService';
-import { BUILT_IN_HTML_EXPORT_PRESETS } from './htmlExportPresets';
+import { BUILT_IN_HTML_EXPORT_PRESETS, type HtmlExportPreset } from './htmlExportPresets';
 
 const tauriDialogMock = vi.hoisted(() => ({
   save: vi.fn(),
@@ -263,7 +263,7 @@ describe('wechatPreviewService', () => {
       source: 'user',
       kind: 'custom' as const,
       base: 'html-wechat-style' as const,
-    };
+    } satisfies HtmlExportPreset;
 
     const result = createHtmlExportResult('', '<h1>标题</h1><p>正文</p>', { preset: customPreset });
     const paragraph = queryRequired<HTMLElement>(getDocumentBody(result.clipboardHtml), 'p');
@@ -297,7 +297,7 @@ describe('wechatPreviewService', () => {
       source: 'test',
       kind: 'custom' as const,
       base: 'html-wechat-style' as const,
-    };
+    } satisfies HtmlExportPreset;
     const inlineHtml = createHtmlExportInlineArticleHtml(`
       <section id="app-root" class="note-to-mp settings-overlay" onclick="alert(1)" style="color: rgb(1, 2, 3); position: fixed; z-index: 9999; background-image: url('https://example.com/a.png');">
         <h1 id="title" class="toolbar-title" style="margin: 0; pointer-events: auto;">标题</h1>
@@ -828,8 +828,8 @@ describe('wechatPreviewService', () => {
     await expect(exportWechatHtmlDocument('<!doctype html><p>正文</p>', '案件.md')).resolves.toBe('downloaded');
 
     expect(createObjectURL).toHaveBeenCalledWith(expect.any(Blob));
-    expect(appendedAnchor?.download).toBe('案件-wechat.html');
-    expect(appendedAnchor?.href).toBe('blob:wechat-html');
+    expect((appendedAnchor as HTMLAnchorElement | null)?.download).toBe('案件-wechat.html');
+    expect((appendedAnchor as HTMLAnchorElement | null)?.href).toBe('blob:wechat-html');
     expect(click).toHaveBeenCalled();
   });
 
@@ -853,8 +853,8 @@ describe('wechatPreviewService', () => {
     await expect(exportHtmlDocument('<!doctype html><p>正文</p>', '案件.md')).resolves.toBe('downloaded');
 
     expect(createObjectURL).toHaveBeenCalledWith(expect.any(Blob));
-    expect(appendedAnchor?.download).toBe('案件-html-export.html');
-    expect(appendedAnchor?.href).toBe('blob:html-export');
+    expect((appendedAnchor as HTMLAnchorElement | null)?.download).toBe('案件-html-export.html');
+    expect((appendedAnchor as HTMLAnchorElement | null)?.href).toBe('blob:html-export');
     expect(click).toHaveBeenCalled();
   });
 

@@ -67,7 +67,8 @@ describe('clipboardService', () => {
   it('propagates errors from navigator.clipboard.writeText', async () => {
     const failure = new Error('permission denied');
     const writer = setClipboardApi(true);
-    writer.mockImplementation(async () => {
+    expect(writer).not.toBeNull();
+    writer!.mockImplementation(async () => {
       throw failure;
     });
     await expect(writeText('/tmp/blocked.md')).rejects.toBe(failure);

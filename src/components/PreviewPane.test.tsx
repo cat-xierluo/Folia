@@ -59,7 +59,7 @@ describe('PreviewPane sanitize 加固 (ISS-169)', () => {
 
   it('把 sanitize 注册到 Vditor.preview 的 transform 钩子里（ISS-169）', async () => {
     await act(async () => {
-      root.render(<PreviewPane source="# 标题" />);
+      root.render(<PreviewPane source="# 标题" tocIds={[]} />);
       await flushPromises();
     });
 
@@ -71,7 +71,7 @@ describe('PreviewPane sanitize 加固 (ISS-169)', () => {
 
   it('transform 钩子用 DOMPurify 剥离 <script> / onerror，保留 svg (ISS-169)', async () => {
     await act(async () => {
-      root.render(<PreviewPane source="# 标题" />);
+      root.render(<PreviewPane source="# 标题" tocIds={[]} />);
       await flushPromises();
     });
 
@@ -102,7 +102,7 @@ describe('PreviewPane sanitize 加固 (ISS-169)', () => {
 
   it('transform 与 sanitizeForVditor 行为等价（ISS-169 单一来源）', async () => {
     await act(async () => {
-      root.render(<PreviewPane source="# 标题" />);
+      root.render(<PreviewPane source="# 标题" tocIds={[]} />);
       await flushPromises();
     });
 

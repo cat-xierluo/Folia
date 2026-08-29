@@ -276,6 +276,132 @@ fn write_managed_asset(
     .map_err(|error| format!("failed to write asset: {error}"))
 }
 
+/// 媒体文件大小上限：base64 膨胀 4/3（20MB 源 → ~27MB 字符串），WebView
+/// 同屏多图时内存可控；超限 Err → 前端保留原 src 走占位显示。
+const MAX_MEDIA_BYTES: u64 = 20 * 1024 * 1024;
+
+/// ISS-206 post-merge review：媒体命令专用黑名单，与前端
+/// `htmlPresentationService::SENSITIVE_PATH_PREFIXES` / `SENSITIVE_PATH_SEGMENTS`
+/// 完整对齐（共享的 DENY_PATH_PREFIXES 是 read/write/watch 的文档目录级
+/// 黑名单，语义不同且更窄——例如没有 /private/etc 变体；直接写
+/// `/private/etc/...` 形态可穿过共享列表，故媒体命令独立对齐）。
+const MEDIA_DENY_PATH_PREFIXES: &[&str] = &[
+  // Unix system directories（与前端 SENSITIVE_PATH_PREFIXES 一致）
+  "/etc",
+  "/private/etc",
+  "/system",
+  "/system/volumes",
+  "/usr",
+  "/bin",
+  "/sbin",
+  "/var",
+  "/private/var",
+  "/dev",
+  "/proc",
+  "/sys",
+  "/root",
+  "/library/keychains",
+  "/private/var/keychain",
+  // Windows system directories (forward-slash form)
+  "c:/windows",
+  "c:/$recycle.bin",
+  "c:/program files",
+  "c:/program files (x86)",
+  "c:/programdata",
+];
+
+/// 段级黑名单：路径任意一段命中即拒（凭证目录）。
+const MEDIA_DENY_PATH_SEGMENTS: &[&str] = &[".ssh", ".gnupg", ".aws"];
+
+fn is_media_denied_path(path: &Path) -> bool {
+  let normalized = path.to_string_lossy().replace('\\', "/").to_ascii_lowercase();
+  if normalized.is_empty() {
+    return true;
+  }
+  for prefix in MEDIA_DENY_PATH_PREFIXES {
+    if normalized == *prefix || normalized.starts_with(&format!("{prefix}/")) {
+      return true;
+    }
+  }
+  if normalized.split('/').any(|segment| MEDIA_DENY_PATH_SEGMENTS.contains(&segment)) {
+    return true;
+  }
+  false
+}
+
+/// 扩展名 → MIME 白名单。仅图片位图/矢量（`<img>` 中的 SVG 由浏览器禁用
+/// 脚本，安全）；音视频如有需要另行评估（播放器内存模型不同）。
+fn media_mime_type(path: &Path) -> Option<&'static str> {
+  let ext = path.extension()?.to_string_lossy().to_ascii_lowercase();
+  Some(match ext.as_str() {
+    "png" => "image/png",
+    "jpg" | "jpeg" => "image/jpeg",
+    "gif" => "image/gif",
+    "webp" => "image/webp",
+    "bmp" => "image/bmp",
+    "ico" => "image/x-icon",
+    "svg" => "image/svg+xml",
+    "avif" => "image/avif",
+    _ => return None,
+  })
+}
+
+/// ISS-206 / Issue #138：读本地媒体文件字节并编码为 data URL。
+///
+/// 背景：asset 协议 scope 仅 `$HOME/**`（tauri.conf.json assetProtocol），
+/// `$HOME` 之外的图片（/tmp、外置卷）一律 `asset protocol not configured
+/// to allow the path` → 编辑器显示「图片数据损坏」占位。改由受控命令读
+/// 字节转 data URI，天然不受 asset scope 限制，且与 ISS-201「持久 IO 收敛
+/// 到自定义命令」同向。
+///
+/// 安全约束（多层，与 write_managed_asset 同风格）：
+/// 1. 绝对路径；命中媒体专用黑名单 is_media_denied_path 拒绝
+///    （表层 + canonicalize 后各查一次）；
+/// 2. 扩展名白名单（media_mime_type），任意二进制不可读出；
+/// 3. canonicalize 后二次黑名单校验（防符号链接把表层合法路径指进受限目录）；
+/// 4. 大小上限 MAX_MEDIA_BYTES，超限拒绝。
+#[tauri::command]
+fn read_media_as_data_url(path: String) -> Result<String, String> {
+  let media_path = PathBuf::from(&path);
+  if !is_absolute_path(&media_path) {
+    return Err(format!("media path must be absolute: {path}"));
+  }
+  if is_media_denied_path(&media_path) {
+    return Err(format!(
+      "media path is on the denied roots list: {path}"
+    ));
+  }
+
+  let mime = media_mime_type(&media_path)
+    .ok_or_else(|| format!("unsupported media extension: {path}"))?;
+
+  let canonical = std::fs::canonicalize(&media_path)
+    .map_err(|error| format!("failed to resolve media path: {error}"))?;
+  if is_media_denied_path(&canonical) {
+    return Err(format!(
+      "canonical media path is on the denied roots list: {}",
+      canonical.display()
+    ));
+  }
+
+  let size = std::fs::metadata(&canonical)
+    .map_err(|error| format!("failed to stat media file: {error}"))?
+    .len();
+  if size > MAX_MEDIA_BYTES {
+    return Err(format!(
+      "media file exceeds the {MAX_MEDIA_BYTES}-byte limit: {size} bytes ({path})"
+    ));
+  }
+
+  let bytes = std::fs::read(&canonical)
+    .map_err(|error| format!("failed to read media file: {error}"))?;
+  use base64::Engine as _;
+  Ok(format!(
+    "data:{mime};base64,{}",
+    base64::engine::general_purpose::STANDARD.encode(bytes)
+  ))
+}
+
 /// 监听系统根或敏感目录黑名单前缀（ISS-162，借鉴 horseMD chokidar 防御）。
 ///
 /// 大小写不敏感比较：macOS HFS+/APFS 默认大小写不敏感（区分大小写是可选），Windows NTFS
@@ -775,6 +901,7 @@ pub fn run() {
       read_opened_document,
       write_opened_document,
       write_managed_asset,
+      read_media_as_data_url,
       watch_path,
       unwatch_path,
       create_tab_window,
@@ -1588,6 +1715,148 @@ mod tests {
     assert!(is_denied_root(Path::new("/PRIVATE/ETC/passwd.md")));
     assert!(is_denied_root(Path::new("/private/dev/null.md")));
     assert!(!is_denied_root(Path::new("/private/workspace/notes.md")));
+  }
+
+  // ──────── ISS-206 媒体 data URL 读取 ────────
+
+  /// 媒体测试专用临时目录：固定 /tmp 直写。不能用 temp_path()——
+  /// std::env::temp_dir() 在 macOS 是 /var/folders/...，会命中
+  /// is_media_denied_path 的 /private/var 前缀（与前端 isSensitivePath
+  /// 行为一致）；真实用户媒体也不会放在系统临时区。
+  fn media_test_dir(name: &str) -> PathBuf {
+    let dir = PathBuf::from(format!("/tmp/folia-media-test-{}-{}", std::process::id(), name));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+  }
+
+  /// 正常 png：返回 data:image/png;base64, 前缀，base64 解码后逐字节还原。
+  #[test]
+  fn read_media_as_data_url_encodes_png_bytes() {
+    use base64::Engine as _;
+    let dir = media_test_dir("normal");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let png = dir.join("sample.png");
+    let payload = b"\x89PNG\r\n\x1a\n-fake-png-bytes";
+    std::fs::write(&png, payload).unwrap();
+
+    let url = read_media_as_data_url(png.to_string_lossy().to_string()).unwrap();
+
+    assert!(url.starts_with("data:image/png;base64,"), "unexpected url prefix: {url}");
+    let decoded = base64::engine::general_purpose::STANDARD
+      .decode(url.rsplit(',').next().unwrap())
+      .unwrap();
+    assert_eq!(decoded, payload);
+    let _ = std::fs::remove_dir_all(&dir);
+  }
+
+  /// 白名单外扩展名拒绝（任意二进制不可读出）。
+  #[test]
+  fn read_media_as_data_url_rejects_unsupported_extension() {
+    let dir = media_test_dir("txt");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let txt = dir.join("secret.txt");
+    std::fs::write(&txt, b"password").unwrap();
+
+    let error = read_media_as_data_url(txt.to_string_lossy().to_string()).unwrap_err();
+    assert!(error.contains("unsupported media extension"), "unexpected error: {error}");
+    let _ = std::fs::remove_dir_all(&dir);
+  }
+
+  /// 相对路径拒绝（前端解析层保证绝对，纵深校验）。
+  #[test]
+  fn read_media_as_data_url_rejects_relative_path() {
+    let error = read_media_as_data_url("relative/img.png".to_string()).unwrap_err();
+    assert!(error.contains("must be absolute"), "unexpected error: {error}");
+  }
+
+  /// denied-root 黑名单（含 canonicalize 后二次校验路径命中场景）。
+  #[test]
+  fn read_media_as_data_url_rejects_denied_roots() {
+    // /etc 在 macOS 上真实存在（/private/etc 的 symlink），canonicalize
+    // 后仍是 denied root；不存在/不可读的 denied 路径至少在表层就被拦。
+    let error = read_media_as_data_url("/etc/hosts.png".to_string()).unwrap_err();
+    assert!(
+      error.contains("denied roots list") || error.contains("failed to resolve"),
+      "unexpected error: {error}"
+    );
+  }
+
+  /// ISS-206 post-merge review：/private/etc 变体（共享 DENY_PATH_PREFIXES
+  /// 没有的形态）必须被媒体专用黑名单拦截。
+  #[test]
+  fn read_media_as_data_url_rejects_private_etc_variant() {
+    let error = read_media_as_data_url("/private/etc/hosts.png".to_string()).unwrap_err();
+    assert!(
+      error.contains("denied roots list") || error.contains("failed to resolve"),
+      "unexpected error: {error}"
+    );
+  }
+
+  /// 段级黑名单：路径任意一段命中（.ssh 等凭证目录）即拒。
+  #[test]
+  fn read_media_as_data_url_rejects_deny_segments() {
+    let error = read_media_as_data_url("/Users/demo/.ssh/id_rsa.png".to_string()).unwrap_err();
+    assert!(error.contains("denied roots list"), "unexpected error: {error}");
+  }
+
+  /// 近似前缀负例：黑名单是「段边界精确前缀」匹配（`prefix` 后必须紧跟
+  /// `/` 或整路径相等），仅共享前缀字符串、不构成路径前缀的路径不应误拒
+  /// （`/etcfoo` 不是 `/etc` 的子路径，`/etc/passwd` 才是）。
+  #[test]
+  fn is_media_denied_path_allows_near_prefix_lookalikes() {
+    let allowed = [
+      // 前缀字符串相同但不构成路径前缀
+      "/etcfoo/pic.png",
+      "/private/etcetera/pic.png",
+      "/usrlocal/share/pic.png",
+      "/system32/pic.png",
+      "/varlog/app/pic.png",
+      "/library/keychains-backup/pic.png",
+      // Windows 形态（forward-slash 归一化后比较）
+      "c:/windowsupdate/pic.png",
+      "c:/programdata-backup/pic.png",
+      // 段级黑名单要求整段相等：.sshfoo ≠ .ssh
+      "/Users/demo/.sshfoo/id.png",
+      "/Users/demo/.gnupg2/pubring.png",
+      "/Users/demo/.awscli/config.png",
+    ];
+    for raw in allowed {
+      assert!(
+        !is_media_denied_path(Path::new(raw)),
+        "near-prefix lookalike must not be denied: {raw}"
+      );
+    }
+  }
+
+  /// 超过 MAX_MEDIA_BYTES 拒绝（20MB+1 字节文件）。
+  #[test]
+  fn read_media_as_data_url_rejects_oversized_file() {
+    let dir = media_test_dir("media-oversize");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let big = dir.join("big.png");
+    std::fs::write(&big, vec![0u8; (MAX_MEDIA_BYTES + 1) as usize]).unwrap();
+
+    let error = read_media_as_data_url(big.to_string_lossy().to_string()).unwrap_err();
+    assert!(error.contains("byte limit"), "unexpected error: {error}");
+    let _ = std::fs::remove_dir_all(&dir);
+  }
+
+  /// 大小写扩展名（.PNG / .WebP）同样进白名单映射。
+  #[test]
+  fn read_media_as_data_url_accepts_uppercase_extension() {
+    let dir = media_test_dir("upper");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let webp = dir.join("pic.WEBP");
+    std::fs::write(&webp, b"RIFF-fake-webp").unwrap();
+
+    let url = read_media_as_data_url(webp.to_string_lossy().to_string()).unwrap();
+    assert!(url.starts_with("data:image/webp;base64,"), "unexpected url: {url}");
+    let _ = std::fs::remove_dir_all(&dir);
   }
 
   // ──────── ISS-192 设为默认 Markdown 应用 ────────

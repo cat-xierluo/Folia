@@ -2,10 +2,14 @@
 import 'vditor/dist/js/lute/lute.min.js';
 import { describe, expect, it } from 'vitest';
 import {
+  FOLIA_IR_HTML_ALIGN_CENTER_CLASS,
+  FOLIA_IR_HTML_ALIGN_RIGHT_CLASS,
+  FOLIA_IR_HTML_WRAPPER_HIDDEN_CLASS,
   FOLIA_IR_SVG_FRAGMENT_CLASS,
   FOLIA_IR_SVG_ROOT_CLASS,
   repairSvgIrPreviewsFromMarkdown,
   repairSplitSvgIrPreviews,
+  repairSplitWrapperHtmlIrPreviews,
   sanitizeVditorIrHtml,
 } from './vditorIrSanitizeService';
 
@@ -547,5 +551,255 @@ describe('sanitizeVditorIrHtml ISS-75 strong IR 节点内字面量 **** 清理',
     expect(h2?.getAttribute('id')).toBe('ir-致-XXX----市场监督管理局');
     expect(h2?.getAttribute('data-folia-toc-anchor')).toBe('true');
     expect(h2?.getAttribute('data-marker')).toBe('#');
+  });
+});
+
+describe('repairSplitWrapperHtmlIrPreviews (ISS-205)', () => {
+  const WRAPPER_MD = [
+    '<div align="center">民事起诉状</div>',
+    '',
+    '正文段落。',
+    '',
+    '<div align="right">',
+    '',
+    '具状人：武景怡',
+    '',
+    '2026年　月　日',
+    '',
+  'EOF_MARK',
+  ].join('\n').replace('EOF_MARK', '</div>');
+
+  it('隐藏孤立开/闭标签节点并为中间段落注入 right 对齐 class，round-trip 源码不变', () => {
+    const { lute, html } = createIrHtml(WRAPPER_MD);
+    const sanitized = sanitizeVditorIrHtml(html);
+    const root = document.createElement('div');
+    root.innerHTML = sanitized.html;
+
+    const changed = repairSplitWrapperHtmlIrPreviews(root);
+
+    expect(changed).toBe(true);
+    // 孤立开标签 + 孤立闭标签两个节点被隐藏
+    expect(root.querySelectorAll(`.${FOLIA_IR_HTML_WRAPPER_HIDDEN_CLASS}`).length).toBe(2);
+    // 中间两段注入 right 对齐 class
+    const aligned = Array.from(root.querySelectorAll(`.${FOLIA_IR_HTML_ALIGN_RIGHT_CLASS}`));
+    expect(aligned.length).toBe(2);
+    expect(aligned.map((el) => el.textContent)).toContain('具状人：武景怡');
+    // 自足单行 center 块内容可见，不是包裹组，不注入任何 class
+    expect(root.querySelectorAll(`.${FOLIA_IR_HTML_ALIGN_CENTER_CLASS}`).length).toBe(0);
+
+    // round-trip 安全：marker 未被改写，源码逐字还原
+    const roundTrip = lute.VditorIRDOM2Md(root.innerHTML);
+    expect(roundTrip).toContain('<div align="center">民事起诉状</div>');
+    expect(roundTrip).toContain('<div align="right">\n\n具状人：武景怡\n\n2026年　月　日\n\n</div>');
+  });
+
+  it('align=center 的多行包裹组注入 center class', () => {
+    const md = ['<div align="center">', '', '居中甲段', '', '居中乙段', '', '</div>'].join('\n');
+    const { html } = createIrHtml(md);
+    const sanitized = sanitizeVditorIrHtml(html);
+    const root = document.createElement('div');
+    root.innerHTML = sanitized.html;
+
+    repairSplitWrapperHtmlIrPreviews(root);
+
+    const centered = Array.from(root.querySelectorAll(`.${FOLIA_IR_HTML_ALIGN_CENTER_CLASS}`));
+    expect(centered.map((el) => el.textContent)).toEqual(['居中甲段', '居中乙段']);
+  });
+
+  it('无 align 属性的包裹组仅隐藏孤立标签，不注入对齐 class', () => {
+    const md = ['<div>', '', '普通段', '', '</div>'].join('\n');
+    const { html } = createIrHtml(md);
+    const sanitized = sanitizeVditorIrHtml(html);
+    const root = document.createElement('div');
+    root.innerHTML = sanitized.html;
+
+    const changed = repairSplitWrapperHtmlIrPreviews(root);
+
+    expect(changed).toBe(true);
+    expect(root.querySelectorAll(`.${FOLIA_IR_HTML_WRAPPER_HIDDEN_CLASS}`).length).toBe(2);
+    expect(root.querySelectorAll('[class*="folia-html-align-"]').length).toBe(0);
+  });
+
+  it('找不到闭标签的悬挂开标签不做任何修改（give-up 安全）', () => {
+    const md = ['正文前。', '', '<div align="right">', '', '悬挂段'].join('\n');
+    const { html } = createIrHtml(md);
+    const sanitized = sanitizeVditorIrHtml(html);
+    const root = document.createElement('div');
+    root.innerHTML = sanitized.html;
+
+    const changed = repairSplitWrapperHtmlIrPreviews(root);
+
+    expect(changed).toBe(false);
+    expect(root.querySelectorAll(`.${FOLIA_IR_HTML_WRAPPER_HIDDEN_CLASS}`).length).toBe(0);
+    expect(root.querySelectorAll(`.${FOLIA_IR_HTML_ALIGN_RIGHT_CLASS}`).length).toBe(0);
+  });
+
+  it('重复调用幂等：class 不叠加，DOM 状态稳定', () => {
+    const { html } = createIrHtml(WRAPPER_MD);
+    const sanitized = sanitizeVditorIrHtml(html);
+    const root = document.createElement('div');
+    root.innerHTML = sanitized.html;
+
+    repairSplitWrapperHtmlIrPreviews(root);
+    repairSplitWrapperHtmlIrPreviews(root);
+
+    expect(root.querySelectorAll(`.${FOLIA_IR_HTML_WRAPPER_HIDDEN_CLASS}`).length).toBe(2);
+    for (const el of Array.from(root.querySelectorAll('.folia-html-align-right'))) {
+      const tokens = (el as HTMLElement).className.split(/\s+/).filter((c) => c === 'folia-html-align-right');
+      expect(tokens.length).toBe(1);
+    }
+  });
+});
+
+describe('sanitizeVditorIrHtml marker 保真 (ISS-205 数据损坏修复)', () => {
+  it('不含危险特征的孤立开/闭标签 marker 逐字保真，保存 round-trip 不改写源码', () => {
+    const { lute, html } = createIrHtml('<div align="right">\n\n正文段落\n\n</div>');
+    const result = sanitizeVditorIrHtml(html);
+    const markdown = lute.VditorIRDOM2Md(result.html);
+    expect(markdown).toBe('<div align="right">\n\n正文段落\n\n</div>\n');
+  });
+
+  it('已知 on*/script 危险特征仍被剥除（非黑名单完整性证明，纵深取舍见 containsDangerousHtmlMarker 注释）', () => {
+    const { lute, html } = createIrHtml('<div onload="alert(1)">\n\nx\n\n</div>');
+    const result = sanitizeVditorIrHtml(html);
+    const markdown = lute.VditorIRDOM2Md(result.html);
+    expect(markdown).not.toContain('onload');
+    expect(markdown).not.toContain('alert(');
+  });
+});
+
+describe('ISS-205 review 加固：黑名单补强与对齐注入收窄', () => {
+  it('实体编码的危险 URL 属性被检出并清洗（&#106;avascript: 绕过载荷）', () => {
+    const { lute, html } = createIrHtml('<a href="&#106;avascript:alert(1)">点我</a>\n');
+    const result = sanitizeVditorIrHtml(html);
+    const markdown = lute.VditorIRDOM2Md(result.html);
+    expect(result.securityChanged).toBe(true);
+    expect(markdown.toLowerCase()).not.toContain('javascript:');
+  });
+
+  it('meta/base/link 元标签进入危险路径并被剥除', () => {
+    const { lute, html } = createIrHtml('<meta http-equiv="refresh" content="0;url=http://evil">\n');
+    const result = sanitizeVditorIrHtml(html);
+    const markdown = lute.VditorIRDOM2Md(result.html);
+    expect(result.securityChanged).toBe(true);
+    expect(markdown).not.toContain('http-equiv');
+  });
+
+  it('包裹组内的 code-block / math-block 等特殊 IR 节点不吃对齐 class', () => {
+    const md = [
+      '<div align="right">',
+      '',
+      '```js',
+      'const a = 1;',
+      '```',
+      '',
+      '落款文字',
+      '',
+      '</div>',
+    ].join('\n');
+    const { html } = createIrHtml(md);
+    const sanitized = sanitizeVditorIrHtml(html);
+    const root = document.createElement('div');
+    root.innerHTML = sanitized.html;
+
+    repairSplitWrapperHtmlIrPreviews(root);
+
+    // 围栏(无论折叠形态其容器 data-type="code-block")不带对齐 class
+    const codeContainers = Array.from(
+      root.querySelectorAll<HTMLElement>('[data-type="code-block"], [data-type="code-block"] .vditor-ir__node'),
+    );
+    for (const el of codeContainers) {
+      expect(el.className).not.toContain('folia-html-align-');
+    }
+    // 普通文字段仍正确拿到 right
+    expect(Array.from(root.querySelectorAll('.folia-html-align-right')).map((e) => e.textContent))
+      .toContain('落款文字');
+  });
+});
+
+describe('repairSplitWrapperHtmlIrPreviews style 写法 (ISS-207)', () => {
+  it('style="text-align:right" 包裹组注入 right class 并隐藏孤立标签，round-trip 保真', () => {
+    const { lute, html } = createIrHtml([
+      '<div style="text-align: right">',
+      '',
+      '具状人：某人',
+      '',
+      '2026年　月　日',
+      '',
+      '</div>',
+    ].join('\n'));
+    const sanitized = sanitizeVditorIrHtml(html);
+    const root = document.createElement('div');
+    root.innerHTML = sanitized.html;
+
+    const changed = repairSplitWrapperHtmlIrPreviews(root);
+
+    expect(changed).toBe(true);
+    expect(root.querySelectorAll('.folia-html-align-right').length).toBe(2);
+    expect(root.querySelectorAll('.folia-html-align-right')[0].textContent).toBe('具状人：某人');
+    // 无 align 属性 → 不注 class 的断言只针对 align 场景；此处 style 已命中
+    expect(root.querySelectorAll('.folia-ir-html-wrap-hidden').length).toBe(2);
+
+    const roundTrip = lute.VditorIRDOM2Md(root.innerHTML);
+    expect(roundTrip).toContain('<div style="text-align: right">');
+    expect(roundTrip).toContain('</div>');
+  });
+
+  it('style 写法大小写/空格变体均可识别', () => {
+    for (const open of ['<div style="TEXT-ALIGN:center">', '<div style="text-align:center">', '<div style=\'text-align:center\'>']) {
+      const md = [open, '', '居中内容', '', '</div>'].join('\n');
+      const { html } = createIrHtml(md);
+      const sanitized = sanitizeVditorIrHtml(html);
+      const root = document.createElement('div');
+      root.innerHTML = sanitized.html;
+
+      repairSplitWrapperHtmlIrPreviews(root);
+
+      const centered = Array.from(root.querySelectorAll('.folia-html-align-center'));
+      expect(centered.map((el) => el.textContent)).toContain('居中内容');
+    }
+  });
+
+  it('无对齐声明的 style 不注入', () => {
+    const md = ['<div style="color:red">', '', '红色段', '', '</div>'].join('\n');
+    const { html } = createIrHtml(md);
+    const sanitized = sanitizeVditorIrHtml(html);
+    const root = document.createElement('div');
+    root.innerHTML = sanitized.html;
+
+    repairSplitWrapperHtmlIrPreviews(root);
+
+    expect(root.querySelectorAll('[class*="folia-html-align-"]').length).toBe(0);
+    expect(root.querySelectorAll('.folia-ir-html-wrap-hidden').length).toBe(2);
+  });
+});
+
+describe('ISS-207 review 加固：style 解析语义', () => {
+  it('align 属性与 style 同存时 align 优先（守卫锁定短路逻辑）', () => {
+    const md = ['<div align="right" style="text-align:center">', '', '优先级段', '', '</div>'].join('\n');
+    const { html } = createIrHtml(md);
+    const sanitized = sanitizeVditorIrHtml(html);
+    const root = document.createElement('div');
+    root.innerHTML = sanitized.html;
+
+    repairSplitWrapperHtmlIrPreviews(root);
+
+    const aligned = Array.from(root.querySelectorAll('.folia-html-align-right'));
+    expect(aligned.map((el) => el.textContent)).toContain('优先级段');
+    expect(root.querySelectorAll('.folia-html-align-center').length).toBe(0);
+  });
+
+  it('多个 text-align 声明取最后一个（CSS 层叠「后者胜」）', () => {
+    const md = ['<div style="text-align:left;text-align: right">', '', '层叠段', '', '</div>'].join('\n');
+    const { html } = createIrHtml(md);
+    const sanitized = sanitizeVditorIrHtml(html);
+    const root = document.createElement('div');
+    root.innerHTML = sanitized.html;
+
+    repairSplitWrapperHtmlIrPreviews(root);
+
+    const aligned = Array.from(root.querySelectorAll('.folia-html-align-right'));
+    expect(aligned.map((el) => el.textContent)).toContain('层叠段');
+    expect(root.querySelectorAll('.folia-html-align-left').length).toBe(0);
   });
 });
