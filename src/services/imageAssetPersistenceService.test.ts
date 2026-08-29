@@ -201,10 +201,10 @@ describe('persistPendingImageAssets', () => {
     expect(invokeMock).toHaveBeenCalledTimes(1);
 
     // 重插场景:资产被撤销后重新粘贴(直接产出 ./doc.assets/a.png 相对
-    // 路径,content 中已无 blob: 锚点);磁盘上 a.png 被用户删除、且资产的
-    // persistedInto 已不含 doc.md(模拟「字节对 doc.md 从未写盘」)。
-    const stored = store.get(asset.hash);
-    store.assets.set(asset.hash, { ...stored, persistedInto: [] });
+    // 路径,content 中已无 blob: 锚点);磁盘上 a.png 被用户删除,资产的
+    // persistedInto 需不含 doc.md 才会走补写分支——经「忘掉落盘记录」
+    // 的公开测试钩子重置。
+    store.__forgetPersistedForTests(asset.hash);
 
     const content2 = '![](./doc.assets/a.png)';
     await persistPendingImageAssets(store, '/work/doc.md', content2);

@@ -186,6 +186,16 @@ export class ImageAssetStore {
   }
 
   /**
+   * 测试钩子（ISS-211 review MAJOR-1）：清空资产的 persistedInto 记录，
+   * 模拟「磁盘文件被外部删除后字节需重新写盘」的状态。生产代码不调用。
+   */
+  __forgetPersistedForTests(hash: string): void {
+    const asset = this.assets.get(hash);
+    if (!asset) return;
+    this.assets.set(hash, { ...asset, persistedInto: [] });
+  }
+
+  /**
    * Build the Markdown insertion fragment for an asset. When persisted,
    * emits a relative `![](./<doc>.assets/<name>)` URL; while pending,
    * emits the object URL with a clearly-labeled placeholder so users
