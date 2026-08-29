@@ -44,12 +44,29 @@ import { findHtmlTableBlocks } from '../htmlTableBlockService';
  * @param preset   导出预设，未提供时使用默认预设 (legal)
  * @param options  额外选项（暂仅预留 fileName）
  */
+// ISS-201 review MAJOR-2:图片相对路径需要文档目录作解析锚点。parser 内部
+// 调用链(parseLines → parseMarkdownLines → addImage)层级深,全链改签名
+// 侵入过大,用模块级上下文(单次导出为同步/顺序异步执行,无并发交错)。
+// markdownToDocx 设定 → finally 清空,调用方不可重入并行导出(现状亦无此用法)。
+let docPathContext: string | undefined;
+
 export async function markdownToDocx(
   content: string,
   preset?: PresetConfig,
-  options?: { fileName?: string },
+  options?: { fileName?: string; docPath?: string },
 ): Promise<Blob> {
-  void options;
+  docPathContext = options?.docPath;
+  try {
+    return await markdownToDocxInner(content, preset);
+  } finally {
+    docPathContext = undefined;
+  }
+}
+
+async function markdownToDocxInner(
+  content: string,
+  preset?: PresetConfig,
+): Promise<Blob> {
   const config = preset ?? getPreset(DEFAULT_PRESET_ID);
 
   // 1. 预处理：去除 HTML 注释
@@ -763,8 +780,15 @@ async function addImage(
       const ext = extractExtension(url);
       imageType = extToDocxType(ext);
 
-      // 解析路径：支持相对路径（以 ./ 开头的）
-      const filePath = url.startsWith('./') ? url.slice(2) : url;
+      // 解析路径：支持相对路径（以 ./ 开头的）。ISS-201 review MAJOR-2:
+      // read_presentation_resource 强制绝对路径,相对 url 需按文档目录解析;
+      // 无文档上下文(浏览器/vitest)时维持原样由调用方兜底。
+      const stripped = url.startsWith('./') ? url.slice(2) : url;
+      let filePath = stripped;
+      if (docPathContext && !/^([A-Za-z]:[\\/]|\/)/.test(stripped)) {
+        const dir = docPathContext.replaceAll('\\', '/').slice(0, docPathContext.replaceAll('\\', '/').lastIndexOf('/') + 1);
+        filePath = dir + stripped;
+      }
 
       // ISS-201：本地图片字节走受控 Rust 命令（媒体扩展名白名单 + denied-root
       // 黑名单 + canonicalize 防逃逸），不再依赖 fs 插件宽泛 allow-*。

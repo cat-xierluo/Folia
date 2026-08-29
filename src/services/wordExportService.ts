@@ -6,10 +6,12 @@ export async function exportToWord(
   content: string,
   fileName: string,
   preset: PresetId | PresetConfig = DEFAULT_PRESET_ID,
+  docPath?: string,
 ): Promise<void> {
   const presetConfig = typeof preset === 'string' ? getPreset(preset) : preset;
   // 1. Get the blob from the conversion engine
-  const blob = await markdownToDocx(content, presetConfig, { fileName });
+  // ISS-201 review MAJOR-2:传文档路径,图片相对 url 按文档目录解析为绝对路径。
+  const blob = await markdownToDocx(content, presetConfig, { fileName, docPath });
 
   // 2. Derive default output path (replace .md/.markdown/.html with .docx)
   const defaultName = fileName.replace(/\.(md|markdown|html)$/i, '.docx') || 'document.docx';

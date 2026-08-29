@@ -638,7 +638,7 @@ export function AppLayout() {
     if (!file.path || file.fileType === 'docx') return;
     try {
       const { exportToWord } = await import('../services/wordExportService');
-      await exportToWord(file.content, file.name, getExportPresetConfig());
+      await exportToWord(file.content, file.name, getExportPresetConfig(), file.path);
     } catch (e) {
       console.error('Export failed:', e);
     }

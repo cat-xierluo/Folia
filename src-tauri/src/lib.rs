@@ -63,6 +63,58 @@ const MAX_MANAGED_ASSET_BYTES: usize = 20 * 1024 * 1024;
 /// 受管图片资产允许的扩展名白名单（小写）。与前端媒体插入层接受的
 /// `image/*` mime 对齐取超集；超出列表的请求一律拒绝——防止伪造 IPC
 /// 把任意脚本 / 可执行内容写进 `<doc>.assets/`。
+/// HTML 演示本地资源允许的扩展名白名单（ISS-201 review MAJOR-1）。
+///
+/// 前端 `htmlPresentationService` 的内联范围包含 `<script src>` / `<link
+/// rel=stylesheet>` / `video|audio|source` / `poster` / `<img>` / 字体——
+/// 与编辑器图片通道（media_mime_type，仅图片）语义不同，独立白名单：
+/// 脚本/样式/媒体/字体 + 图片。视频大小上限单独评估（见 MAX_MEDIA_BYTES）。
+const PRESENTATION_RESOURCE_EXTENSIONS: &[&str] = &[
+  // 图片（与 media_mime_type 一致）
+  "png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg", "avif",
+  // 样式 / 脚本
+  "css", "js", "mjs",
+  // 视频 / 音频
+  "mp4", "webm", "ogv", "mp3", "wav", "ogg", "m4a", "aac",
+  // 字体
+  "woff", "woff2", "ttf", "otf", "eot",
+  // 文本类演示资源
+  "vtt", "json",
+];
+
+/// 推断 presentation 资源的 mime（内联 data URL / iframe src 用）。
+fn presentation_resource_mime(path: &Path) -> Option<&'static str> {
+  let ext = path.extension()?.to_string_lossy().to_ascii_lowercase();
+  Some(match ext.as_str() {
+    "png" => "image/png",
+    "jpg" | "jpeg" => "image/jpeg",
+    "gif" => "image/gif",
+    "webp" => "image/webp",
+    "bmp" => "image/bmp",
+    "ico" => "image/x-icon",
+    "svg" => "image/svg+xml",
+    "avif" => "image/avif",
+    "css" => "text/css",
+    "js" | "mjs" => "text/javascript",
+    "mp4" => "video/mp4",
+    "webm" => "video/webm",
+    "ogv" => "video/ogg",
+    "mp3" => "audio/mpeg",
+    "wav" => "audio/wav",
+    "ogg" => "audio/ogg",
+    "m4a" => "audio/mp4",
+    "aac" => "audio/aac",
+    "woff" => "font/woff",
+    "woff2" => "font/woff2",
+    "ttf" => "font/ttf",
+    "otf" => "font/otf",
+    "eot" => "application/vnd.ms-fontobject",
+    "vtt" => "text/vtt",
+    "json" => "application/json",
+    _ => return None,
+  })
+}
+
 const MANAGED_ASSET_EXTENSIONS: &[&str] = &[
   "png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "avif", "ico", "tiff", "tif", "heic", "heif",
 ];
@@ -462,7 +514,7 @@ fn read_presentation_resource(path: String) -> Result<tauri::ipc::Response, Stri
       "resource path is on the denied roots list: {path}"
     ));
   }
-  if media_mime_type(&resource_path).is_none() {
+  if presentation_resource_mime(&resource_path).is_none() {
     return Err(format!("unsupported resource extension: {path}"));
   }
 
