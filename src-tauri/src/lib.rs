@@ -54,6 +54,47 @@ fn pending_opened_paths(app: tauri::AppHandle) -> Vec<String> {
 /// 避免超大文件直接 OOM。如需放宽，调整该常量即可。
 const MAX_OPENED_DOCUMENT_BYTES: u64 = 10 * 1024 * 1024;
 
+/// 单个受管图片资产允许写入的最大字节数（ISS-197）。
+///
+/// 截图 / 照片级粘贴资源通常远低于该值（数 MB 内）；20MB 上限只为拦住
+/// 异常构造的 IPC 请求把数 GB JSON 数字数组灌进内存，不是常规业务约束。
+const MAX_MANAGED_ASSET_BYTES: usize = 20 * 1024 * 1024;
+
+/// 受管图片资产允许的扩展名白名单（小写）。与前端媒体插入层接受的
+/// `image/*` mime 对齐取超集；超出列表的请求一律拒绝——防止伪造 IPC
+/// 把任意脚本 / 可执行内容写进 `<doc>.assets/`。
+const MANAGED_ASSET_EXTENSIONS: &[&str] = &[
+  "png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "avif", "ico", "tiff", "tif", "heic", "heif",
+];
+
+/// 从文档文件名推导受管资产目录基础名（不含扩展名）。
+/// 与前端 `deriveDocBaseName` 规则一致：`a.b.md` → `a.b`；无扩展名或
+/// 隐藏文件（`.gitignore`，最后一个点在首位）时保留原名。
+fn derive_doc_base_name(file_name: &str) -> &str {
+  match file_name.rfind('.') {
+    Some(index) if index > 0 => &file_name[..index],
+    _ => file_name,
+  }
+}
+
+/// 取资产文件名末段扩展名（小写）。`.png` 这类隐藏文件形态（点在首位）
+/// 不视为扩展名，返回 None。
+fn managed_asset_extension(file_name: &str) -> Option<String> {
+  let index = file_name.rfind('.')?;
+  if index == 0 {
+    return None;
+  }
+  Some(file_name[index + 1..].to_ascii_lowercase())
+}
+
+/// 判断给定资产文件名是否落在受管图片扩展名白名单内。
+fn is_managed_asset_extension(file_name: &str) -> bool {
+  match managed_asset_extension(file_name) {
+    Some(ext) => MANAGED_ASSET_EXTENSIONS.contains(&ext.as_str()),
+    None => false,
+  }
+}
+
 /// 校验、限额并读取受支持文档的全部字节。返回 `Vec<u8>` 以便单测断言内容；
 /// `read_opened_document` 命令再将其包成原始字节 [`tauri::ipc::Response`]，
 /// 避免 `Vec<u8>` 被序列化成 JSON 数字数组导致的 IPC 内存膨胀。
@@ -90,6 +131,11 @@ fn read_opened_document_bytes(path: &Path) -> Result<Vec<u8>, String> {
 #[tauri::command]
 fn read_opened_document(path: String) -> Result<tauri::ipc::Response, String> {
   let path = PathBuf::from(path);
+  // ISS-197：与 write / watch / write_managed_asset 一致，强制绝对路径，
+  // 防止相对路径落到进程 cwd 再被操控。
+  if !is_absolute_path(&path) {
+    return Err(format!("path must be absolute: {}", path.display()));
+  }
   // 用 tauri::ipc::Response 返回原始字节，前端 invoke 直接拿到 ArrayBuffer，
   // 跳过 JSON 数字数组序列化，内存峰值从原始文件的数倍降到约一倍（ISS-159）。
   Ok(tauri::ipc::Response::new(read_opened_document_bytes(&path)?))
@@ -98,6 +144,9 @@ fn read_opened_document(path: String) -> Result<tauri::ipc::Response, String> {
 #[tauri::command]
 fn write_opened_document(path: String, content: String) -> Result<(), String> {
   let path = PathBuf::from(path);
+  if !is_absolute_path(&path) {
+    return Err(format!("path must be absolute: {}", path.display()));
+  }
   if !is_writable_document_path(&path) {
     return Err("unsupported document type".into());
   }
@@ -122,7 +171,11 @@ fn write_opened_document(path: String, content: String) -> Result<(), String> {
 /// 安全校验（与 read/write/watch 共享 denied-root 黑名单）：
 /// 1. 文档路径必须是绝对路径；
 /// 2. 文档与解析后的资源路径均不得命中 denied-root 黑名单；
-/// 3. 解析后的资源路径必须落在文档父目录之下（防 `../` 遍历逃逸到任意位置）。
+/// 3. 资源相对路径第一段必须等于 `<文档基础名>.assets`，扩展名必须在图片
+///    白名单内（ISS-197：此前只约束「落在父目录下」，rel 仍可指向覆盖
+///    文档本身或任意文件名）；
+/// 4. 字节数不超过 `MAX_MANAGED_ASSET_BYTES`（ISS-197）；
+/// 5. 解析后的资源路径必须落在文档父目录之下（防 `../` 遍历逃逸到任意位置）。
 ///
 /// 字节由前端以 `Vec<u8>`（JSON 数字数组）传入。图片资源通常在数 MB 内，
 /// 序列化开销可接受；大文件读取侧的 raw-bytes 优化（ISS-159）不适用于此路径。
@@ -139,6 +192,15 @@ fn write_managed_asset(
   if is_denied_root(&doc_path) {
     return Err(format!(
       "document path is on the denied roots list: {document_path}"
+    ));
+  }
+
+  // ISS-197：字节总量上限，防伪造 IPC 用超大 JSON 数字数组制造内存尖峰。
+  if bytes.len() > MAX_MANAGED_ASSET_BYTES {
+    return Err(format!(
+      "asset too large: {} bytes exceeds the {} byte limit",
+      bytes.len(),
+      MAX_MANAGED_ASSET_BYTES
     ));
   }
 
@@ -159,6 +221,28 @@ fn write_managed_asset(
   }
   if normalized_rel.is_empty() || normalized_rel.ends_with('/') {
     return Err(format!("asset relative path must target a file: {asset_relative_path}"));
+  }
+
+  // ISS-197：第一段必须等于 `<文档基础名>.assets`，文件名扩展名必须在图片
+  // 白名单内。注释口径（"`<doc>.assets/`"）此前只是前端约定，这里把它变成
+  // 强制约束，防伪造请求覆盖文档本身或写入任意脚本名。
+  let segments: Vec<&str> = normalized_rel.split('/').collect();
+  let doc_file_name = doc_path
+    .file_name()
+    .map(|name| name.to_string_lossy().to_string())
+    .ok_or_else(|| format!("cannot resolve document file name: {document_path}"))?;
+  let expected_dir = format!("{}.assets", derive_doc_base_name(&doc_file_name));
+  if segments.len() != 2 || segments[0] != expected_dir {
+    return Err(format!(
+      "asset relative path must target '<doc>.assets/<file>' (expected first segment '{expected_dir}'): {asset_relative_path}"
+    ));
+  }
+  if !is_managed_asset_extension(segments[1]) {
+    return Err(format!(
+      "asset file name must have a managed image extension ({}): {}",
+      MANAGED_ASSET_EXTENSIONS.join("/"),
+      asset_relative_path
+    ));
   }
 
   let target = parent.join(&normalized_rel);
@@ -325,6 +409,10 @@ fn read_media_as_data_url(path: String) -> Result<String, String> {
 const DENY_PATH_PREFIXES: &[&str] = &[
   "/dev",
   "/etc",
+  // macOS 上 /etc、/dev 的真实挂载点是 /private/etc、/private/dev；
+  // canonicalize 后前缀变为 /private/...，原列表存在旁路空隙（ISS-197）。
+  "/private/etc",
+  "/private/dev",
   "/system",
   "/system/volumes",
   // Windows 路径，统一小写比较。
@@ -1490,6 +1578,143 @@ mod tests {
 
     assert_eq!(std::fs::read(dir.join(asset_rel)).unwrap(), b"v2");
     let _ = std::fs::remove_dir_all(&dir);
+  }
+
+  // ──────── ISS-197 write_managed_asset / 绝对路径 / 黑名单补强 ────────
+
+  #[test]
+  fn derive_doc_base_name_matches_frontend_rule() {
+    assert_eq!(derive_doc_base_name("案件.md"), "案件");
+    assert_eq!(derive_doc_base_name("a.b.md"), "a.b");
+    assert_eq!(derive_doc_base_name("README"), "README");
+    assert_eq!(derive_doc_base_name(".gitignore"), ".gitignore");
+  }
+
+  #[test]
+  fn managed_asset_extension_checks() {
+    assert!(is_managed_asset_extension("pasted-1.png"));
+    assert!(is_managed_asset_extension("图像.JPEG"));
+    for allowed in ["gif", "webp", "svg", "avif", "ico", "heic"] {
+      assert!(
+        is_managed_asset_extension(&format!("a.{allowed}")),
+        "{allowed} should be allowed"
+      );
+    }
+    // 不在白名单：可执行 / 脚本 / 文档后缀一律拒。
+    for denied in ["sh", "js", "exe", "md", "html", "" ] {
+      let name = if denied.is_empty() { "noext" } else { &format!("a.{denied}") };
+      assert!(!is_managed_asset_extension(name), "{name} should be denied");
+    }
+    // 隐藏文件形态 `.png`：点在首位不构成扩展名，拒绝。
+    assert!(!is_managed_asset_extension(".png"));
+    // 无扩展名直接拒。
+    assert!(!is_managed_asset_extension("image"));
+  }
+
+  /// write_managed_asset：rel 第一段必须等于 `<doc_stem>.assets`，防覆盖文档
+  /// 本体或写入任意命名文件（ISS-197）。
+  #[test]
+  fn write_managed_asset_rejects_non_assets_relative_paths() {
+    let dir = temp_path("asset-segment");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let doc = dir.join("案件.md");
+    std::fs::write(&doc, b"# doc").unwrap();
+
+    // 直接覆盖文档本身：以前只靠「落在父目录下」拦不住。
+    let err = write_managed_asset(
+      doc.to_string_lossy().to_string(),
+      "案件.md".into(),
+      b"evil".to_vec(),
+    )
+    .unwrap_err();
+    assert!(err.contains(".assets/"), "got: {err}");
+    assert_eq!(std::fs::read(&doc).unwrap(), b"# doc", "document must be untouched");
+
+    // 目录名与文档基础名不符（借用别人文档的 assets 目录）也拒。
+    let err = write_managed_asset(
+      doc.to_string_lossy().to_string(),
+      "别的文档.assets/x.png".into(),
+      b"x".to_vec(),
+    )
+    .unwrap_err();
+    assert!(err.contains("expected first segment"), "got: {err}");
+
+    // 嵌套子目录（>2 段）拒：约束为平铺单文件。
+    let err = write_managed_asset(
+      doc.to_string_lossy().to_string(),
+      "案件.assets/sub/x.png".into(),
+      b"x".to_vec(),
+    )
+    .unwrap_err();
+    assert!(err.contains("expected first segment"), "got: {err}");
+
+    let _ = std::fs::remove_dir_all(&dir);
+  }
+
+  /// write_managed_asset：扩展名必须在图片白名单内（ISS-197）。
+  #[test]
+  fn write_managed_asset_rejects_non_image_extensions() {
+    let dir = temp_path("asset-ext");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let doc = dir.join("doc.md");
+    std::fs::write(&doc, b"").unwrap();
+
+    let err = write_managed_asset(
+      doc.to_string_lossy().to_string(),
+      "doc.assets/payload.sh".into(),
+      b"#!/bin/sh".to_vec(),
+    )
+    .unwrap_err();
+    assert!(err.contains("managed image extension"), "got: {err}");
+    assert!(!dir.join("doc.assets").exists(), "directory must not be created");
+
+    let _ = std::fs::remove_dir_all(&dir);
+  }
+
+  /// write_managed_asset：字节数超上限时在写盘前拒绝（ISS-197）。
+  #[test]
+  fn write_managed_asset_rejects_oversized_bytes() {
+    let dir = temp_path("asset-size");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let doc = dir.join("doc.md");
+    std::fs::write(&doc, b"").unwrap();
+
+    let oversized = vec![0u8; MAX_MANAGED_ASSET_BYTES + 1];
+    let err = write_managed_asset(
+      doc.to_string_lossy().to_string(),
+      "doc.assets/big.png".into(),
+      oversized,
+    )
+    .unwrap_err();
+    assert!(err.contains("asset too large"), "got: {err}");
+
+    let _ = std::fs::remove_dir_all(&dir);
+  }
+
+  /// read/write_opened_document 强制绝对路径（ISS-197）。
+  #[test]
+  fn read_write_opened_document_reject_relative_paths() {
+    // Response 未实现 Debug，不能用 unwrap_err。
+    let err = match read_opened_document("relative.md".into()) {
+      Err(message) => message,
+      Ok(_) => panic!("expected absolute-path denial"),
+    };
+    assert!(err.contains("must be absolute"), "got: {err}");
+
+    let err = write_opened_document("relative.md".into(), "x".into()).unwrap_err();
+    assert!(err.contains("must be absolute"), "got: {err}");
+  }
+
+  /// macOS /private/etc 真实挂载点补黑名单（ISS-197）。
+  #[test]
+  fn deny_prefixes_cover_private_etc_and_private_dev() {
+    assert!(is_denied_root(Path::new("/private/etc/passwd.md")));
+    assert!(is_denied_root(Path::new("/PRIVATE/ETC/passwd.md")));
+    assert!(is_denied_root(Path::new("/private/dev/null.md")));
+    assert!(!is_denied_root(Path::new("/private/workspace/notes.md")));
   }
 
   // ──────── ISS-206 媒体 data URL 读取 ────────
