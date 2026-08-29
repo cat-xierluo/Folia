@@ -704,7 +704,9 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
       try {
         const fragments: string[] = [];
         for (const file of files) {
-          const result = await registerImageAssetFromFile(imageAssetStore, file);
+          // ISS-211：传入当前文档路径,persisted 资产按本文档重算相对路径,
+          // 避免跨文档重插时写出错误目录。
+          const result = await registerImageAssetFromFile(imageAssetStore, file, undefined, { docPath: filePath });
           fragments.push(result.markdown);
         }
         if (fragments.length > 0) {
@@ -719,7 +721,7 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
       }
       return true;
     },
-    [imageAssetStore, emitEditorValueIfChanged],
+    [imageAssetStore, emitEditorValueIfChanged, filePath],
   );
 
   /**

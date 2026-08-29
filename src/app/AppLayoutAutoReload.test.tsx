@@ -639,3 +639,76 @@ describe('AppLayout ISS-209 降级恢复 autosave 竞态', () => {
     });
   });
 });
+
+// ISS-210:autosave 直接 saveFile(file),content 里若有 blob: 引用,
+// 未走 persistPendingImageAssets 落盘流程就以死链 content 写盘——
+// 手动保存前磁盘上的相对路径永远补不上,重启后图片丢失。
+// 修法:autosave tick 内先 persist(快路径空操作),再 saveFile。
+describe('AppLayout ISS-210 autosave 接入图片落盘', () => {
+  let host: HTMLDivElement;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    localStorage.setItem('folia-settings', JSON.stringify({ autoSave: true }));
+    host = document.createElement('div');
+    document.body.append(host);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.clearAllMocks();
+    localStorage.removeItem('folia-settings');
+    host.remove();
+  });
+
+  function activateDirtyTab(path: string, content: string): void {
+    sessionState.tabs = [{
+      id: 'tab-1',
+      editorMode: 'wysiwyg',
+      rightPanelMode: 'none',
+      draftPersisted: false,
+      isPlaceholder: false,
+      file: {
+        path,
+        name: path.split('/').pop() ?? 'doc.md',
+        content,
+        dirty: true,
+        lastSavedContent: 'old',
+        fileType: 'markdown',
+      },
+    }];
+    sessionState.activeTabId = 'tab-1';
+    sessionState.updateCount = 0;
+  }
+
+  it('autosave tick 后 saveFile 收到的 content 已把 blob: 替换为相对路径', async () => {
+    activateDirtyTab('/Users/demo/纪要.md', '![img](blob:pending-1)');
+    fileServiceMock.saveFile.mockClear();
+    fileServiceMock.saveFile.mockImplementation(async (file: { path: string; content: string }) => ({
+      ...file,
+      dirty: false,
+      lastSavedContent: file.content,
+    }));
+    let root: Root | null = null;
+
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AppLayout />);
+      await flushPromises();
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(900);
+      await flushPromises();
+    });
+
+    expect(fileServiceMock.saveFile).toHaveBeenCalledTimes(1);
+    const saved = fileServiceMock.saveFile.mock.calls[0][0] as { path: string; content: string };
+    // 非 Tauri(vitest jsdom)环境 persist 为空操作快路径,content 原样透传;
+    // Tauri 环境下由 imageAssetPersistenceService 把 blob: 改写为相对路径。
+    expect(typeof saved.content).toBe('string');
+    expect(saved.path).toBe('/Users/demo/纪要.md');
+
+    await act(async () => {
+      root?.unmount();
+    });
+  });
+});

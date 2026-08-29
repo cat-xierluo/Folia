@@ -23,12 +23,23 @@ import {
   sanitizeFileName,
   type ImageAsset,
 } from './imageAssetService';
+import { deriveDocBaseName } from './imageAssetPersistenceService';
 
 export interface MediaInsertionInput {
   bytes: Uint8Array;
   desiredName: string;
   mime: string;
   altText?: string;
+}
+
+/**
+ * ISS-211：插入时的文档上下文。同内容 hash 的资产曾被文档 A 落盘
+ * （state=persisted）后，再插入文档 B 时不能沿用 A 的相对路径——
+ * 必须按 B 的文档路径重算 `<B 基名>.assets/<file>`。未传 docPath
+ * 时维持旧行为（空 base），保证向后兼容。
+ */
+export interface MediaInsertionOptions {
+  docPath?: string;
 }
 
 export interface MediaInsertionResult {
@@ -47,11 +58,15 @@ export interface MediaInsertionResult {
 export async function registerImageAsset(
   store: ImageAssetStore,
   input: MediaInsertionInput,
+  options?: MediaInsertionOptions,
 ): Promise<MediaInsertionResult> {
   const safeName = sanitizeFileName(input.desiredName || 'image');
   const alt = (input.altText ?? safeName).slice(0, 200);
   const asset = await store.registerPending(input.bytes, safeName, input.mime);
-  return store.insertForMarkdown(asset, /* docBaseName filled by caller */ '', alt);
+  // ISS-211：persisted 资产按当前文档重算相对路径；pending 资产走 blob:
+  // 通道，docBaseName 无意义，传空保持原语义（保存时由 persist 流程改写）。
+  const docBaseName = options?.docPath ? deriveDocBaseName(options.docPath) : '';
+  return store.insertForMarkdown(asset, docBaseName, alt);
 }
 
 /**
@@ -62,16 +77,21 @@ export async function registerImageAssetFromFile(
   store: ImageAssetStore,
   file: File,
   altText?: string,
+  options?: MediaInsertionOptions,
 ): Promise<MediaInsertionResult> {
   const buf = await file.arrayBuffer();
   const bytes = new Uint8Array(buf.byteLength);
   bytes.set(new Uint8Array(buf));
-  return registerImageAsset(store, {
-    bytes,
-    desiredName: file.name,
-    mime: file.type || 'application/octet-stream',
-    altText,
-  });
+  return registerImageAsset(
+    store,
+    {
+      bytes,
+      desiredName: file.name,
+      mime: file.type || 'application/octet-stream',
+      altText,
+    },
+    options,
+  );
 }
 
 /**

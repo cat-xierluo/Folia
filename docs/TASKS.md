@@ -90,12 +90,12 @@
 - **发现:** CI 只跑前端(typecheck/lint/test + playwright e2e),src-tauri 的 54 个测试无 CI 门槛,lib.rs 安全校验逻辑回归不可见。
 - **建议:** CI 增加 cargo test job（可复用 ISS-179 Phase 4 已有的 Rust 构建缓存模式）。
 
-#### ⬜ ISS-210 autosave 不落盘 pending 图片——blob: 引用以死链写盘（main 存量,ISS-196 review MINOR-2 发现,2026-08-29）
+#### ✅ ISS-210 autosave 不落盘 pending 图片（已并入 fix/iss210-211-image-persistence 分支,2026-08-29;autosave tick 前接入 persistPendingImageAssets + blob 替换,与 handleSave 同语义;ISS-209 reloading 守卫保持前置）
 
 - **发现:** autosave effect 直接 `saveFile(file)`,未调用 persistPendingImageAssets。开启 autosave 时含 blob: 引用的脏文档以死链 content 写盘,直到手动保存才修复。
 - **建议:** autosave 路径接入与 handleSave 相同的 persistPendingImageAssets 流程(注意与 ISS-209 reloading 守卫的交互)。
 
-#### ⬜ ISS-211 persisted 资产被重新插入其它文档时写出错误相对路径（main 存量,ISS-196 review MINOR-3 发现,2026-08-29）
+#### ✅ ISS-211 persisted 资产跨文档重插路径（已并入 fix/iss210-211-image-persistence 分支,2026-08-29;MediaInsertionOptions.docPath + deriveDocBaseName 重算;WysiwygEditorPane 以 filePath prop 传入;新增 mediaInsertionService.test.ts 3 例 TDD）
 
 - **发现:** registerPending 按 hash 去重返回已有资产(state 可能为 persisted);insertForMarkdown 无条件写出 `./.assets/name.png`,registerImageAsset 的 docBaseName='' 无调用方填充（mediaInsertionService.ts:54）。
 - **建议:** 跨文档插入时按新文档重算相对路径或强制走重新落盘。
