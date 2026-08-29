@@ -85,19 +85,29 @@ export async function persistPendingImageAssets(
   }
   // 锚定当前文档内容：只处理正文中引用且尚未为本文档写盘的资产。pending 与
   // persisted 两态都可能命中（共享 hash 的资产曾被另一文档先写盘）。
+  const docBaseName = deriveDocBaseName(documentPath);
   const referenced = store
     .list()
-    .filter(
-      (asset) =>
-        asset.objectUrl &&
-        content.includes(asset.objectUrl) &&
-        !(asset.persistedInto ?? []).includes(documentPath),
-    );
+    .filter((asset) => {
+      if (!asset.objectUrl || (asset.persistedInto ?? []).includes(documentPath)) {
+        return false;
+      }
+      // 常规锚点：正文仍以 blob: URL 引用（首插未保存）。
+      if (content.includes(asset.objectUrl)) return true;
+      // ISS-211 review MAJOR-1：重插已 persisted 的资产时，insertForMarkdown
+      // 直接产出相对路径（无 blob: 锚点）。若该相对路径出现在正文里，说明
+      // 这些字节对本文档而言从未真正写盘（或被删除后重插），必须补写，
+      // 否则 Markdown 指向一个不存在的文件（隐性死链）。
+      if (asset.state === 'persisted') {
+        const relativePath = `./${docBaseName}.assets/${asset.fileName}`;
+        return content.includes(relativePath);
+      }
+      return false;
+    });
   if (referenced.length === 0) {
     return { replacements: [], failures: [] };
   }
 
-  const docBaseName = deriveDocBaseName(documentPath);
   const replacements: Array<{ objectUrl: string; relativePath: string }> = [];
   const failures: Array<{ hash: string; fileName: string; error: string }> = [];
 

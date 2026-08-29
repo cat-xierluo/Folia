@@ -1200,13 +1200,26 @@ export function AppLayout() {
     if (reloading) return;
     if (!settings.autoSave || !file.path || !file.dirty || file.fileType === 'docx') return;
     const timeout = window.setTimeout(() => {
-      void import('../services/fileService')
-        .then(({ saveFile }) => saveFile(file))
+      // ISS-210：autosave 与 handleSave 对齐——先落盘 pending 图片并替换
+      // content 里的 blob: 引用，否则自动保存会把死链 blob: URL 写进磁盘
+      // 文件（重启后图片永久丢失），直到用户手动保存才修复。
+      const persistStep = file.path
+        ? persistPendingImageAssets(imageAssetStore, file.path, file.content).then(({ replacements, failures }) => {
+            if (failures.length > 0) {
+              console.error('[Folia] 部分图片落盘失败:', failures);
+            }
+            return replacements.length > 0
+              ? { ...file, content: replaceBlobUrlsWithRelativePaths(file.content, replacements) }
+              : file;
+          })
+        : Promise.resolve(file);
+      void persistStep
+        .then((fileToSave) => import('../services/fileService').then(({ saveFile }) => saveFile(fileToSave)))
         .then((updated) => updateActiveFile(() => updated))
         .catch((e) => console.error('Auto-save failed:', e));
     }, 800);
     return () => window.clearTimeout(timeout);
-  }, [file, settings.autoSave, updateActiveFile, reloading]);
+  }, [file, settings.autoSave, updateActiveFile, reloading, imageAssetStore]);
 
   useEffect(() => {
     if (!isTauriRuntime) return;

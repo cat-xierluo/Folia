@@ -183,6 +183,43 @@ describe('persistPendingImageAssets', () => {
     expect(result.failures[0].error).toBe('disk full');
   });
 
+  it('ISS-211 review MAJOR-1:已 persisted 且本路径已写盘的资产,重插后仍需为重插文档写盘', async () => {
+    // 场景:资产已随 doc.md 落盘 → 用户把它重新粘贴到 doc.md(重插走
+    // insertForMarkdown 直接产出 ./doc.assets/a.png 相对路径,content 中
+    // 已无 blob: 锚点)。再次保存时,重插的这段字节必须真正写盘,
+    // 否则 Markdown 里的相对路径指向一个从未写过的文件(隐性死链)。
+    Object.defineProperty(window, '__TAURI_INTERNALS__', { value: {}, configurable: true });
+    const invokeMock = vi.fn().mockResolvedValue(undefined);
+    vi.doMock('@tauri-apps/api/core', () => ({ invoke: invokeMock }));
+
+    const store = new ImageAssetStore();
+    const asset = await store.registerPending(new Uint8Array([4, 4]), 'a.png', 'image/png');
+
+    // 第一次保存:正常按 blob: 锚点写盘
+    const content1 = `![](${asset.objectUrl})`;
+    await persistPendingImageAssets(store, '/work/doc.md', content1);
+    expect(invokeMock).toHaveBeenCalledTimes(1);
+
+    // 重插场景:资产被撤销后重新粘贴(直接产出 ./doc.assets/a.png 相对
+    // 路径,content 中已无 blob: 锚点);磁盘上 a.png 被用户删除,资产的
+    // persistedInto 需不含 doc.md 才会走补写分支——经「忘掉落盘记录」
+    // 的公开测试钩子重置。
+    store.__forgetPersistedForTests(asset.hash);
+
+    const content2 = '![](./doc.assets/a.png)';
+    await persistPendingImageAssets(store, '/work/doc.md', content2);
+
+    // 修复前:content2 无 blob 锚点 → replacements 空 → 字节永不落盘(死链)
+    expect(invokeMock).toHaveBeenCalledTimes(2);
+    expect(invokeMock).toHaveBeenLastCalledWith('write_managed_asset', {
+      documentPath: '/work/doc.md',
+      assetRelativePath: 'doc.assets/a.png',
+      bytes: [4, 4],
+    });
+    // 重插补写成功后,资产应挂上 doc.md 的 persistedInto 标记
+    expect(store.get(asset.hash)?.persistedInto).toContain('/work/doc.md');
+  });
+
   it('已为本路径写盘过的资产不重复写（幂等快路径）', async () => {
     Object.defineProperty(window, '__TAURI_INTERNALS__', { value: {}, configurable: true });
     const invokeMock = vi.fn().mockResolvedValue(undefined);
