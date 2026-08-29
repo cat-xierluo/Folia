@@ -46,8 +46,16 @@ export function HtmlPresentationPane({ source, filePath, onBack }: HtmlPresentat
     if (!filePath || !shouldInlineLocalResources) return;
 
     let cancelled = false;
-    void import('@tauri-apps/plugin-fs')
-      .then(({ readFile }) => createHtmlPresentationDocumentWithLocalResources(source, {
+    // ISS-201：资源读取走受控 Rust 命令（媒体扩展名白名单 + denied-root 黑
+    // 名单 + canonicalize 防逃逸），不再依赖 fs 插件宽泛 allow-*。
+    void import('@tauri-apps/api/core')
+      .then(({ invoke }) => async (path: string) => {
+        const data = await invoke<ArrayBuffer | Uint8Array | number[]>('read_presentation_resource', { path });
+        if (data instanceof Uint8Array) return data;
+        if (data instanceof ArrayBuffer) return new Uint8Array(data);
+        return new Uint8Array(data);
+      })
+      .then((readFile) => createHtmlPresentationDocumentWithLocalResources(source, {
         filePath,
         readFile,
       }))

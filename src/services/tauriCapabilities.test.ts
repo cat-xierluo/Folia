@@ -19,28 +19,22 @@ describe('Tauri capabilities', () => {
     ]));
   });
 
-  it('ISS-197 契约：fs 插件保留 deny-only scope，敏感根目录一律拒绝', () => {
-    // Tauri v2 ACL 语义：allow 列表为空 = 放行一切（CommandScope::matches）。
-    // 当前 capability 仅授予 fs:allow-* 命令权限而未配置 allow scope，因此
-    // `readTextFile('/Users/x/.ssh/id_rsa')` 这类请求在插件层不受任何路径约束
-    // （Rust 自定义命令的黑名单不覆盖插件调用面）。此测试锚定 deny 列表存在：
-    // 若未来改为「收口到自定义命令 + 删除 fs allow-*」，请同步更新本契约。
+  it('ISS-201 契约：fs 插件面整体退场，持久 IO 只走自定义命令', () => {
+    // 演进路线：ISS-197 先以 deny-only scope 补位（插件层拒绝敏感根目录），
+    // ISS-201 把全部持久 IO 收口到 Rust 自定义命令（read_opened_document /
+    // write_opened_document / write_binary_export / read_presentation_resource /
+    // write_managed_asset / read_media_as_data_url——各自带扩展名白名单 +
+    // denied-root 黑名单），随后 capabilities 移除 fs 插件全部权限。本测试
+    // 锚定「插件面零残留」：任何 fs:* 权限重新出现都应触发人工评估。
     const capability = readCapability();
-    const fsScope = (capability.permissions ?? []).find(
-      (entry) => typeof entry === 'object' && entry !== null && entry.identifier === 'fs:scope',
-    ) as { deny?: string[] } | undefined;
+    const fsEntries = (capability.permissions ?? []).filter(
+      (entry) => typeof entry === 'string'
+        ? entry.startsWith('fs:')
+        : typeof (entry as { identifier?: unknown }).identifier === 'string'
+          && (entry as { identifier: string }).identifier.startsWith('fs:'),
+    );
 
-    expect(fsScope).toBeDefined();
-    const denied = new Set(fsScope?.deny ?? []);
-    for (const required of [
-      '/etc/**',
-      '/private/etc/**',
-      '$HOME/.ssh/**',
-      '$HOME/.aws/**',
-      '$HOME/.gnupg/**',
-    ]) {
-      expect(denied.has(required)).toBe(true);
-    }
+    expect(fsEntries).toEqual([]);
   });
 
   it('keeps local HTML presentation resources inside the desktop CSP', () => {

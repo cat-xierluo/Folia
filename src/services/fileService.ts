@@ -195,7 +195,14 @@ export async function saveFileAs(file: OpenedFile): Promise<OpenedFile> {
 
   if (!path) return file;
 
-  await writeTextFile(path, file.content);
+  // ISS-201：写入走受控 Rust 命令（md/html 白名单 + denied-root 黑名单），
+  // 与 saveFile 的 Tauri 分支同语义；非 Tauri（浏览器）保留 fs 插件兜底。
+  if (isTauriRuntime()) {
+    const { invoke } = await import('@tauri-apps/api/core');
+    await invoke('write_opened_document', { path, content: file.content });
+  } else {
+    await writeTextFile(path, file.content);
+  }
   const name = fileNameFromPath(path);
 
   return { ...file, path, name, dirty: false, lastSavedContent: file.content };

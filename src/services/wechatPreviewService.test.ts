@@ -28,11 +28,11 @@ const tauriDialogMock = vi.hoisted(() => ({
 }));
 
 const tauriFsMock = vi.hoisted(() => ({
-  writeTextFile: vi.fn(),
+  invoke: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('@tauri-apps/plugin-dialog', () => tauriDialogMock);
-vi.mock('@tauri-apps/plugin-fs', () => tauriFsMock);
+vi.mock('@tauri-apps/api/core', () => tauriFsMock);
 
 function getDocumentBody(html: string): HTMLElement {
   return new DOMParser().parseFromString(html, 'text/html').body;
@@ -47,7 +47,7 @@ function queryRequired<T extends Element>(root: ParentNode, selector: string): T
 describe('wechatPreviewService', () => {
   beforeEach(() => {
     tauriDialogMock.save.mockReset();
-    tauriFsMock.writeTextFile.mockReset();
+    tauriFsMock.invoke.mockReset();
     delete (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
   });
 
@@ -858,7 +858,7 @@ describe('wechatPreviewService', () => {
     expect(click).toHaveBeenCalled();
   });
 
-  it('exports WeChat HTML through Tauri save and writeTextFile', async () => {
+  it('exports WeChat HTML through Tauri save and write_opened_document', async () => {
     (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
     tauriDialogMock.save.mockResolvedValue('/tmp/案件-wechat.html');
 
@@ -868,7 +868,8 @@ describe('wechatPreviewService', () => {
       defaultPath: '案件-wechat.html',
       filters: [{ name: 'HTML', extensions: ['html', 'htm'] }],
     });
-    expect(tauriFsMock.writeTextFile).toHaveBeenCalledWith('/tmp/案件-wechat.html', '<!doctype html><p>正文</p>');
+    // ISS-201：写入走受控 Rust 命令 write_opened_document
+    expect(tauriFsMock.invoke).toHaveBeenCalledWith('write_opened_document', { path: '/tmp/案件-wechat.html', content: '<!doctype html><p>正文</p>' });
   });
 
   it('returns cancelled when the Tauri export save dialog is cancelled', async () => {
@@ -877,7 +878,7 @@ describe('wechatPreviewService', () => {
 
     await expect(exportWechatHtmlDocument('<!doctype html><p>正文</p>', '案件.md')).resolves.toBe('cancelled');
 
-    expect(tauriFsMock.writeTextFile).not.toHaveBeenCalled();
+    expect(tauriFsMock.invoke).not.toHaveBeenCalled();
   });
 });
 

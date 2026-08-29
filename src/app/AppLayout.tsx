@@ -588,8 +588,9 @@ export function AppLayout() {
       }
       if (replacements.length > 0) {
         const nextContent = replaceBlobUrlsWithRelativePaths(updated.content, replacements);
-        const { writeTextFile } = await import('@tauri-apps/plugin-fs');
-        await writeTextFile(updated.path, nextContent);
+        // ISS-201：二次写入走受控 Rust 命令，不再依赖 fs 插件。
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('write_opened_document', { path: updated.path, content: nextContent });
         const rewritten = { ...updated, content: nextContent, lastSavedContent: nextContent };
         updateActiveFile(() => rewritten);
       }

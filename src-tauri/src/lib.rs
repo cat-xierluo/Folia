@@ -144,22 +144,66 @@ fn read_opened_document(path: String) -> Result<tauri::ipc::Response, String> {
 #[tauri::command]
 fn write_opened_document(path: String, content: String) -> Result<(), String> {
   let path = PathBuf::from(path);
-  if !is_absolute_path(&path) {
+  validate_writable_document(&path)?;
+
+  std::fs::write(&path, content).map_err(|error| format!("failed to write document: {error}"))
+}
+
+/// 校验「可写文档」目标路径：绝对路径 + 可写扩展名白名单 + denied-root 黑名单。
+/// ISS-172 抽出的共享校验链（write_opened_document / write_binary_export 复用）。
+fn validate_writable_document(path: &Path) -> Result<(), String> {
+  if !is_absolute_path(path) {
     return Err(format!("path must be absolute: {}", path.display()));
   }
-  if !is_writable_document_path(&path) {
+  if !is_writable_document_path(path) {
     return Err("unsupported document type".into());
   }
   // ISS-172：写入同样走路径黑名单，避免任何代码（含 XSS 注入）用合法后缀的写入
   // 覆盖 /etc / .ssh / C:\Windows 等敏感文件。与 read / watch 共享单一来源。
+  if is_denied_root(path) {
+    return Err(format!(
+      "path is on the denied roots list: {}",
+      path.display()
+    ));
+  }
+  Ok(())
+}
+
+/// 二进制导出落盘（ISS-201）：Word 导出（.docx）等由「导出对话框选择的
+/// 绝对路径 + 应用自身生成的字节」构成的写入。与 write_opened_document
+/// 共享 denied-root 黑名单，但扩展名白名单独立——.docx 不属于可打开
+/// 文档类型，不能让导出通道反过来放宽文档白名单。
+///
+/// 字节上限复用 MAX_MANAGED_ASSET_BYTES 量级守卫，防伪造 IPC 大包。
+#[tauri::command]
+fn write_binary_export(path: String, bytes: Vec<u8>) -> Result<(), String> {
+  let path = PathBuf::from(&path);
+  if !is_absolute_path(&path) {
+    return Err(format!("path must be absolute: {}", path.display()));
+  }
+  let ext = path
+    .extension()
+    .and_then(|extension| extension.to_str())
+    .map(|extension| extension.to_ascii_lowercase())
+    .unwrap_or_default();
+  if !matches!(ext.as_str(), "docx") {
+    return Err(format!("unsupported export extension: .{ext}"));
+  }
   if is_denied_root(&path) {
     return Err(format!(
       "path is on the denied roots list: {}",
       path.display()
     ));
   }
+  if bytes.len() > MAX_MANAGED_ASSET_BYTES {
+    return Err(format!(
+      "export payload too large: {} bytes exceeds the {} byte limit",
+      bytes.len(),
+      MAX_MANAGED_ASSET_BYTES
+    ));
+  }
 
-  std::fs::write(&path, content).map_err(|error| format!("failed to write document: {error}"))
+  std::fs::write(&path, bytes).map_err(|error| format!("failed to write export: {error}"))
 }
 
 /// 将粘贴 / 拖入的图片字节原子落盘到文档同目录的 `<doc>.assets/` 子目录
@@ -400,6 +444,49 @@ fn read_media_as_data_url(path: String) -> Result<String, String> {
     "data:{mime};base64,{}",
     base64::engine::general_purpose::STANDARD.encode(bytes)
   ))
+}
+
+/// HTML 演示/预览的本地资源内联读取（ISS-201）：`resolveLocalResourcePath`
+/// 在前端把 `<img src>` / `<link href>` 等解析为绝对路径后，由此命令读取
+/// 字节，前端自行转 data URI（htmlPresentationService 的既有消费形态）。
+/// 校验链复用媒体命令：绝对路径 + 媒体黑名单（含 /private/var 等）+
+/// 扩展名白名单 + 大小上限 + canonicalize 双重校验。
+#[tauri::command]
+fn read_presentation_resource(path: String) -> Result<tauri::ipc::Response, String> {
+  let resource_path = PathBuf::from(&path);
+  if !is_absolute_path(&resource_path) {
+    return Err(format!("resource path must be absolute: {path}"));
+  }
+  if is_media_denied_path(&resource_path) {
+    return Err(format!(
+      "resource path is on the denied roots list: {path}"
+    ));
+  }
+  if media_mime_type(&resource_path).is_none() {
+    return Err(format!("unsupported resource extension: {path}"));
+  }
+
+  let canonical = std::fs::canonicalize(&resource_path)
+    .map_err(|error| format!("failed to resolve resource path: {error}"))?;
+  if is_media_denied_path(&canonical) {
+    return Err(format!(
+      "canonical resource path is on the denied roots list: {}",
+      canonical.display()
+    ));
+  }
+
+  let size = std::fs::metadata(&canonical)
+    .map_err(|error| format!("failed to stat resource file: {error}"))?
+    .len();
+  if size > MAX_MEDIA_BYTES {
+    return Err(format!(
+      "resource file exceeds the {MAX_MEDIA_BYTES}-byte limit: {size} bytes ({path})"
+    ));
+  }
+
+  let bytes = std::fs::read(&canonical)
+    .map_err(|error| format!("failed to read resource file: {error}"))?;
+  Ok(tauri::ipc::Response::new(bytes))
 }
 
 /// 监听系统根或敏感目录黑名单前缀（ISS-162，借鉴 horseMD chokidar 防御）。
@@ -900,6 +987,8 @@ pub fn run() {
       pending_opened_paths,
       read_opened_document,
       write_opened_document,
+      write_binary_export,
+      read_presentation_resource,
       write_managed_asset,
       read_media_as_data_url,
       watch_path,

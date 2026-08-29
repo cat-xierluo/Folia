@@ -11,7 +11,7 @@ import {
   PageNumber,
   type FileChild,
 } from 'docx';
-import { readFile } from '@tauri-apps/plugin-fs';
+
 import type { PresetConfig } from './types';
 import { getPreset, DEFAULT_PRESET_ID } from './config';
 import {
@@ -759,7 +759,6 @@ async function addImage(
         data[i] = binary.charCodeAt(i);
       }
     } else {
-      // 本地路径：使用 Tauri readFile 读取
       // 推断图片类型
       const ext = extractExtension(url);
       imageType = extToDocxType(ext);
@@ -767,7 +766,17 @@ async function addImage(
       // 解析路径：支持相对路径（以 ./ 开头的）
       const filePath = url.startsWith('./') ? url.slice(2) : url;
 
-      data = await readFile(filePath);
+      // ISS-201：本地图片字节走受控 Rust 命令（媒体扩展名白名单 + denied-root
+      // 黑名单 + canonicalize 防逃逸），不再依赖 fs 插件宽泛 allow-*。
+      const { invoke } = await import('@tauri-apps/api/core');
+      const raw = await invoke<ArrayBuffer | Uint8Array | number[]>('read_presentation_resource', { path: filePath });
+      if (raw instanceof Uint8Array) {
+        data = raw;
+      } else if (raw instanceof ArrayBuffer) {
+        data = new Uint8Array(raw);
+      } else {
+        data = new Uint8Array(raw);
+      }
     }
 
     // 解析原始图片尺寸（像素）
