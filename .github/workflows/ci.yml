@@ -146,7 +146,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workdir: src-tauri
+          workspaces: src-tauri
 
       - name: Run cargo test
-        run: cargo test --manifest-path src-tauri/Cargo.toml
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked

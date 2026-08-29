@@ -87,7 +87,7 @@
 
 #### 🖥 ISS-212 Rust cargo test 尚未纳入 CI——Rust 侧回归仅靠本地手跑（ISS-197 review 跟进发现,2026-08-29;分支 chore/iss212-cargo-test-ci,PR 待开）
 
-- **发现:** CI 只跑前端(typecheck/lint/test + playwright e2e),src-tauri 的 54 个测试无 CI 门槛,lib.rs 安全校验逻辑回归不可见。
+- **发现:** CI 只跑前端(typecheck/lint/test + playwright e2e),src-tauri 的 Rust 侧测试无 CI 门槛,lib.rs 安全校验逻辑回归不可见。注:计数按平台不同——ubuntu 53 / macOS 54(源码 55 个 #[test],2 个 macOS 专属 cfg 掉;lib.rs 末段 1 个 #[cfg(not(macos))] 测试因 CI 缺失此前从未在任何机器跑过,本 PR 顺带激活)。
 - **建议:** CI 增加 cargo test job（可复用 ISS-179 Phase 4 已有的 Rust 构建缓存模式）。
 
 #### ⬜ ISS-210 autosave 不落盘 pending 图片——blob: 引用以死链写盘（main 存量,ISS-196 review MINOR-2 发现,2026-08-29）
