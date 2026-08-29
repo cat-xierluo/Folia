@@ -62,7 +62,7 @@
 
 ### 收口 / 演进类
 
-#### ⬜ ISS-201 fs 插件彻底收口：持久 IO 全部走自定义命令
+#### 🖥 ISS-201 fs 插件彻底收口：持久 IO 全部走自定义命令（分支 fix/iss201-fs-plugin-fs-closeout,PR 待开,2026-08-29）
 
 - **背景:** ISS-197（PR #135）以 deny-only scope 补位，但插件面仍保留 `fs:allow-read/write-*`。「allow 空 = 放行一切」的根因在 ACL 模型本身，敏感目录之外的任意路径读写依旧不受约束。
 - **路径:** fileService（`saveFileAs` 二次写入）、wordExportService（writeFile）、wechatPreviewService（writeTextFile/save+readTextFile）、htmlPresentationService（readLocalResource）四处调用面改走受控 Rust 命令（扩展名白名单 + 黑名单复用），然后从 capabilities 删除 4 条 fs allow-*。

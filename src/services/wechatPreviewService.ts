@@ -1132,9 +1132,11 @@ export async function exportHtmlDocument(
 ): Promise<WechatHtmlExportResult> {
 
   if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
-    const [{ save }, { writeTextFile }] = await Promise.all([
+    // ISS-201：写入走受控 Rust 命令（.html/.htm 白名单 + denied-root 黑名单），
+    // 不再依赖 fs 插件的宽泛 allow-*。
+    const [{ save }, { invoke }] = await Promise.all([
       import('@tauri-apps/plugin-dialog'),
-      import('@tauri-apps/plugin-fs'),
+      import('@tauri-apps/api/core'),
     ]);
     const path = await save({
       defaultPath,
@@ -1142,7 +1144,7 @@ export async function exportHtmlDocument(
     });
     if (!path) return 'cancelled';
 
-    await writeTextFile(path, html);
+    await invoke('write_opened_document', { path, content: html });
     return 'saved';
   }
 

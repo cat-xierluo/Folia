@@ -60,9 +60,69 @@ const MAX_OPENED_DOCUMENT_BYTES: u64 = 10 * 1024 * 1024;
 /// 异常构造的 IPC 请求把数 GB JSON 数字数组灌进内存，不是常规业务约束。
 const MAX_MANAGED_ASSET_BYTES: usize = 20 * 1024 * 1024;
 
+/// 二进制导出（write_binary_export）允许的最大字节数（ISS-201 review MAJOR-3）。
+///
+/// 与 MAX_MANAGED_ASSET_BYTES 分离：导出的 docx 是应用自身产物而非外部 IPC
+/// 输入，图文混排法律文档可轻松超过 20MB——main 上 fs writeFile 无上限，
+/// 硬套资产上限会让「曾经成功的导出」升级后静默失败（回归）。200MB 只拦
+/// 伪造 IPC 大包（威胁模型），远超真实文档量级。
+const MAX_EXPORT_BYTES: usize = 200 * 1024 * 1024;
+
 /// 受管图片资产允许的扩展名白名单（小写）。与前端媒体插入层接受的
 /// `image/*` mime 对齐取超集；超出列表的请求一律拒绝——防止伪造 IPC
 /// 把任意脚本 / 可执行内容写进 `<doc>.assets/`。
+/// HTML 演示本地资源允许的扩展名白名单（ISS-201 review MAJOR-1）。
+///
+/// 前端 `htmlPresentationService` 的内联范围包含 `<script src>` / `<link
+/// rel=stylesheet>` / `video|audio|source` / `poster` / `<img>` / 字体——
+/// 与编辑器图片通道（media_mime_type，仅图片）语义不同，独立白名单：
+/// 脚本/样式/媒体/字体 + 图片。视频大小上限单独评估（见 MAX_MEDIA_BYTES）。
+const PRESENTATION_RESOURCE_EXTENSIONS: &[&str] = &[
+  // 图片（与 media_mime_type 一致）
+  "png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg", "avif",
+  // 样式 / 脚本
+  "css", "js", "mjs",
+  // 视频 / 音频
+  "mp4", "webm", "ogv", "mp3", "wav", "ogg", "m4a", "aac",
+  // 字体
+  "woff", "woff2", "ttf", "otf", "eot",
+  // 文本类演示资源
+  "vtt", "json",
+];
+
+/// 推断 presentation 资源的 mime（内联 data URL / iframe src 用）。
+fn presentation_resource_mime(path: &Path) -> Option<&'static str> {
+  let ext = path.extension()?.to_string_lossy().to_ascii_lowercase();
+  Some(match ext.as_str() {
+    "png" => "image/png",
+    "jpg" | "jpeg" => "image/jpeg",
+    "gif" => "image/gif",
+    "webp" => "image/webp",
+    "bmp" => "image/bmp",
+    "ico" => "image/x-icon",
+    "svg" => "image/svg+xml",
+    "avif" => "image/avif",
+    "css" => "text/css",
+    "js" | "mjs" => "text/javascript",
+    "mp4" => "video/mp4",
+    "webm" => "video/webm",
+    "ogv" => "video/ogg",
+    "mp3" => "audio/mpeg",
+    "wav" => "audio/wav",
+    "ogg" => "audio/ogg",
+    "m4a" => "audio/mp4",
+    "aac" => "audio/aac",
+    "woff" => "font/woff",
+    "woff2" => "font/woff2",
+    "ttf" => "font/ttf",
+    "otf" => "font/otf",
+    "eot" => "application/vnd.ms-fontobject",
+    "vtt" => "text/vtt",
+    "json" => "application/json",
+    _ => return None,
+  })
+}
+
 const MANAGED_ASSET_EXTENSIONS: &[&str] = &[
   "png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "avif", "ico", "tiff", "tif", "heic", "heif",
 ];
@@ -144,22 +204,66 @@ fn read_opened_document(path: String) -> Result<tauri::ipc::Response, String> {
 #[tauri::command]
 fn write_opened_document(path: String, content: String) -> Result<(), String> {
   let path = PathBuf::from(path);
-  if !is_absolute_path(&path) {
+  validate_writable_document(&path)?;
+
+  std::fs::write(&path, content).map_err(|error| format!("failed to write document: {error}"))
+}
+
+/// 校验「可写文档」目标路径：绝对路径 + 可写扩展名白名单 + denied-root 黑名单。
+/// ISS-172 抽出的共享校验链（write_opened_document / write_binary_export 复用）。
+fn validate_writable_document(path: &Path) -> Result<(), String> {
+  if !is_absolute_path(path) {
     return Err(format!("path must be absolute: {}", path.display()));
   }
-  if !is_writable_document_path(&path) {
+  if !is_writable_document_path(path) {
     return Err("unsupported document type".into());
   }
   // ISS-172：写入同样走路径黑名单，避免任何代码（含 XSS 注入）用合法后缀的写入
   // 覆盖 /etc / .ssh / C:\Windows 等敏感文件。与 read / watch 共享单一来源。
+  if is_denied_root(path) {
+    return Err(format!(
+      "path is on the denied roots list: {}",
+      path.display()
+    ));
+  }
+  Ok(())
+}
+
+/// 二进制导出落盘（ISS-201）：Word 导出（.docx）等由「导出对话框选择的
+/// 绝对路径 + 应用自身生成的字节」构成的写入。与 write_opened_document
+/// 共享 denied-root 黑名单，但扩展名白名单独立——.docx 不属于可打开
+/// 文档类型，不能让导出通道反过来放宽文档白名单。
+///
+/// 字节上限用独立的 MAX_EXPORT_BYTES(与资产上限分离,理由见其注释)。
+#[tauri::command]
+fn write_binary_export(path: String, bytes: Vec<u8>) -> Result<(), String> {
+  let path = PathBuf::from(&path);
+  if !is_absolute_path(&path) {
+    return Err(format!("path must be absolute: {}", path.display()));
+  }
+  let ext = path
+    .extension()
+    .and_then(|extension| extension.to_str())
+    .map(|extension| extension.to_ascii_lowercase())
+    .unwrap_or_default();
+  if !matches!(ext.as_str(), "docx") {
+    return Err(format!("unsupported export extension: .{ext}"));
+  }
   if is_denied_root(&path) {
     return Err(format!(
       "path is on the denied roots list: {}",
       path.display()
     ));
   }
+  if bytes.len() > MAX_EXPORT_BYTES {
+    return Err(format!(
+      "export payload too large: {} bytes exceeds the {} byte limit",
+      bytes.len(),
+      MAX_EXPORT_BYTES
+    ));
+  }
 
-  std::fs::write(&path, content).map_err(|error| format!("failed to write document: {error}"))
+  std::fs::write(&path, bytes).map_err(|error| format!("failed to write export: {error}"))
 }
 
 /// 将粘贴 / 拖入的图片字节原子落盘到文档同目录的 `<doc>.assets/` 子目录
@@ -400,6 +504,49 @@ fn read_media_as_data_url(path: String) -> Result<String, String> {
     "data:{mime};base64,{}",
     base64::engine::general_purpose::STANDARD.encode(bytes)
   ))
+}
+
+/// HTML 演示/预览的本地资源内联读取（ISS-201）：`resolveLocalResourcePath`
+/// 在前端把 `<img src>` / `<link href>` 等解析为绝对路径后，由此命令读取
+/// 字节，前端自行转 data URI（htmlPresentationService 的既有消费形态）。
+/// 校验链复用媒体命令：绝对路径 + 媒体黑名单（含 /private/var 等）+
+/// 扩展名白名单 + 大小上限 + canonicalize 双重校验。
+#[tauri::command]
+fn read_presentation_resource(path: String) -> Result<tauri::ipc::Response, String> {
+  let resource_path = PathBuf::from(&path);
+  if !is_absolute_path(&resource_path) {
+    return Err(format!("resource path must be absolute: {path}"));
+  }
+  if is_media_denied_path(&resource_path) {
+    return Err(format!(
+      "resource path is on the denied roots list: {path}"
+    ));
+  }
+  if presentation_resource_mime(&resource_path).is_none() {
+    return Err(format!("unsupported resource extension: {path}"));
+  }
+
+  let canonical = std::fs::canonicalize(&resource_path)
+    .map_err(|error| format!("failed to resolve resource path: {error}"))?;
+  if is_media_denied_path(&canonical) {
+    return Err(format!(
+      "canonical resource path is on the denied roots list: {}",
+      canonical.display()
+    ));
+  }
+
+  let size = std::fs::metadata(&canonical)
+    .map_err(|error| format!("failed to stat resource file: {error}"))?
+    .len();
+  if size > MAX_MEDIA_BYTES {
+    return Err(format!(
+      "resource file exceeds the {MAX_MEDIA_BYTES}-byte limit: {size} bytes ({path})"
+    ));
+  }
+
+  let bytes = std::fs::read(&canonical)
+    .map_err(|error| format!("failed to read resource file: {error}"))?;
+  Ok(tauri::ipc::Response::new(bytes))
 }
 
 /// 监听系统根或敏感目录黑名单前缀（ISS-162，借鉴 horseMD chokidar 防御）。
@@ -900,6 +1047,8 @@ pub fn run() {
       pending_opened_paths,
       read_opened_document,
       write_opened_document,
+      write_binary_export,
+      read_presentation_resource,
       write_managed_asset,
       read_media_as_data_url,
       watch_path,
@@ -1709,6 +1858,51 @@ mod tests {
   }
 
   /// macOS /private/etc 真实挂载点补黑名单（ISS-197）。
+  // ──────── ISS-201 write_binary_export ────────
+
+  #[test]
+  fn write_binary_export_accepts_docx_and_rejects_other_extensions() {
+    let dir = std::env::temp_dir().join(format!("iss201-export-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("case.docx");
+
+    write_binary_export(path.to_string_lossy().to_string(), vec![0x50, 0x4b]).unwrap();
+    assert_eq!(std::fs::read(&path).unwrap(), vec![0x50, 0x4b]);
+
+    // 非 .docx:保存对话框手键 .doc/.txt 时 Rust 直接拒绝,前端提示后不落盘
+    let doc = dir.join("case.doc");
+    let err = write_binary_export(doc.to_string_lossy().to_string(), vec![1]).unwrap_err();
+    assert!(err.contains("unsupported export extension"), "{err}");
+    assert!(!doc.exists(), "rejected export must not write the file");
+
+    let _ = std::fs::remove_dir_all(&dir);
+  }
+
+  #[test]
+  fn write_binary_export_rejects_relative_path_and_denied_root() {
+    let err = write_binary_export("relative/case.docx".into(), vec![1]).unwrap_err();
+    assert!(err.contains("absolute"), "{err}");
+
+    let err = write_binary_export("/etc/passwd.docx".into(), vec![1]).unwrap_err();
+    assert!(err.contains("denied roots list"), "{err}");
+  }
+
+  #[test]
+  fn write_binary_export_enforces_max_export_bytes() {
+    let dir = std::env::temp_dir().join(format!("iss201-export-max-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("huge.docx");
+
+    let oversized = vec![0u8; MAX_EXPORT_BYTES + 1];
+    let err = write_binary_export(path.to_string_lossy().to_string(), oversized).unwrap_err();
+    assert!(err.contains("export payload too large"), "{err}");
+    assert!(!path.exists());
+
+    let _ = std::fs::remove_dir_all(&dir);
+  }
+
   #[test]
   fn deny_prefixes_cover_private_etc_and_private_dev() {
     assert!(is_denied_root(Path::new("/private/etc/passwd.md")));
