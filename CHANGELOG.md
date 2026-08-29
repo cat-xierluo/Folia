@@ -6,6 +6,8 @@ All notable changes of this project will be documented in this file.
 
 ### Changed
 
+- **依赖升级批次（ISS-204）**：playwright/@playwright-test 1.60→1.62.1、@tauri-apps/api 2.11.0→2.11.1、@tauri-apps/cli 2.11.1→2.11.4、vitest 4.1.6→4.1.11、docx 9.6.1→9.7.1、mammoth 1.12.0→1.12.2、codemirror 系 4 项（lang-markdown 6.5.2 / state 6.7.1 / view 6.43.9 / react-codemirror 4.25.11）、lucide-react 1.16→1.35.0（15 个在用图标逐一验证在新版存在）、jsdom 29→30.0.1（vitest peer 兼容）。**vditor 保持 3.11.2 不升 3.11.3**：实测其 Lute 内核对多行 SVG 的 IR 拆块算法变更（块级节点 → 部分段落化），打破 ISS-205 SVG 重组逻辑的前提、单测红；迁移待与 vendored 资源同步一并评估。lockfile 随 package.json 同一提交。验证：781/781 单测、typecheck/lint/build、`npm audit` 0 vulnerabilities。
+
 - **TypeScript 全量开启 `strict`（ISS-203）**：`tsconfig.app.json` / `tsconfig.node.json` 开启 `strict: true`；**测试文件从此纳入 typecheck**——此前 `tsconfig.app.json` 把 `*.test.ts(x)` 整体 `exclude`，测试代码从未被 `npm run typecheck` 编译过（盲区）。实测生产代码 96 文件 full strict 零错误，49 条 strict 错误全部落在测试文件：24 个测试文件逐条修类型（未使用 `React` 默认导入 12 处〔jsx: react-jsx 下本就不需要〕、updater/downloadAppUpdate 与 classifyHtmlTableBlocks 等 mock 泛型签名落后于现行 API、docx `rootKey` protected 字段经 unknown 通道断言、TS 控制流对闭包赋值的 never 收窄等），语义零改动、测试意图不变。新增 `config/tsconfig.test.json`（strict + vite/client + node types）接入 `tsc -b` project references，`npm run typecheck` 现覆盖生产 + 测试 + 构建脚本三类代码。验证：781/781 单测、lint/typecheck/build 全绿。附带产出：`npm audit` 恢复可运行（根因为 hermes npm 自带 arborist 8.0.5 的 `edgesOut` 缺陷，改用 homebrew npm 规避，见 TASKS ISS-204 备注）。详见 [DEC-142](docs/DECISIONS.md)。
 
 ### Fixed
