@@ -68,10 +68,10 @@
 - **建议:** 分两步：先开 `strictNullChecks` 修完编译错，再补齐其余 strict 开关；CI typecheck 已是门槛，一次性收益明显。
 - **收口:** 实测生产 96 文件 full strict 零错误,「分两步」不需要,一步到位 `strict: true`。**根因性发现:49 条 strict 错误全部落在测试文件——测试文件此前被 tsconfig.app.json exclude,`npm run typecheck` 从未编译过任何 `*.test.ts(x)`（覆盖面盲区）**。修法：24 个测试文件逐条修类型（未使用 React 导入 12、mock 泛型与 props 漂移、protected rootKey/never 收窄等,语义零改动）；新增 `config/tsconfig.test.json` 接入 `tsc -b` references,typecheck 覆盖生产+测试+构建脚本。顺带:dompurify 3.4.3→3.4.14（audit 清零）、npm `edgesOut` 根因=hermes arborist 8.0.5 缺陷（记 ISS-204 备注）。**review 两轮:初审 NEEDS-FIXES（2 MAJOR:lockfile 未随 package.json 提交致 `npm ci` 装 3.4.3 / DEC-141 撞号改 DEC-142）→ 修复 9842a73 → 复核 APPROVE**。验证 781/781 + lint + typecheck + build + audit 0 + CI 双绿。
 
-#### ⬜ ISS-204 依赖升级批次（低风险小版本）
+#### 🖥 ISS-204 依赖升级批次（低风险小版本）（分支 chore/iss204-deps-upgrade,PR 待开,2026-08-29）
 
 - **清单:** vite 8.1→8.2、vitest 4.1.6→4.1.11、@playwright/test & playwright 1.60→1.62、typescript-eslint 8.65→8.68、globals/eslint minor、@tauri-apps/api 2.11.0→2.11.1、vditor 3.11.2→3.11.3、~~dompurify 3.4.3→3.4.14~~（✅ 已于 2026-08-29 随 ISS-203 分支提前完成：audit 报 1 moderate〔IN_PLACE 跨 realm XSS 双公告〕，升级后 `npm audit` 0 vulnerabilities；全量单测回归通过）、docx 9.6.1→9.7.1、mammoth 1.12.1、vitejs/plugin-react 6.1.0。
-- **单列评估:** typescript 6.0→7.0（跨主版本）；jsdom 29→30（vitest 环境兼容性）；lucide-react 1.16→1.34（图标库跨度大，查 breaking）。
+- **推进（2026-08-29,分支 chore/iss204-deps-upgrade）:** 升级 playwright 1.62.1、tauri api/cli、vitest 4.1.11、docx 9.7.1、mammoth 1.12.2、codemirror 系 4 项、lucide-react 1.35.0（15 个在用图标逐一验证存在）、jsdom 30.0.1（vitest peer `jsdom:*` 兼容,781 回归过）。**vditor 3.11.3 实测 breaking 回退保持 3.11.2**:Lute 多行 SVG 拆块算法变更（8 html-block → 4 html-block + 2 `<p>`）打破 `repairSplitSvgIrPreviews` 相邻兄弟前提,单测红——探针实证后回退,「3.11.3 迁移 + vendored(public/) 资源同步」单列评估。typescript 6→7 跨主版本仍单列;@types/node 26 与本地 node 22 不匹配不动。lockfile 与 package.json 同一提交（吸取 #155 review MAJOR 教训）;lockfile 包级 diff 仅 jsdom 传递依赖重排（2 删 3 增 @asamuzakjp 系）。验证:781/781、typecheck/lint/build、audit 0、npm ci dry-run EXIT=0。
 - **备注（2026-08-29 更新）:** ~~`npm audit` 当前无法运行~~已恢复可运行。根因查明：全局 npm 位于 `~/.hermes/node`（npm 10.9.8 自带 @npmcli/arborist 8.0.5），其 `#loadPeerSet` 存在 `Cannot read properties of null (reading 'edgesOut')` 缺陷，`rm -rf node_modules && npm ci` 无法绕过；改用 `/opt/homebrew/bin/npm`（或 nvm node）一切正常。后续 npm install/audit 一律用 homebrew npm。
 
 ### 已接受的风险（不追踪）
