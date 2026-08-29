@@ -22,6 +22,8 @@ log = "0.4"
 notify = "6"
 base64 = "0.22"
 serde_json = "1.0"
+# ISS-215：x-folia-export-path header 的 percent 解码（reqwest 传递依赖转直接依赖）。
+percent-encoding = "2.3"
 tauri = { version = "2.11.1", features = ["protocol-asset"] }
 tauri-plugin-log = "2"
 tauri-plugin-dialog = "2.7.1"
