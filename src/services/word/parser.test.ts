@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_PRESET_ID, getPreset } from './config';
 import { parseLines } from './parser';
 
@@ -106,5 +106,47 @@ describe('parseLines', () => {
     );
 
     expect(children.map((child) => (child as unknown as { rootKey: string }).rootKey)).toEqual(['w:p', 'w:p', 'w:tbl', 'w:p']);
+  });
+});
+
+
+// ISS-201 review MAJOR-2 核对点 4:相对图片路径按文档目录解析为绝对路径。
+// 三种形态:./x.assets/y.png、裸相对名、URL 编码路径。
+describe('addImage 相对路径解析(ISS-201 review MAJOR-2)', () => {
+  let invokeMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    invokeMock = vi.fn().mockRejectedValue(new Error('not found'));
+    vi.doMock('@tauri-apps/api/core', () => ({ invoke: invokeMock }));
+  });
+
+  afterEach(() => {
+    vi.resetModules();
+  });
+
+  async function parseWithDocPath(markdown: string, docPath: string): Promise<void> {
+    const { markdownToDocx } = await import('./parser');
+    await markdownToDocx(markdown, getPreset(DEFAULT_PRESET_ID), { docPath });
+  }
+
+  it('./x.assets/y.png 形态解析为 <docDir>/x.assets/y.png', async () => {
+    await parseWithDocPath('![证据](./x.assets/y.png)', '/work/案件.md');
+    expect(invokeMock).toHaveBeenCalledWith('read_presentation_resource', { path: '/work/x.assets/y.png' });
+  });
+
+  it('裸相对名解析为 <docDir>/img.png', async () => {
+    await parseWithDocPath('![图](img.png)', '/work/案件.md');
+    expect(invokeMock).toHaveBeenCalledWith('read_presentation_resource', { path: '/work/img.png' });
+  });
+
+  it('URL 编码路径(%20)解码后解析', async () => {
+    await parseWithDocPath('![图](./%E5%9B%BE%E7%89%87%201.png)', '/work/案件.md');
+    expect(invokeMock).toHaveBeenCalledWith('read_presentation_resource', { path: '/work/图片 1.png' });
+  });
+
+  it('无 docPath 上下文:相对路径原样传入(由 Rust 绝对路径校验拒绝,前端占位符降级)', async () => {
+    const { markdownToDocx } = await import('./parser');
+    await markdownToDocx('![图](img.png)', getPreset(DEFAULT_PRESET_ID));
+    expect(invokeMock).toHaveBeenCalledWith('read_presentation_resource', { path: 'img.png' });
   });
 });

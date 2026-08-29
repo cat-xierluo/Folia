@@ -784,10 +784,19 @@ async function addImage(
       // read_presentation_resource 强制绝对路径,相对 url 需按文档目录解析;
       // 无文档上下文(浏览器/vitest)时维持原样由调用方兜底。
       const stripped = url.startsWith('./') ? url.slice(2) : url;
-      let filePath = stripped;
-      if (docPathContext && !/^([A-Za-z]:[\\/]|\/)/.test(stripped)) {
+      // ISS-194/DEC-140:落盘图片路径常含 %20 等百分号编码,读盘前解码
+      // (与 htmlPresentationService.decodeResourcePath 同语义;编码不存在时
+      // decodeURIComponent 原样返回)。
+      let decoded = stripped;
+      try {
+        decoded = decodeURIComponent(stripped);
+      } catch {
+        // 含悬空 % 的畸形路径按原样尝试,由后续白名单/黑名单拒绝
+      }
+      let filePath = decoded;
+      if (docPathContext && !/^([A-Za-z]:[\\/]|\/)/.test(decoded)) {
         const dir = docPathContext.replaceAll('\\', '/').slice(0, docPathContext.replaceAll('\\', '/').lastIndexOf('/') + 1);
-        filePath = dir + stripped;
+        filePath = dir + decoded;
       }
 
       // ISS-201：本地图片字节走受控 Rust 命令（媒体扩展名白名单 + denied-root
