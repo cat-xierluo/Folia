@@ -1,8 +1,11 @@
 name: CI
 
 # ISS-173：拦截前端 typecheck / lint / test 回归，确保 PR 合入前测试套件
-# 处于绿态。push 与 PR 都触发；仅跑 npm 链路，不编译 Tauri（避免 macOS
+# 处于绿态。push 与 PR 都触发；不打包 Tauri 应用（避免 macOS
 # WKWebView / Windows WiX 的 release-only 依赖；Tauri 构建由 release.yml 负责）。
+# ISS-212：新增 cargo test job——lib.rs 的安全校验（deny-root 黑名单 /
+# write_managed_asset 五层校验 / 媒体命令）等 Rust 侧回归此前无 CI 门槛，
+# 仅靠本地手跑。只跑 `cargo test`（测试编译，不做 release 打包）。
 on:
   push:
     branches: [main]
@@ -122,3 +125,28 @@ jobs:
             test-results/
             playwright-report/
           retention-days: 7
+  cargo-test:
+    # ISS-212：Rust 侧回归门槛。lib.rs 聚合了文件安全校验（denied-root
+    # 黑名单、write_managed_asset 白名单/防逃逸、媒体命令约束）与文档解析
+    # 逻辑，54 个测试此前仅本地手跑，安全逻辑回归在 CI 不可见。复用
+    # release.yml 的 rust-toolchain + rust-cache 模式；只跑测试不做打包，
+    # 系统依赖用 Tauri 官方 action 装齐（webkit2gtk 等，测试编译链接需要）。
+    name: cargo test (rust)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Tauri system dependencies (linux)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libgtk-3-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workdir: src-tauri
+
+      - name: Run cargo test
+        run: cargo test --manifest-path src-tauri/Cargo.toml

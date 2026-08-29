@@ -85,7 +85,7 @@
 - **推进（2026-08-29,分支 chore/iss204-deps-upgrade）:** 升级 playwright 1.62.1、tauri api/cli、vitest 4.1.11、docx 9.7.1、mammoth 1.12.2、codemirror 系 4 项、lucide-react 1.35.0（15 个在用图标逐一验证存在）、jsdom 30.0.1（vitest peer `jsdom:*` 兼容,781 回归过）。**vditor 3.11.3 实测 breaking 回退保持 3.11.2**:Lute 多行 SVG 拆块算法变更（8 html-block → 4 html-block + 2 `<p>`）打破 `repairSplitSvgIrPreviews` 相邻兄弟前提,单测红——探针实证后回退,「3.11.3 迁移 + vendored(public/) 资源同步」单列评估。typescript 6→7 跨主版本仍单列;@types/node 26 与本地 node 22 不匹配不动。lockfile 与 package.json 同一提交（吸取 #155 review MAJOR 教训）;lockfile 包级 diff:2 删 3 增 + 46 项版本变更,全部归因 jsdom 29→30 依赖域放宽(undici 7→8 跨 major、@asamakjp/css-color 5→6 等)与 vitest 的 tinyrainbow,无未归因夹带（review MINOR-1 修正:此前表述「仅 jsdom 传递重排」低估变更面）。计数口径:13 处直接依赖变更含 playwright/test+cli 2 项截断在 diff 末尾,标题「11 项」为 vitest+playwright 合并工具链计数（review MINOR-2）。独立 review 复现全部关键声明（vditor 3.11.3 断链点定位到 vditorIrSanitizeService.ts:119 getNextAdjacentIrHtmlNode 的 nextElementSibling 相邻前提）,0 MAJOR 可合。验证:781/781、typecheck/lint/build、audit 0、npm ci dry-run EXIT=0、CI 双绿。
 - **备注（2026-08-29 更新）:** ~~`npm audit` 当前无法运行~~已恢复可运行。根因查明：全局 npm 位于 `~/.hermes/node`（npm 10.9.8 自带 @npmcli/arborist 8.0.5），其 `#loadPeerSet` 存在 `Cannot read properties of null (reading 'edgesOut')` 缺陷，`rm -rf node_modules && npm ci` 无法绕过；改用 `/opt/homebrew/bin/npm`（或 nvm node）一切正常。后续 npm install/audit 一律用 homebrew npm。
 
-#### ⬜ ISS-212 Rust cargo test 尚未纳入 CI——Rust 侧回归仅靠本地手跑（ISS-197 review 跟进发现,2026-08-29）
+#### 🖥 ISS-212 Rust cargo test 尚未纳入 CI——Rust 侧回归仅靠本地手跑（ISS-197 review 跟进发现,2026-08-29;分支 chore/iss212-cargo-test-ci,PR 待开）
 
 - **发现:** CI 只跑前端(typecheck/lint/test + playwright e2e),src-tauri 的 54 个测试无 CI 门槛,lib.rs 安全校验逻辑回归不可见。
 - **建议:** CI 增加 cargo test job（可复用 ISS-179 Phase 4 已有的 Rust 构建缓存模式）。
