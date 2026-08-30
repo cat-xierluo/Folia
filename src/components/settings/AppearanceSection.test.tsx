@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import {
@@ -18,6 +19,7 @@ import {
   getSettings,
   updateSettings,
 } from '../../services/settingsService';
+import { DEFAULT_LICENSE_STATE, activateBetaLicenseCode } from '../../services/licenseService';
 import type { CustomThemePreset } from '../../services/themePresets';
 
 // 锁定 settingsService 中与导入/槽位相关的副作用入口；其它读写维持真实链路，
@@ -66,10 +68,13 @@ describe('AppearanceSection ISS-191 Wave 2-B', () => {
     settingsServiceMock.removeCustomThemePreset.mockReset();
     settingsServiceMock.setCustomThemePresetEnabled.mockReset();
     // 每次测试重置 settings 到稳定起点。
+    // license 显式重置为默认(inactive)——ISS-216 测试会激活 license,
+    // 全局单例状态不清理会泄漏到后续用例。
     updateSettings({
       themeId: 'builtin:light',
       customThemePresets: [],
       disabledThemePresetIds: [],
+      license: DEFAULT_LICENSE_STATE,
     });
   });
 
@@ -79,7 +84,7 @@ describe('AppearanceSection ISS-191 Wave 2-B', () => {
     host.remove();
   });
 
-  it('renders all 6 built-in theme cards with preview swatches', async () => {
+  it('renders all 6 built-in theme cards; 古典未激活时为锁定卡(ISS-216)', async () => {
     await act(async () => {
       root.render(<AppearanceSection />);
     });
@@ -87,24 +92,75 @@ describe('AppearanceSection ISS-191 Wave 2-B', () => {
     const cards = host.querySelectorAll('.settings-theme-card--built-in');
     expect(cards.length).toBe(BUILT_IN_THEME_PRESETS.length);
     expect(cards.length).toBe(6);
-    // 每张色卡包含 bg/fg/accent 三个预览色块。
-    cards.forEach((card) => {
+    // license 未激活(默认):古典卡是锁定形态(锁图标,无色块),其余 5 张
+    // 是普通色卡(2 个预览色块)。
+    const lockedCards = host.querySelectorAll('.settings-theme-card--built-in.settings-theme-card--locked');
+    expect(lockedCards.length).toBe(1);
+    expect(lockedCards[0].querySelector('.settings-theme-card-swatch')).toBeNull();
+    expect(lockedCards[0].textContent).toContain('古典');
+    const normalCards = host.querySelectorAll(
+      '.settings-theme-card--built-in:not(.settings-theme-card--locked)',
+    );
+    expect(normalCards.length).toBe(5);
+    normalCards.forEach((card) => {
       const swatches = card.querySelectorAll('.settings-theme-card-swatch');
       expect(swatches.length).toBe(2);
     });
   });
 
-  it('shows license-locked row when license is inactive and routes click to onOpenLicense', async () => {
+  it('ISS-216: 未激活点击古典锁卡 → onOpenLicense;激活后古典恢复普通色卡', async () => {
     const onOpenLicense = vi.fn();
     await act(async () => {
       root.render(<AppearanceSection onOpenLicense={onOpenLicense} />);
     });
 
-    const lockedCard = host.querySelector('.settings-theme-card--locked');
-    expect(lockedCard).toBeTruthy();
+    // 未激活:点击古典锁卡 → 跳授权页,不切换主题
+    const lockedCard = host.querySelector<HTMLElement>(
+      '.settings-theme-card--built-in.settings-theme-card--locked',
+    );
+    expect(lockedCard).not.toBeNull();
+    await act(async () => {
+      lockedCard!.click();
+    });
+    expect(onOpenLicense).toHaveBeenCalledTimes(1);
+    expect(getSettings().themeId).not.toBe('builtin:classic');
+
+    // 模拟激活:走真实激活链拿到合法 LicenseState,经 updateSettings 持久化
+    // (不突变 DEFAULT_LICENSE_STATE 单例——原地改会导致后续用例全部看到 active)。
+    const activation = activateBetaLicenseCode('YWXLAW');
+    expect(activation.ok).toBe(true);
+    updateSettings({ license: activation.license });
+    await act(async () => {
+      root.unmount();
+      root = createRoot(host);
+      root.render(<AppearanceSection onOpenLicense={onOpenLicense} />);
+    });
+    const lockedAfter = host.querySelectorAll(
+      '.settings-theme-card--built-in.settings-theme-card--locked',
+    );
+    expect(lockedAfter.length).toBe(0);
+    // 古典恢复普通色卡(2 色块),且可点击切换
+    const classicCard = Array.from(
+      host.querySelectorAll<HTMLElement>('.settings-theme-card--built-in:not(.settings-theme-card--locked)'),
+    ).find((card) => card.textContent?.includes('古典'));
+    expect(classicCard).toBeDefined();
+    expect(classicCard!.querySelectorAll('.settings-theme-card-swatch').length).toBe(2);
+  });
+
+  it('shows custom-slot license lock card when inactive and routes click to onOpenLicense', async () => {
+    const onOpenLicense = vi.fn();
+    await act(async () => {
+      root.render(<AppearanceSection onOpenLicense={onOpenLicense} />);
+    });
+
+    // ISS-216:排除 builtin 古典锁卡,只找自定义槽区的锁卡(非 --built-in)。
+    const lockedCards = Array.from(
+      host.querySelectorAll<HTMLElement>('.settings-theme-card--locked:not(.settings-theme-card--built-in)'),
+    );
+    expect(lockedCards.length).toBe(1);
 
     await act(async () => {
-      (lockedCard as HTMLButtonElement).click();
+      lockedCards[0].click();
     });
 
     expect(onOpenLicense).toHaveBeenCalledTimes(1);
@@ -124,9 +180,9 @@ describe('AppearanceSection ISS-191 Wave 2-B', () => {
         codeLabel: 'YWXLAW',
         activatedAt: '2026-08-14T00:00:00.000Z',
         expiresAt: null,
-        customExportPresetLimit: 8,
-        customHtmlExportPresetLimit: 8,
-        customThemePresetLimit: 8,
+        customExportPresetLimit: 6,
+        customHtmlExportPresetLimit: 6,
+        customThemePresetLimit: 3,
       },
     });
 

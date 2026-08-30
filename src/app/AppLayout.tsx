@@ -338,13 +338,18 @@ export function AppLayout() {
   // ISS-191：解析当前主题预设（内置 + 启用的自定义）。fallback builtin:light 由
   // Wave 1 的 getThemePresetDefinition 兜底：themeId 缺失 / 找不到 / 全停用都走 light。
   // 切换主题只需 settings.themeId 变化即可重渲，无需显式调度——useMemo 已串好依赖链。
-  const themePreset = useMemo<ThemePreset>(
-    () => getThemePresetDefinition(settings.themeId || DEFAULT_THEME_ID, {
+  // ISS-216：builtin:classic 为内测主题——license 失效（过期/未激活）时运行时
+  // 回退 light，防止「激活时选了古典 → 到期后仍继续用」。UI 层卡片锁定与之配套。
+  const themePreset = useMemo<ThemePreset>(() => {
+    const resolved = getThemePresetDefinition(settings.themeId || DEFAULT_THEME_ID, {
       customThemePresets: settings.customThemePresets ?? [],
       disabledThemePresetIds: settings.disabledThemePresetIds ?? [],
-    }),
-    [settings.themeId, settings.customThemePresets, settings.disabledThemePresetIds],
-  );
+    });
+    if (resolved.id === 'builtin:classic' && settings.license.status !== 'active') {
+      return getThemePresetDefinition(DEFAULT_THEME_ID);
+    }
+    return resolved;
+  }, [settings.themeId, settings.customThemePresets, settings.disabledThemePresetIds, settings.license.status]);
   // 内置主题 elementCss（古典等的元素规则）+ 自定义主题用户 CSS 都走 elementCss 通道
   // （listThemePresets 已把 customs 的 css 映射到 elementCss 字段）。
   const themeStyleCss = themePreset.elementCss ?? '';

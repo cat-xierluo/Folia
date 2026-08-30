@@ -17,14 +17,14 @@ describe('licenseService — customThemePresetLimit (ISS-191)', () => {
     expect(getLicenseCustomThemePresetLimit(DEFAULT_LICENSE_STATE)).toBe(2);
   });
 
-  it('beta YWXLAW raises the custom theme slot limit to 8', () => {
+  it('beta YWXLAW raises the custom theme slot limit (theme 3 / export 6, ISS-216)', () => {
     const result = activateBetaLicenseCode('ywxlaw');
 
     expect(result.ok).toBe(true);
-    expect(result.license.customThemePresetLimit).toBe(8);
-    expect(result.license.customExportPresetLimit).toBe(8);
-    expect(result.license.customHtmlExportPresetLimit).toBe(8);
-    expect(getLicenseCustomThemePresetLimit(result.license)).toBe(8);
+    expect(result.license.customThemePresetLimit).toBe(3);
+    expect(result.license.customExportPresetLimit).toBe(6);
+    expect(result.license.customHtmlExportPresetLimit).toBe(6);
+    expect(getLicenseCustomThemePresetLimit(result.license)).toBe(3);
   });
 
   it('invalid codes keep standard limits and return error result', () => {
@@ -35,7 +35,7 @@ describe('licenseService — customThemePresetLimit (ISS-191)', () => {
     expect(getLicenseCustomThemePresetLimit(result.license)).toBe(2);
   });
 
-  it('normalizes tampered beta license state back to known limits (8)', () => {
+  it('normalizes tampered beta license state back to known limits (theme 3 / export 6)', () => {
     const tampered: LicenseState = {
       status: 'active',
       plan: 'beta',
@@ -48,8 +48,9 @@ describe('licenseService — customThemePresetLimit (ISS-191)', () => {
     };
 
     const normalized = normalizeLicenseState(tampered);
-    expect(normalized.customThemePresetLimit).toBe(8);
-    expect(getLicenseCustomThemePresetLimit(tampered)).toBe(8);
+    expect(normalized.customThemePresetLimit).toBe(3);
+    expect(normalized.customExportPresetLimit).toBe(6);
+    expect(getLicenseCustomThemePresetLimit(tampered)).toBe(3);
   });
 
   it('rejects persisted active license with unknown code labels', () => {
@@ -77,8 +78,8 @@ describe('licenseService — customThemePresetLimit (ISS-191)', () => {
     expect(getLicenseCustomThemePresetLimit(license)).toBe(2);
 
     const activated = activateBetaLicenseCode('YWXLAW').license;
-    expect(getLicenseCustomExportPresetLimit(activated)).toBe(8);
-    expect(getLicenseCustomHtmlExportPresetLimit(activated)).toBe(8);
-    expect(getLicenseCustomThemePresetLimit(activated)).toBe(8);
+    expect(getLicenseCustomExportPresetLimit(activated)).toBe(6);
+    expect(getLicenseCustomHtmlExportPresetLimit(activated)).toBe(6);
+    expect(getLicenseCustomThemePresetLimit(activated)).toBe(3);
   });
 });

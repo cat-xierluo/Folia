@@ -31,9 +31,10 @@ export const DEFAULT_LICENSE_STATE: LicenseState = {
 
 const LOCAL_BETA_CODES: Record<string, Pick<LicenseState, 'customExportPresetLimit' | 'customHtmlExportPresetLimit' | 'customThemePresetLimit' | 'expiresAt'>> = {
   YWXLAW: {
-    customExportPresetLimit: 8,
-    customHtmlExportPresetLimit: 8,
-    customThemePresetLimit: 8,
+    // ISS-216:槽位回收——主题 8→3,Word/HTML 导出 8→6(用户口径 2026-08-30)。
+    customExportPresetLimit: 6,
+    customHtmlExportPresetLimit: 6,
+    customThemePresetLimit: 3,
     expiresAt: null,
   },
 };
