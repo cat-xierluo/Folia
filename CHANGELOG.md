@@ -6,6 +6,8 @@ All notable changes of this project will be documented in this file.
 
 ### Changed
 
+- **古典配色转为内测专属 + 内测槽位回收（ISS-216）**：「古典」主题现需内测授权——未激活时设置页卡片锁定（点击跳转内测授权页），应用渲染回退亮色主题（内测过期后自动回退，重新激活自动恢复古典）；同时内测码自定义槽位回收：自定义主题 8→3、Word 导出与 HTML 导出 8→6。**存量兼容**：已有超限自定义主题全部保留、可见、可编辑可删除，仅不能再新增（头部计数如「8/3」为存量显示）。
+
 - **Word 导出 IPC 序列化内存峰值收敛（ISS-215，ISS-201 review MINOR-1）**：`write_binary_export` 的 `(path, bytes: Vec<u8>)` 参数走 JSON 数字数组序列化，200MB 级图文 docx 在 webview 序列化与 Rust 反序列化两侧各有数倍内存峰值，与 read 侧 `tauri::ipc::Response`（ISS-159）的原始字节通道不对称。现改为 raw request：字节作为 `InvokeBody::Raw` 原样直达，路径经 `x-folia-export-path` header 携带（前端 `encodeURIComponent`，Rust `percent-decode` + UTF-8 校验还原），校验链（.docx 白名单 + denied-root 黑名单 + 200MB 上限）零变化；命令实现重构为可单测的 `write_export_bytes` 纯函数 + 薄 Request 壳。顺带补齐 ISS-201 review MINOR-2：`PRESENTATION_RESOURCE_EXTENSIONS` 白名单此前只经 e2e / 手测间接覆盖，现锚定 Rust 直接单测（28 扩展逐一断言 + mime 全映射覆盖 + 大小写折叠 + 白名单外 fail-closed）。验证：cargo test 59/59、前端 797/797、typecheck / lint 零错误。**真机验证（NOT_VERIFIED，移交用户）**：大 docx（含 >20MB 图文文档）真实导出一遍确认内存峰值与导出成功率。
 
 - **fs 插件调用面收口（ISS-201）**：前端持久 IO 全部改走受控 Rust 命令，capabilities 删除 fs 插件全部权限（含 ISS-197 的 deny-only scope——插件面整体退场）。新增两条命令：`write_binary_export`（.docx 白名单 + denied-root 黑名单 + 20MB 上限，承接 Word 导出）、`read_presentation_resource`（媒体扩展名白名单 + canonicalize 防逃逸，承接 HTML 演示资源与 Word 导出内嵌图片读取）；`saveFileAs` / 微信 HTML 导出 / autosave 二次写入改走既有 `write_opened_document`。前端浏览器兜底分支保留（无 Rust 可调场景），攻击面由 capability 层消除。契约测试锚定「fs:* 零残留」。
