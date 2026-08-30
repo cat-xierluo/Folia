@@ -39,7 +39,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workdir: src-tauri
+          workspaces: src-tauri
 
       - run: pnpm install
 

