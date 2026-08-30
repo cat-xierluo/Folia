@@ -113,7 +113,8 @@ test.describe('ISS-191 主题系统视觉守卫', () => {
     expect(['rgba(0, 0, 0, 0)', 'rgb(239, 239, 239)']).not.toContain(cardStyle.background);
 
     // --- 逐套切换：active 状态 + themeId 持久化 + 根变量 = 色卡 preview 背景 ---
-    for (const name of BUILT_IN_NAMES) {
+    // ISS-216:古典为内测专属,e2e 无内测码故为锁卡——跳过,其余 5 套逐套断言。
+    for (const name of BUILT_IN_NAMES.filter((n) => n !== '古典')) {
       const card = page.locator('.settings-theme-card--built-in').filter({
         has: page.locator('.settings-theme-card-name', { hasText: name }),
       });
@@ -195,9 +196,11 @@ test.describe('ISS-191 主题系统视觉守卫', () => {
 
     // 标准（无内测码）：0/2 槽位 + 锁定卡存在
     await expect(page.getByText('自定义主题槽位 0/2')).toBeVisible();
-    const lockedCard = page.locator('.settings-theme-card--locked');
-    await expect(lockedCard).toHaveCount(1);
-    await expect(lockedCard).toHaveAttribute('aria-label', '前往内测授权');
+    // ISS-216:未激活内测时锁定卡共 2 张——古典内置锁卡 + 槽位锁卡。
+    const lockedCards = page.locator('.settings-theme-card--locked');
+    await expect(lockedCards).toHaveCount(2);
+    const slotLock = lockedCards.filter({ has: page.locator('.settings-theme-card-slot-label') });
+    await expect(slotLock).toHaveAttribute('aria-label', '前往内测授权');
 
     // 导入一份含 @import（应剥）与正常规则（应留）的 CSS
     const css = [
