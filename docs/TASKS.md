@@ -74,10 +74,11 @@
 - **发现:** write_binary_export 的 bytes 走 Vec<u8> JSON 数字数组序列化,大 docx（200MB 级）导出有数倍内存峰值,与 read 侧已用 tauri::ipc::Response 的优化不对称。
 - **建议:** 改用 tauri::ipc::Request/ResponseBody 收敛;顺带为 PRESENTATION_RESOURCE_EXTENSIONS 补直接 Rust 单测（review MINOR-2）。
 
-#### ⬜ ISS-213 release.yml 的 rust-cache workdir 同款失效（ISS-212 review 顺带发现,2026-08-29）
+#### 🖥 ISS-213 release.yml 的 rust-cache workdir 同款失效（ISS-212 review 顺带发现,2026-08-29;修复已交付 2026-08-30:分支 fix/iss213-release-rust-cache,PR 待开）
 
 - **发现:** release.yml:40-42 的 `Swatinem/rust-cache@v2` 仍用已废弃的 `workdir` 输入,同 ci.yml MAJOR-1——缓存 key 退化为空串哈希、路径错位,release 构建每次全量冷编译拖慢发版。
 - **建议:** 改 `workspaces: src-tauri`,与 ci.yml 修复同构。
+- **修复交付(2026-08-30,zcode-idle worker):** workdir→workspaces 单点同构修复;YAML 语法/单处 rust-cache/与 ci.yml 输入逐字一致断言通过;workflows 目录 workdir 零残留。运行时缓存 key 恢复需真实 release run(tag push)——NOT_VERIFIED 留下次发版观察。
 
 #### ⬜ ISS-202 CSP 收紧评估：摘 unsafe-eval + img-src 外泄通道收敛
 
