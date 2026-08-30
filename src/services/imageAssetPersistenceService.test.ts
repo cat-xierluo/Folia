@@ -1,6 +1,15 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
+const coreInvokeMock = vi.hoisted(() => ({ invoke: vi.fn() }));
+vi.mock('@tauri-apps/api/core', () => coreInvokeMock);
+
 import { ImageAssetStore } from './imageAssetService';
+
+function useInvokeMock(returnValue: unknown = undefined): ReturnType<typeof vi.fn> {
+  coreInvokeMock.invoke.mockReset();
+  coreInvokeMock.invoke.mockResolvedValue(returnValue);
+  return coreInvokeMock.invoke;
+}
 import {
   deriveDocBaseName,
   persistPendingImageAssets,
@@ -70,6 +79,7 @@ describe('persistPendingImageAssets', () => {
   });
 
   it('returns empty result when no assets referenced by content', async () => {
+    useInvokeMock();
     const store = new ImageAssetStore();
     const result = await persistPendingImageAssets(store, '/work/doc.md', '# 无图文档');
     expect(result.replacements).toHaveLength(0);
@@ -77,6 +87,7 @@ describe('persistPendingImageAssets', () => {
   });
 
   it('skips in non-Tauri environment (no __TAURI_INTERNALS__)', async () => {
+    useInvokeMock();
     const store = new ImageAssetStore();
     const asset = await store.registerPending(new Uint8Array([1]), 'a.png', 'image/png');
     const result = await persistPendingImageAssets(store, '/work/doc.md', `![](${asset.objectUrl})`);
@@ -86,9 +97,8 @@ describe('persistPendingImageAssets', () => {
 
   it('writes pending assets referenced by content and returns blob→relative replacements', async () => {
     Object.defineProperty(window, '__TAURI_INTERNALS__', { value: {}, configurable: true });
-    const invokeMock = vi.fn().mockResolvedValue(undefined);
-    vi.doMock('@tauri-apps/api/core', () => ({ invoke: invokeMock }));
 
+    const invokeMock = useInvokeMock();
     const store = new ImageAssetStore();
     const asset = await store.registerPending(
       new Uint8Array([1, 2, 3]),
@@ -115,9 +125,8 @@ describe('persistPendingImageAssets', () => {
 
   it('ISS-196 回归：未在本文档引用的资产不落盘、不标记（其它 tab 的 pending 资产不受污染）', async () => {
     Object.defineProperty(window, '__TAURI_INTERNALS__', { value: {}, configurable: true });
-    const invokeMock = vi.fn().mockResolvedValue(undefined);
-    vi.doMock('@tauri-apps/api/core', () => ({ invoke: invokeMock }));
 
+    const invokeMock = useInvokeMock();
     const store = new ImageAssetStore();
     // tab B 粘贴的图片（只存在于 B 的正文里），此刻正在保存 tab A
     const bAsset = await store.registerPending(new Uint8Array([9]), 'b.png', 'image/png');
@@ -133,9 +142,8 @@ describe('persistPendingImageAssets', () => {
 
   it('ISS-196 回归：共享 hash 的资产先随 A 文档落盘后，B 文档保存仍会写自己的目录', async () => {
     Object.defineProperty(window, '__TAURI_INTERNALS__', { value: {}, configurable: true });
-    const invokeMock = vi.fn().mockResolvedValue(undefined);
-    vi.doMock('@tauri-apps/api/core', () => ({ invoke: invokeMock }));
 
+    const invokeMock = useInvokeMock();
     const store = new ImageAssetStore();
     const shared = await store.registerPending(new Uint8Array([7, 7]), 'same.png', 'image/png');
     // 同一 objectUrl 被 A、B 两个文档同时引用（hash 去重返回同一条目）
@@ -163,12 +171,10 @@ describe('persistPendingImageAssets', () => {
 
   it('collects failures without aborting other assets', async () => {
     Object.defineProperty(window, '__TAURI_INTERNALS__', { value: {}, configurable: true });
-    const invokeMock = vi
-      .fn()
+    const invokeMock = useInvokeMock();
+    invokeMock
       .mockResolvedValueOnce(undefined)
       .mockRejectedValueOnce(new Error('disk full'));
-    vi.doMock('@tauri-apps/api/core', () => ({ invoke: invokeMock }));
-
     const store = new ImageAssetStore();
     const ok = await store.registerPending(new Uint8Array([1]), 'a.png', 'image/png');
     const fail = await store.registerPending(new Uint8Array([2]), 'b.png', 'image/png');
@@ -189,9 +195,8 @@ describe('persistPendingImageAssets', () => {
     // 已无 blob: 锚点)。再次保存时,重插的这段字节必须真正写盘,
     // 否则 Markdown 里的相对路径指向一个从未写过的文件(隐性死链)。
     Object.defineProperty(window, '__TAURI_INTERNALS__', { value: {}, configurable: true });
-    const invokeMock = vi.fn().mockResolvedValue(undefined);
-    vi.doMock('@tauri-apps/api/core', () => ({ invoke: invokeMock }));
 
+    const invokeMock = useInvokeMock();
     const store = new ImageAssetStore();
     const asset = await store.registerPending(new Uint8Array([4, 4]), 'a.png', 'image/png');
 
@@ -222,9 +227,8 @@ describe('persistPendingImageAssets', () => {
 
   it('已为本路径写盘过的资产不重复写（幂等快路径）', async () => {
     Object.defineProperty(window, '__TAURI_INTERNALS__', { value: {}, configurable: true });
-    const invokeMock = vi.fn().mockResolvedValue(undefined);
-    vi.doMock('@tauri-apps/api/core', () => ({ invoke: invokeMock }));
 
+    const invokeMock = useInvokeMock();
     const store = new ImageAssetStore();
     const asset = await store.registerPending(new Uint8Array([3]), 'a.png', 'image/png');
     const content = `![](${asset.objectUrl})`;

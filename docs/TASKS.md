@@ -69,6 +69,14 @@
 - **注意:** 迁移前后须真机回归全部涉盘流程（NOT_VERIFIED 清单见 CHANGELOG ISS-197 条目）。
 - **收口（2026-08-29）:** Rust 新增 write_binary_export（.docx 白名单+denied-root+独立 MAX_EXPORT_BYTES=200MB,与资产上限分离防「升级后导不出」回归）与 read_presentation_resource（独立 PRESENTATION_RESOURCE_EXTENSIONS 白名单覆盖图片/JS/CSS/视频/音频/字体——review MAJOR-1:复用图片白名单会让演示页非图片资源全部静默失效）;前端 5 调用面切换;capabilities 删除 fs 插件全部权限,契约测试锚定「插件面零残留」;word 导出链贯穿 docPath 上下文,相对图片解析为绝对路径（review MAJOR-2,%20 解码与 htmlPresentationService 同语义）;导出失败接 notifyIoError 三语言提示（review MAJOR-3:此前 catch 只有 console.error,用户零感知）。review MINOR 登记:①write_binary_export 的 Vec<u8> JSON 序列化 IPC 内存峰值（与 read 侧 tauri::ipc::Response 优化不对称,后续用 Request/ResponseBody 收敛）;②PRESENTATION_RESOURCE_EXTENSIONS 无直接 Rust 单测（经 e2e/手测覆盖）。**NOT_VERIFIED（真机,移交用户）:** Word 导出（含 >20MB 图文文档）、微信导出、另存为、HTML 演示本地资源（重点 JS/CSS/视频内联）、Word 导出内嵌本地图片。
 
+#### 🖥 ISS-214 测试套件并发 flaky——CI 假红根源（分支 chore/iss214-vitest-flaky,PR #160,2026-08-29）
+
+- **现象:** 全量满并发偶发随机失败(AppLayoutSourceEditor / AppLayoutSystemOpenSource / WechatPreviewPane / AppearanceSection / imageAssetPersistenceService 等,每轮集合不同);CI 假红一轮(#159)。
+- **根因定位:** imageAssetPersistenceService.test.ts 用 per-test `vi.doMock` + `afterEach vi.resetModules()`——多文件共享 worker 时,该组合偶发让被测函数内动态 `import('@tauri-apps/api/core')` 命中**未 mock 的原始模块**(Tauri IPC 空跑),invoke 计 0 次。
+- **修复:** 顶层 `vi.mock`(hoisted 单例 coreInvokeMock)+ `useInvokeMock()` 每用例显式 mockReset,mock 注册与模块加载解耦。
+- **验证:** 复现组合(AutoReload+persist 同跑)20 轮 18/20 → 20/20;全量 797/797 ×6 稳定绿。
+- **备注:** 其余 flaky 文件(如 WechatPreviewPane 等)若再现,按同模式排查(mock 时序/共享 worker 污染)。
+
 #### ⬜ ISS-215 write_binary_export IPC 序列化内存峰值（ISS-201 review MINOR-1,2026-08-29）
 
 - **发现:** write_binary_export 的 bytes 走 Vec<u8> JSON 数字数组序列化,大 docx（200MB 级）导出有数倍内存峰值,与 read 侧已用 tauri::ipc::Response 的优化不对称。
