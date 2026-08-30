@@ -89,7 +89,7 @@
 - **建议:** 改 `workspaces: src-tauri`,与 ci.yml 修复同构。
 - **修复交付(2026-08-30,zcode-idle worker):** workdir→workspaces 单点同构修复;YAML 语法/单处 rust-cache/与 ci.yml 输入逐字一致断言通过;workflows 目录 workdir 零残留。运行时缓存 key 恢复需真实 release run(tag push)——NOT_VERIFIED 留下次发版观察。
 
-#### 🖥 ISS-216 古典配色内测解锁 + 自定义槽位回收（分支 feat/beta-theme-classic-lock-and-slots,PR #164,2026-08-30,用户口径）
+#### ✅ ISS-216 古典配色内测解锁 + 自定义槽位回收（已 PR #164,2026-08-30 squash merge 8a35d68;reviewer-164 APPROVE 3 MINOR 全落地）
 
 - **需求:** ①古典(builtin:classic)改内测专属——设置页未激活锁卡(点击跳授权),运行时守卫回退 light;②自定义槽位回收:主题 8→3,Word/HTML 导出 8→6。
 - **实现:** AppearanceSection 锁卡分支(复用 --locked 形态)+ AppLayout themePreset useMemo license 守卫 + licenseService YWXLAW 常量 + 三语言 i18n + 测试链修复(原 AppearanceSection 测试原地突变 DEFAULT_LICENSE_STATE 单例泄漏,改走 activateBetaLicenseCode 真实链)。798/798 + e2e 适配(古典锁卡跳过逐套切换/锁定卡计数 2)。reviewer-164 审查中。
