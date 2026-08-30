@@ -44,7 +44,12 @@ describe('Tauri capabilities', () => {
 
     const csp = config.app?.security?.csp ?? '';
 
-    expect(csp).toContain("script-src 'self' 'unsafe-eval' 'unsafe-inline'");
+    // ISS-202:script-src 不含 'unsafe-eval'——预研证实 vendored 库
+    // (Vditor 主库/KaTeX/Mermaid)零 eval 依赖,echarts 的 new Function 是
+    // JSON.parse 缺席时的死分支(WebView 必有 JSON),markmap 为 d3 内置
+    // 字段名模板。DOMPurify 白名单之外,CSP 恢复第二道拦截价值。
+    expect(csp).not.toContain('unsafe-eval');
+    expect(csp).toContain("script-src 'self' 'unsafe-inline'");
     // DEC-096: img-src must include asset: / http://asset.localhost so that
     // convertFileSrc() URLs for local images can load in the WebView.
     expect(csp).toContain("img-src 'self' asset: http://asset.localhost");
