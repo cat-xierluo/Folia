@@ -608,11 +608,21 @@ describe('AppLayout ISS-191 主题运行时接入', () => {
     expect(document.documentElement.style.colorScheme).toBe('light');
   });
 
-  it('4. <style data-folia-theme> 渲染 elementCss：builtin:classic 注入 serif body', async () => {
+  it('4. <style data-folia-theme> 渲染 elementCss：builtin:classic 注入 serif body（ISS-216:需内测激活）', async () => {
     const { updateSettings } = await import('../services/settingsService');
     const { BUILT_IN_THEME_PRESETS } = await import('../services/themePresets');
+    const { activateBetaLicenseCode } = await import('../services/licenseService');
     const classic = BUILT_IN_THEME_PRESETS.find((p) => p.id === 'builtin:classic')!;
+    // ISS-216:古典为内测专属——未激活时运行时守卫回退 light,先断言回退,
+    // 再激活内测断言正常注入。
     updateSettings({ themeId: 'builtin:classic' });
+    await act(async () => {
+      root.render(<AppLayout />);
+      await Promise.resolve();
+    });
+    const fallbackStyle = host.querySelector<HTMLStyleElement>('style[data-folia-theme]');
+    expect(fallbackStyle?.textContent ?? '').not.toContain('--font-serif-reading');
+    updateSettings({ license: activateBetaLicenseCode('YWXLAW').license });
 
     await act(async () => {
       root.render(<AppLayout />);

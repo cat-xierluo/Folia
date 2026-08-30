@@ -258,6 +258,39 @@ export function AppearanceSection({ onOpenLicense }: AppearanceSectionProps) {
   const renderBuiltInCard = (preset: ThemePreset) => {
     const active = settings.themeId === preset.id;
     const name = t(BUILT_IN_NAME_KEYS[preset.id as BuiltInThemePresetId]);
+    // ISS-216:古典配色为内测专属——未激活内测授权时卡片锁定,点击跳转授权页
+    // (与自定义主题锁卡同语义)。已激活则与普通内置主题一致。
+    const locked = preset.id === 'builtin:classic' && !licenseActive;
+    if (locked) {
+      const lockedName = t('themeBuiltinClassicLocked');
+      return (
+        <button
+          key={preset.id}
+          type="button"
+          className="settings-theme-card settings-theme-card--built-in settings-theme-card--locked"
+          onClick={onOpenLicense}
+          aria-label={`${lockedName} — ${t('themeBuiltinClassicLockedHint')}`}
+        >
+          <span
+            className="settings-theme-card-preview settings-theme-card-preview--locked"
+            style={
+              {
+                background: preset.variables['--bg'],
+                color: preset.variables['--fg'],
+                borderColor: preset.variables['--border'],
+              } as CSSProperties
+            }
+            aria-hidden="true"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+              <rect x="5" y="11" width="14" height="10" rx="2" />
+              <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+            </svg>
+          </span>
+          <span className="settings-theme-card-name">{lockedName}</span>
+        </button>
+      );
+    }
     return (
       <button
         key={preset.id}

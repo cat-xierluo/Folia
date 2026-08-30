@@ -375,11 +375,11 @@ describe('settingsService', () => {
       status: 'active',
       plan: 'beta',
       codeLabel: 'YWXLAW',
-      customExportPresetLimit: 8,
-      customHtmlExportPresetLimit: 8,
+      customExportPresetLimit: 6,
+      customHtmlExportPresetLimit: 6,
     });
-    expect(getCustomExportPresetLimit()).toBe(8);
-    expect(getCustomHtmlExportPresetLimit()).toBe(8);
+    expect(getCustomExportPresetLimit()).toBe(6);
+    expect(getCustomHtmlExportPresetLimit()).toBe(6);
     expect(canAddCustomExportPreset(thirdWord.id)).toBe(true);
     expect(canAddCustomHtmlExportPreset(thirdHtml.id)).toBe(true);
 
@@ -423,11 +423,11 @@ describe('settingsService', () => {
 
     expect(getSettings().license).toMatchObject({
       status: 'active',
-      customExportPresetLimit: 8,
-      customHtmlExportPresetLimit: 8,
+      customExportPresetLimit: 6,
+      customHtmlExportPresetLimit: 6,
     });
-    expect(getCustomExportPresetLimit()).toBe(8);
-    expect(getCustomHtmlExportPresetLimit()).toBe(8);
+    expect(getCustomExportPresetLimit()).toBe(6);
+    expect(getCustomHtmlExportPresetLimit()).toBe(6);
   });
 
   it('rejects persisted active beta license states with unknown code labels', () => {
@@ -660,7 +660,7 @@ describe('settingsService', () => {
 
       const result = activateLicenseCode('ywxlaw');
       expect(result.ok).toBe(true);
-      expect(getCustomThemePresetLimit()).toBe(8);
+      expect(getCustomThemePresetLimit()).toBe(3);
       expect(canAddCustomThemePreset(third.id)).toBe(true);
 
       addCustomThemePreset(third);
