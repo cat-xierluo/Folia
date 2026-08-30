@@ -77,10 +77,11 @@
 - **验证:** 复现组合(AutoReload+persist 同跑)20 轮 18/20 → 20/20;全量 797/797 ×6 稳定绿。
 - **备注:** 其余 flaky 文件(如 WechatPreviewPane 等)若再现,按同模式排查(mock 时序/共享 worker 污染)。
 
-#### ⬜ ISS-215 write_binary_export IPC 序列化内存峰值（ISS-201 review MINOR-1,2026-08-29）
+#### 🖥 ISS-215 write_binary_export IPC 序列化内存峰值（已 PR #161,2026-08-29;ISS-201 review MINOR-1）
 
 - **发现:** write_binary_export 的 bytes 走 Vec<u8> JSON 数字数组序列化,大 docx（200MB 级）导出有数倍内存峰值,与 read 侧已用 tauri::ipc::Response 的优化不对称。
 - **建议:** 改用 tauri::ipc::Request/ResponseBody 收敛;顺带为 PRESENTATION_RESOURCE_EXTENSIONS 补直接 Rust 单测（review MINOR-2）。
+- **实现（2026-08-29,闲时工兵 zcode-idle）:** 命令签名改 `fn write_binary_export(request: tauri::ipc::Request)`——字节经 `InvokeBody::Raw` 原样直达（前端 `invoke(cmd, new Uint8Array(buffer))`,@tauri-apps/api 2.11 InvokeArgs 原生支持二进制 body）;路径经自定义 header `x-folia-export-path` 携带（前端 encodeURIComponent 保证 ASCII,Rust `percent-decode` + UTF-8 校验还原,percent-encoding 由 reqwest 传递依赖提升为直接依赖,零新增下载）。校验链抽为可单测纯函数 `write_export_bytes`（.docx 白名单 + denied-root + 200MB 上限零变化）;Request 薄壳（headers/body 匹配）不可单测,归真机验证。MINOR-2 落地:`presentation_resource_whitelist_is_anchored_and_mime_covered` 锚定 28 扩展 + mime 全映射 + 大小写折叠 + 白名单外 fail-closed。验证:cargo test 59/59（含新增 decode_export_path_header 中文路径 round-trip/非法 UTF-8 拒绝）、前端 797/797、typecheck/lint 零错误。**NOT_VERIFIED（真机,移交用户）:** 大 docx 真实导出内存峰值与成功率、raw invoke 在 WKWebView 的 fetch-IPC 路径实跑。
 
 #### 🖥 ISS-213 release.yml 的 rust-cache workdir 同款失效（ISS-212 review 顺带发现,2026-08-29;修复已交付 2026-08-30:分支 fix/iss213-release-rust-cache,PR 待开）
 

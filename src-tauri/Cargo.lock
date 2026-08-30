@@ -1155,6 +1155,7 @@ dependencies = [
  "base64 0.22.1",
  "log",
  "notify",
+ "percent-encoding",
  "serde_json",
  "tauri",
  "tauri-build",

@@ -235,10 +235,15 @@ fn validate_writable_document(path: &Path) -> Result<(), String> {
 /// 文档类型，不能让导出通道反过来放宽文档白名单。
 ///
 /// 字节上限用独立的 MAX_EXPORT_BYTES(与资产上限分离,理由见其注释)。
-#[tauri::command]
-fn write_binary_export(path: String, bytes: Vec<u8>) -> Result<(), String> {
-  let path = PathBuf::from(&path);
-  if !is_absolute_path(&path) {
+///
+/// ISS-215：IPC 序列化收敛。此前 `(path, bytes: Vec<u8>)` 走 JSON 数字
+/// 数组序列化，200MB 级 docx 在 webview 序列化与 Rust 反序列化两侧各有
+/// 数倍内存峰值，与 read 侧 `tauri::ipc::Response` 的原始字节通道不对称。
+/// 现改为 raw request：字节作为 `InvokeBody::Raw` 原样直达，路径经
+/// `x-folia-export-path` header 携带（前端 encodeURIComponent，header 值
+/// 保证 ASCII；此处 percent-decode 还原）。校验链零变化。
+fn write_export_bytes(path: &Path, bytes: &[u8]) -> Result<(), String> {
+  if !is_absolute_path(path) {
     return Err(format!("path must be absolute: {}", path.display()));
   }
   let ext = path
@@ -249,7 +254,7 @@ fn write_binary_export(path: String, bytes: Vec<u8>) -> Result<(), String> {
   if !matches!(ext.as_str(), "docx") {
     return Err(format!("unsupported export extension: .{ext}"));
   }
-  if is_denied_root(&path) {
+  if is_denied_root(path) {
     return Err(format!(
       "path is on the denied roots list: {}",
       path.display()
@@ -263,7 +268,37 @@ fn write_binary_export(path: String, bytes: Vec<u8>) -> Result<(), String> {
     ));
   }
 
-  std::fs::write(&path, bytes).map_err(|error| format!("failed to write export: {error}"))
+  std::fs::write(path, bytes).map_err(|error| format!("failed to write export: {error}"))
+}
+
+/// 解码 `x-folia-export-path` header（前端 `encodeURIComponent` 的逆）。
+/// header 值必须是合法 UTF-8 的 percent 编码字符串；解码后交给
+/// `write_export_bytes` 的绝对路径 / 白名单 / 黑名单校验链。
+fn decode_export_path_header(value: &str) -> Result<PathBuf, String> {
+  percent_encoding::percent_decode_str(value)
+    .decode_utf8()
+    .map(|decoded| PathBuf::from(decoded.into_owned()))
+    .map_err(|error| format!("invalid x-folia-export-path header: {error}"))
+}
+
+#[tauri::command]
+fn write_binary_export(request: tauri::ipc::Request) -> Result<(), String> {
+  let path_header = request
+    .headers()
+    .get("x-folia-export-path")
+    .and_then(|value| value.to_str().ok())
+    .ok_or_else(|| "missing x-folia-export-path header".to_string())?;
+  let path = decode_export_path_header(path_header)?;
+  let bytes = match request.body() {
+    tauri::ipc::InvokeBody::Raw(bytes) => bytes,
+    tauri::ipc::InvokeBody::Json(_) => {
+      return Err(
+        "write_binary_export expects a raw binary body (application/octet-stream), got JSON"
+          .into(),
+      )
+    }
+  };
+  write_export_bytes(&path, bytes)
 }
 
 /// 将粘贴 / 拖入的图片字节原子落盘到文档同目录的 `<doc>.assets/` 子目录
@@ -1858,7 +1893,7 @@ mod tests {
   }
 
   /// macOS /private/etc 真实挂载点补黑名单（ISS-197）。
-  // ──────── ISS-201 write_binary_export ────────
+  // ──────── ISS-201 write_binary_export（ISS-215 后校验链在 write_export_bytes）────────
 
   #[test]
   fn write_binary_export_accepts_docx_and_rejects_other_extensions() {
@@ -1867,12 +1902,12 @@ mod tests {
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("case.docx");
 
-    write_binary_export(path.to_string_lossy().to_string(), vec![0x50, 0x4b]).unwrap();
+    write_export_bytes(&path, &[0x50, 0x4b]).unwrap();
     assert_eq!(std::fs::read(&path).unwrap(), vec![0x50, 0x4b]);
 
     // 非 .docx:保存对话框手键 .doc/.txt 时 Rust 直接拒绝,前端提示后不落盘
     let doc = dir.join("case.doc");
-    let err = write_binary_export(doc.to_string_lossy().to_string(), vec![1]).unwrap_err();
+    let err = write_export_bytes(&doc, &[1]).unwrap_err();
     assert!(err.contains("unsupported export extension"), "{err}");
     assert!(!doc.exists(), "rejected export must not write the file");
 
@@ -1881,10 +1916,10 @@ mod tests {
 
   #[test]
   fn write_binary_export_rejects_relative_path_and_denied_root() {
-    let err = write_binary_export("relative/case.docx".into(), vec![1]).unwrap_err();
+    let err = write_export_bytes(Path::new("relative/case.docx"), &[1]).unwrap_err();
     assert!(err.contains("absolute"), "{err}");
 
-    let err = write_binary_export("/etc/passwd.docx".into(), vec![1]).unwrap_err();
+    let err = write_export_bytes(Path::new("/etc/passwd.docx"), &[1]).unwrap_err();
     assert!(err.contains("denied roots list"), "{err}");
   }
 
@@ -1896,11 +1931,90 @@ mod tests {
     let path = dir.join("huge.docx");
 
     let oversized = vec![0u8; MAX_EXPORT_BYTES + 1];
-    let err = write_binary_export(path.to_string_lossy().to_string(), oversized).unwrap_err();
+    let err = write_export_bytes(&path, &oversized).unwrap_err();
     assert!(err.contains("export payload too large"), "{err}");
     assert!(!path.exists());
 
     let _ = std::fs::remove_dir_all(&dir);
+  }
+
+  // ──────── ISS-215 raw request 通道 ────────
+
+  /// `x-folia-export-path` header 解码：前端 `encodeURIComponent` 的逆。
+  /// header 值保证 ASCII，路径可以是任意 UTF-8（法律文档目录常见中文）。
+  #[test]
+  fn decode_export_path_header_roundtrips_unicode_path() {
+    // encodeURIComponent("案件 卷宗.docx") 的标准产出（中文三字节 UTF-8 +
+    // 空格 %20；'.docx' 无保留字符原样保留）。
+    let encoded = "%E6%A1%88%E4%BB%B6%20%E5%8D%B7%E5%AE%97.docx";
+    assert_eq!(
+      decode_export_path_header(encoded).unwrap(),
+      PathBuf::from("案件 卷宗.docx")
+    );
+
+    // 纯 ASCII 路径 percent 编码不变（无保留字符），解码应原样还原。
+    assert_eq!(
+      decode_export_path_header("/tmp/case.docx").unwrap(),
+      PathBuf::from("/tmp/case.docx")
+    );
+
+    // 非法 UTF-8 序列 fail-closed：header 被篡改成无法解码的字节串时拒绝，
+    // 不猜测、不半解码。
+    let err = decode_export_path_header("%FF%FE%80.docx").unwrap_err();
+    assert!(err.contains("invalid x-folia-export-path header"), "{err}");
+  }
+
+  /// ISS-215 review MINOR-2：PRESENTATION_RESOURCE_EXTENSIONS 此前只经
+  /// e2e / 手测间接覆盖，现锚定白名单内容——任何增删都必须显式修改本测试
+  /// （新扩展需同步 presentation_resource_mime 映射与前端内联范围语义）。
+  #[test]
+  fn presentation_resource_whitelist_is_anchored_and_mime_covered() {
+    assert_eq!(
+      PRESENTATION_RESOURCE_EXTENSIONS,
+      &[
+        // 图片（与 media_mime_type 一致）
+        "png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg", "avif",
+        // 样式 / 脚本
+        "css", "js", "mjs",
+        // 视频 / 音频
+        "mp4", "webm", "ogv", "mp3", "wav", "ogg", "m4a", "aac",
+        // 字体
+        "woff", "woff2", "ttf", "otf", "eot",
+        // 文本类演示资源
+        "vtt", "json",
+      ]
+    );
+
+    // 白名单内每个扩展都有 mime 映射（扩展-映射两表不允许漂移）。
+    for ext in PRESENTATION_RESOURCE_EXTENSIONS {
+      let path = PathBuf::from(format!("res.{ext}"));
+      assert!(
+        presentation_resource_mime(&path).is_some(),
+        "whitelisted extension .{ext} must map to a mime"
+      );
+    }
+
+    // 大小写折叠：扩展名大小写不敏感（与 denied-root 黑名单同一纪律）。
+    assert_eq!(
+      presentation_resource_mime(Path::new("POSTER.PNG")),
+      Some("image/png")
+    );
+    assert_eq!(
+      presentation_resource_mime(Path::new("clip.Mp4")),
+      Some("video/mp4")
+    );
+
+    // 白名单外 fail-closed：可执行 / 文档 / 页面类扩展一律 None。
+    for ext in ["exe", "html", "md", "zip", "bin"] {
+      let path = PathBuf::from(format!("payload.{ext}"));
+      assert!(
+        presentation_resource_mime(&path).is_none(),
+        "non-whitelisted extension .{ext} must be rejected"
+      );
+    }
+    // 无扩展名 / 隐藏文件形态同样拒绝。
+    assert!(presentation_resource_mime(Path::new("noext")).is_none());
+    assert!(presentation_resource_mime(Path::new(".gitignore")).is_none());
   }
 
   #[test]
