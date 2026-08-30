@@ -83,7 +83,7 @@
 - **建议:** 改用 tauri::ipc::Request/ResponseBody 收敛;顺带为 PRESENTATION_RESOURCE_EXTENSIONS 补直接 Rust 单测（review MINOR-2）。
 - **实现（2026-08-29,闲时工兵 zcode-idle）:** 命令签名改 `fn write_binary_export(request: tauri::ipc::Request)`——字节经 `InvokeBody::Raw` 原样直达（前端 `invoke(cmd, new Uint8Array(buffer))`,@tauri-apps/api 2.11 InvokeArgs 原生支持二进制 body）;路径经自定义 header `x-folia-export-path` 携带（前端 encodeURIComponent 保证 ASCII,Rust `percent-decode` + UTF-8 校验还原,percent-encoding 由 reqwest 传递依赖提升为直接依赖,零新增下载）。校验链抽为可单测纯函数 `write_export_bytes`（.docx 白名单 + denied-root + 200MB 上限零变化）;Request 薄壳（headers/body 匹配）不可单测,归真机验证。MINOR-2 落地:`presentation_resource_whitelist_is_anchored_and_mime_covered` 锚定 28 扩展 + mime 全映射 + 大小写折叠 + 白名单外 fail-closed。验证:cargo test 59/59（含新增 decode_export_path_header 中文路径 round-trip/非法 UTF-8 拒绝）、前端 797/797、typecheck/lint 零错误。**NOT_VERIFIED（真机,移交用户）:** 大 docx 真实导出内存峰值与成功率、raw invoke 在 WKWebView 的 fetch-IPC 路径实跑。
 
-#### 🖥 ISS-213 release.yml 的 rust-cache workdir 同款失效（ISS-212 review 顺带发现,2026-08-29;修复已交付 2026-08-30:分支 fix/iss213-release-rust-cache,PR 待开）
+#### ✅ ISS-213 release.yml 的 rust-cache workdir 同款失效（已 PR #162,2026-08-30 squash merge 1795514;reviewer-batch 上游核实 action.yml 已完全移除 workdir 输入;运行时缓存 key 恢复 NOT_VERIFIED 留待下次 tag push 观察）
 
 - **发现:** release.yml:40-42 的 `Swatinem/rust-cache@v2` 仍用已废弃的 `workdir` 输入,同 ci.yml MAJOR-1——缓存 key 退化为空串哈希、路径错位,release 构建每次全量冷编译拖慢发版。
 - **建议:** 改 `workspaces: src-tauri`,与 ci.yml 修复同构。
