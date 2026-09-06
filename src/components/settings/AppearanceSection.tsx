@@ -553,6 +553,22 @@ export function AppearanceSection({ onOpenLicense }: AppearanceSectionProps) {
           ))}
         </select>
       </div>
+
+      {/* 总是固定大纲：原先只在大纲固定态面板内提供开关，现收敛到设置页；
+          AppLayout 经 useSettings 订阅变更即时生效。 */}
+      <div className="settings-row">
+        <div>
+          <div className="settings-label">{t('tocAlwaysPinnedLabel')}</div>
+          <div className="settings-desc">{t('tocAlwaysPinnedDesc')}</div>
+        </div>
+        <button
+          type="button"
+          className={`toggle-switch ${settings.tocAlwaysPinned ? 'on' : ''}`}
+          aria-label={t('tocAlwaysPinnedLabel')}
+          aria-pressed={settings.tocAlwaysPinned}
+          onClick={() => updateSettings({ tocAlwaysPinned: !settings.tocAlwaysPinned })}
+        />
+      </div>
     </div>
   );
 }

@@ -1049,7 +1049,8 @@ test('floating toc rail opens the outline while panel buttons pin and close it',
   await expect(toc).toHaveClass(/pinned/);
   await expect(page.getByRole('button', { name: '取消固定大纲' })).toBeVisible();
   await expect(page.getByRole('button', { name: '关闭大纲' })).toBeVisible();
-  await expect(page.getByRole('button', { name: '总是固定大纲' })).toHaveAttribute('aria-pressed', 'false');
+  // 「总是固定大纲」已收敛到设置页，大纲面板内不再出现该开关。
+  await expect(page.getByRole('button', { name: '总是固定大纲' })).toHaveCount(0);
   await page.mouse.move(20, 20);
   await expect(page.locator('.floating-toc-panel')).toBeVisible();
 
@@ -1075,7 +1076,7 @@ test('floating toc rail opens the outline while panel buttons pin and close it',
   await expect(page.getByRole('button', { name: '总是固定大纲' })).toHaveCount(0);
 });
 
-test('floating toc can persist an always-pinned outline preference from the pinned panel', async ({ page }) => {
+test('always-pinned outline preference is configured from appearance settings', async ({ page }) => {
   await page.goto('/');
   await openEditor(page);
   await page.keyboard.insertText('# 证据目录\n\n## 第一组 权利基础\n\n### 登记证书');
@@ -1086,27 +1087,80 @@ test('floating toc can persist an always-pinned outline preference from the pinn
   await page.locator('.floating-toc-rail').hover();
   await expect(page.getByRole('button', { name: '总是固定大纲' })).toHaveCount(0);
 
-  await page.getByRole('button', { name: '固定大纲' }).click();
+  // 设置 → 外观 → 总是固定大纲
+  await page.getByRole('button', { name: '设置' }).click();
+  await page.getByRole('button', { name: '外观' }).click();
+  await expect(page.locator('.settings-section-appearance')).toBeVisible();
   const alwaysPinned = page.getByRole('button', { name: '总是固定大纲' });
-  await expect(toc).toHaveClass(/pinned/);
-  await expect(alwaysPinned).toBeVisible();
   await expect(alwaysPinned).toHaveAttribute('aria-pressed', 'false');
-
   await alwaysPinned.click();
   await expect(alwaysPinned).toHaveAttribute('aria-pressed', 'true');
   await expect.poll(async () => page.evaluate(() => (
     JSON.parse(localStorage.getItem('folia-settings') || '{}').tocAlwaysPinned
   ))).toBe(true);
+  await page.keyboard.press('Escape');
 
   await page.reload();
   await openEditor(page);
   await page.keyboard.insertText('# 新文档\n\n## 默认固定');
   await expect(toc).toHaveClass(/pinned/);
-  await expect(page.getByRole('button', { name: '总是固定大纲' })).toHaveAttribute('aria-pressed', 'true');
 
-  await page.getByRole('button', { name: '取消固定大纲' }).click();
+  // 大纲固定态下拖动右缘手柄调整宽度，双击恢复默认。
+  const resizer = page.getByRole('separator', { name: '调整大纲宽度' });
+  await expect(resizer).toBeVisible();
+  const tocBefore = await toc.boundingBox();
+  const handle = await resizer.boundingBox();
+  expect(tocBefore).not.toBeNull();
+  expect(handle).not.toBeNull();
+  await page.mouse.move(handle!.x + handle!.width / 2, handle!.y + handle!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(handle!.x + 80, handle!.y + handle!.height / 2);
+  await page.mouse.up();
+  const tocAfter = await toc.boundingBox();
+  expect(tocAfter).not.toBeNull();
+  expect(tocAfter!.width).toBeGreaterThan(tocBefore!.width + 40);
+  await resizer.dblclick();
+  await expect(resizer).toHaveAttribute('aria-valuenow', '260');
+
+  // 设置页关闭开关后，当前文档的大纲随之取消固定，偏好写回 false。
+  await page.getByRole('button', { name: '设置' }).click();
+  await page.getByRole('button', { name: '外观' }).click();
+  await expect(page.locator('.settings-section-appearance')).toBeVisible();
+  await page.getByRole('button', { name: '总是固定大纲' }).click();
+  await expect(page.getByRole('button', { name: '总是固定大纲' })).toHaveAttribute('aria-pressed', 'false');
+  await expect.poll(async () => page.evaluate(() => (
+    JSON.parse(localStorage.getItem('folia-settings') || '{}').tocAlwaysPinned
+  ))).toBe(false);
+  await page.keyboard.press('Escape');
   await expect(toc).not.toHaveClass(/pinned/);
   await expect(page.getByRole('button', { name: '总是固定大纲' })).toHaveCount(0);
+});
+
+test('turning off always-pinned in settings unpins a manually pinned outline too', async ({ page }) => {
+  await page.goto('/');
+  await openEditor(page);
+  await page.keyboard.insertText('# 手工固定\n\n## 第一节\n\n### 第二节');
+  const toc = page.locator('.floating-toc');
+  await expect(toc).toBeVisible();
+
+  // 先手工固定（session pin），再经设置页开启后关闭「总是固定大纲」。
+  await page.locator('.floating-toc-rail').hover();
+  await page.getByRole('button', { name: '固定大纲' }).click();
+  await expect(toc).toHaveClass(/pinned/);
+
+  await page.getByRole('button', { name: '设置' }).click();
+  await page.getByRole('button', { name: '外观' }).click();
+  await expect(page.locator('.settings-section-appearance')).toBeVisible();
+  const alwaysPinned = page.getByRole('button', { name: '总是固定大纲' });
+  await expect(alwaysPinned).toHaveAttribute('aria-pressed', 'false');
+  await alwaysPinned.click();
+  await expect(alwaysPinned).toHaveAttribute('aria-pressed', 'true');
+  await alwaysPinned.click();
+  await expect(alwaysPinned).toHaveAttribute('aria-pressed', 'false');
+  await page.keyboard.press('Escape');
+
+  // 关闭全局开关后当前文档随之取消固定，行为与固定来源无关。
+  await expect(toc).not.toHaveClass(/pinned/);
   await expect.poll(async () => page.evaluate(() => (
     JSON.parse(localStorage.getItem('folia-settings') || '{}').tocAlwaysPinned
   ))).toBe(false);

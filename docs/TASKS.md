@@ -62,6 +62,12 @@
 
 ### 收口 / 演进类
 
+#### ✅ ISS-217 固定大纲宽度可调节 + 「总是固定大纲」开关收敛到设置页（外部贡献 PR，2026-09-06；详见 DEC-143）
+
+- **需求:** 用户反馈①固定态大纲左栏固定 260px 不可调；②「总是固定大纲」开关按钮占大纲面板头部、观感差。
+- **实现:** 固定态右缘新增 `.toc-resizer` 拖拽手柄（复用右侧预览 resizer 模式，`--toc-width` 变量驱动，200px~min(480px, 40%)，双击复位 260px）；面板内开关移除，「设置 → 外观」新增同名 toggle（`useSettings` 事件订阅即时生效）；`tocAlwaysPinned` schema 零改动。触碰 DESIGN.md「总是固定大纲只在固定态左侧栏出现」记载，已同步改写并在 DEC-143 记录。
+- **验证:** 见 CHANGELOG [0.8.1] / PR 描述（typecheck / test / lint / build / cargo check / e2e layout-behavior 实跑输出）。桌面端真机（WKWebView）拖拽手感 NOT_VERIFIED，移交用户。
+
 #### ✅ ISS-201 fs 插件彻底收口：持久 IO 全部走自定义命令（已 PR #159,2026-08-29 squash merge 980993f;真机回归 NOT_VERIFIED 移交用户）
 
 - **背景:** ISS-197（PR #135）以 deny-only scope 补位，但插件面仍保留 `fs:allow-read/write-*`。「allow 空 = 放行一切」的根因在 ACL 模型本身，敏感目录之外的任意路径读写依旧不受约束。

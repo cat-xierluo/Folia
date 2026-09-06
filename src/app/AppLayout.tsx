@@ -10,9 +10,11 @@ import {
 import {
   getExportPresetConfig,
   getLastOpenedPath,
+  getSettings,
   resolvePreviewFontFamily,
   resolvePreviewHeadingFontFamily,
   setLastOpenedPath,
+  SETTINGS_CHANGED_EVENT,
   updateSettings,
 } from '../services/settingsService';
 import { firstOpenableDocumentPath, isOpenableDocumentPath } from '../services/fileDrop';
@@ -319,7 +321,12 @@ export function AppLayout() {
   const [sourceHeadingScrollRequest, setSourceHeadingScrollRequest] = useState<SourceHeadingScrollRequest>();
   const rightPanelMode = session.rightPanelMode;
   const [rightPanelWidth, setRightPanelWidth] = useState(460);
-  const [resizing, setResizing] = useState(false);
+  // 固定大纲左侧栏宽度（默认与 CSS .floating-toc.pinned 的 260px 一致）。
+  const [tocWidth, setTocWidth] = useState(260);
+  // 正在拖拽的面板：'toc' 固定大纲 / 'right' 右侧预览 / null 未拖拽。
+  // main-content 的 is-resizing 统一管 user-select，两个手柄的 dragging 高亮各自判定，
+  // 不能共用布尔——否则右侧预览与固定大纲同时存在时，拖一个另一个也进高亮态。
+  const [resizingPanel, setResizingPanel] = useState<'toc' | 'right' | null>(null);
   const [htmlPresentationVisible, setHtmlPresentationVisible] = useState(false);
   const [htmlTableViewer, setHtmlTableViewer] = useState<{ block: HtmlTableBlock } | null>(null);
   const [systemOpenChecked, setSystemOpenChecked] = useState(!isTauriRuntime);
@@ -695,7 +702,7 @@ export function AppLayout() {
     if (!container) return;
 
     event.preventDefault();
-    setResizing(true);
+    setResizingPanel('right');
 
     const updateWidth = (clientX: number) => {
       const rect = container.getBoundingClientRect();
@@ -711,7 +718,39 @@ export function AppLayout() {
     };
 
     const handlePointerUp = () => {
-      setResizing(false);
+      setResizingPanel(null);
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+  }, []);
+
+  // 固定大纲左栏宽度拖拽：大纲贴 main-content 左缘，向右拖增宽。
+  // 上下限与 .floating-toc.pinned 的 min-width/max-width 对齐（200px / 40%）。
+  const handleTocResizerPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const container = mainContentRef.current;
+    if (!container) return;
+
+    event.preventDefault();
+    setResizingPanel('toc');
+
+    const updateWidth = (clientX: number) => {
+      const rect = container.getBoundingClientRect();
+      const maxWidth = Math.min(480, Math.round(rect.width * 0.4));
+      const nextWidth = clientX - rect.left;
+      setTocWidth(Math.min(maxWidth, Math.max(200, nextWidth)));
+    };
+
+    updateWidth(event.clientX);
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      updateWidth(moveEvent.clientX);
+    };
+
+    const handlePointerUp = () => {
+      setResizingPanel(null);
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', handlePointerUp);
     };
@@ -1294,7 +1333,7 @@ export function AppLayout() {
     rightPanelMode === 'word' && !isDocx ? 'word-preview-open' : '',
     rightPanelMode === 'wechat' && !isDocx ? 'wechat-preview-open' : '',
     shouldShowHtmlPresentation ? 'html-presentation-layout' : '',
-    resizing ? 'is-resizing' : '',
+    resizingPanel ? 'is-resizing' : '',
   ].filter(Boolean).join(' ');
 
   const resolveTocHeadings = useCallback((): HTMLElement[] => {
@@ -1325,11 +1364,22 @@ export function AppLayout() {
     }
   }, [settings.tocAlwaysPinned]);
 
-  const handleTocAlwaysPinnedChange = useCallback((nextAlwaysPinned: boolean) => {
-    if (!nextAlwaysPinned) {
-      setTocSessionPinned(true);
-    }
-    updateSettings({ tocAlwaysPinned: nextAlwaysPinned });
+  // ISS-217：「总是固定大纲」在设置页被关闭（true→false）时，同步解除当前文档的
+  // 会话固定，使「设置页关闭 → 当即取消固定」与固定来源无关（手工固定过的也一并取消），
+  // 与 CHANGELOG / DEC-143 / DESIGN 记载一致。开启方向的钉回由 tocPinned 的 || 合成完成。
+  // 状态同步放在 SETTINGS_CHANGED_EVENT 回调而非 effect 体内，避开 react-hooks/set-state-in-effect。
+  const alwaysPinnedRef = useRef(settings.tocAlwaysPinned);
+  useEffect(() => {
+    const handleSettingsChanged = () => {
+      const nextAlwaysPinned = getSettings().tocAlwaysPinned;
+      const prevAlwaysPinned = alwaysPinnedRef.current;
+      alwaysPinnedRef.current = nextAlwaysPinned;
+      if (prevAlwaysPinned && !nextAlwaysPinned) {
+        setTocSessionPinned(false);
+      }
+    };
+    window.addEventListener(SETTINGS_CHANGED_EVENT, handleSettingsChanged);
+    return () => window.removeEventListener(SETTINGS_CHANGED_EVENT, handleSettingsChanged);
   }, []);
 
   const handleHtmlTableView = useCallback((block: HtmlTableBlock) => {
@@ -1502,7 +1552,12 @@ export function AppLayout() {
       <div
         ref={mainContentRef}
         className={mainContentClassName}
-        style={{ '--right-panel-width': `${rightPanelWidth}px` } as React.CSSProperties}
+        style={
+          {
+            '--right-panel-width': `${rightPanelWidth}px`,
+            '--toc-width': `${tocWidth}px`,
+          } as React.CSSProperties
+        }
       >
         {session.showHomePage ? (
           <RecentFilesPage
@@ -1519,17 +1574,29 @@ export function AppLayout() {
               items={toc}
               activeIndex={activeTocIndex}
               pinned={tocPinned}
-              alwaysPinned={settings.tocAlwaysPinned}
               onPinnedChange={handleTocPinnedChange}
-              onAlwaysPinnedChange={handleTocAlwaysPinnedChange}
               onNavigate={handleTocNavigate}
             />
+            {tocPinned && (
+              <div
+                className={`toc-resizer ${resizingPanel === 'toc' ? 'dragging' : ''}`}
+                role="separator"
+                aria-label={t('tocResizeLabel')}
+                aria-orientation="vertical"
+                aria-valuemin={200}
+                aria-valuemax={480}
+                aria-valuenow={Math.round(tocWidth)}
+                title={t('tocResizeTitle')}
+                onPointerDown={handleTocResizerPointerDown}
+                onDoubleClick={() => setTocWidth(260)}
+              />
+            )}
             {editorPane}
           </>
         )}
         {rightPanelMode !== 'none' && !isDocx && (
           <div
-            className={`word-preview-resizer ${resizing ? 'dragging' : ''}`}
+            className={`word-preview-resizer ${resizingPanel === 'right' ? 'dragging' : ''}`}
             role="separator"
             aria-label={t('rightPanelResizeLabel')}
             aria-orientation="vertical"

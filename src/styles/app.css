@@ -732,7 +732,7 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   position: relative;
   top: 0;
   left: 0;
-  width: 260px;
+  width: var(--toc-width, 260px);
   min-width: 200px;
   max-width: 40vw;
   max-height: 100%;
@@ -741,6 +741,37 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   border-right: 1px solid var(--border-soft);
   background: var(--toc-panel-bg);
   overflow-y: auto;
+}
+
+/* 固定大纲左栏右缘的宽度拖拽手柄（样式与 .word-preview-resizer 同构）。 */
+.toc-resizer {
+  width: 9px;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.15s;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.toc-resizer::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 3px;
+  width: 3px;
+  height: 44px;
+  border-radius: 999px;
+  background: var(--border);
+  opacity: 0.32;
+  transform: translateY(-50%);
+  transition: background 0.15s, opacity 0.15s, height 0.15s;
+}
+
+.toc-resizer:hover::before,
+.toc-resizer.dragging::before {
+  height: 58px;
+  background: var(--accent);
+  opacity: 0.75;
 }
 
 .right-panel-open .floating-toc {
@@ -942,78 +973,6 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   font-size: 10px;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.floating-toc-preference {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  width: calc(100% - 16px);
-  min-height: 30px;
-  margin: 0 8px 4px;
-  padding: 0 8px;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--muted);
-  font-family: var(--font-body);
-  font-size: 12px;
-  line-height: 16px;
-  text-align: left;
-  cursor: pointer;
-  transition: background 0.1s, border-color 0.1s, color 0.1s;
-}
-
-.floating-toc-preference span:first-child {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.floating-toc-preference:hover,
-.floating-toc-preference:focus-visible {
-  border-color: var(--border-soft);
-  background: var(--control-hover-bg);
-  color: var(--fg);
-}
-
-.floating-toc-preference[aria-pressed='true'] {
-  color: var(--fg);
-  background: color-mix(in oklch, var(--accent) 10%, transparent);
-}
-
-.floating-toc-switch {
-  position: relative;
-  flex-shrink: 0;
-  width: 24px;
-  height: 14px;
-  border-radius: 999px;
-  background: color-mix(in oklch, var(--muted) 28%, transparent);
-  transition: background 0.12s;
-}
-
-.floating-toc-switch::after {
-  content: '';
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-  background: var(--panel);
-  box-shadow: 0 1px 2px oklch(0% 0 0 / 0.18);
-  transition: transform 0.12s, background 0.12s;
-}
-
-.floating-toc-preference[aria-pressed='true'] .floating-toc-switch {
-  background: var(--accent);
-}
-
-.floating-toc-preference[aria-pressed='true'] .floating-toc-switch::after {
-  transform: translateX(10px);
-  background: var(--bg);
 }
 
 .floating-toc-list {

@@ -8,9 +8,7 @@ type FloatingTocProps = {
   items: TocItem[];
   activeIndex: number;
   pinned: boolean;
-  alwaysPinned: boolean;
   onPinnedChange: (pinned: boolean) => void;
-  onAlwaysPinnedChange: (alwaysPinned: boolean) => void;
   onNavigate: (item: TocItem, index: number) => void;
 };
 
@@ -18,9 +16,7 @@ export function FloatingToc({
   items,
   activeIndex,
   pinned,
-  alwaysPinned,
   onPinnedChange,
-  onAlwaysPinnedChange,
   onNavigate,
 }: FloatingTocProps) {
   const settings = useSettings();
@@ -32,7 +28,6 @@ export function FloatingToc({
   const railLabel = t('openTocHint');
   const pinLabel = pinned ? t('unpinTocHint') : t('pinTocHint');
   const closeLabel = t('closeTocHint');
-  const alwaysPinnedLabel = t('tocAlwaysPinnedLabel');
 
   if (items.length === 0) return null;
 
@@ -125,17 +120,6 @@ export function FloatingToc({
             </button>
           </div>
         </div>
-        {pinned && (
-          <button
-            type="button"
-            className="floating-toc-preference"
-            aria-pressed={alwaysPinned}
-            onClick={() => onAlwaysPinnedChange(!alwaysPinned)}
-          >
-            <span>{alwaysPinnedLabel}</span>
-            <span className="floating-toc-switch" aria-hidden="true" />
-          </button>
-        )}
         <nav className="floating-toc-list" aria-label={t('documentTocLabel')}>
           {items.map((item, index) => (
             <button
