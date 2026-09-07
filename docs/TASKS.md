@@ -34,6 +34,12 @@
 
 ### 缺陷类
 
+#### 🟡 ISS-218 Word 导出 raw IPC 在真实 WKWebView 退化为 JSON 后失败（已 PR #167；待合并与真机落盘复核）
+
+- **现象:** macOS Folia 导出 Word 弹窗报错：`write_binary_export expects a raw binary body (application/octet-stream), got JSON`，目标文件未生成。
+- **根因:** ISS-215 把导出请求改为 raw body 后，Rust 命令对所有 `InvokeBody::Json` 一律拒绝；但 Tauri 的二进制传输允许平台/WebView 降级为 JSON 数字数组，且已发布的 ISS-201 前端仍可能发送 `{ path, bytes }` JSON 对象。该路径此前明确标记 `NOT_VERIFIED`，单测只覆盖了下层 `write_export_bytes`，没有覆盖请求体分派。
+- **验收:** 前端直接发送 `ArrayBuffer` 且不手工覆盖 content-type；Rust 同时接受 raw、JSON array fallback、旧 `{ path, bytes }`，三路复用既有 `.docx`/绝对路径/denied-root/200MB 校验链；非法 JSON byte fail-closed；补 Rust 回归测试与 macOS WKWebView 真机导出。
+
 #### ✅ ISS-197 fs 插件 deny-only scope + write_managed_asset 强制约束（已 PR #135，2026-08-29 squash merge 5c97cd1；对抗式 review 设计确认正确、0 阻塞；LOW 加固项并入 ISS-201、deny 大小写真机验证移交 NOT_VERIFIED）
 
 - **发现:** Tauri v2 ACL「allow 列表为空 = 放行一切」,capabilities 4 条 fs:allow-* 无 scope 约束,lib.rs 自定义命令的白名单/黑名单可被 `invoke('plugin:fs|read_file',…)` 直接绕过。

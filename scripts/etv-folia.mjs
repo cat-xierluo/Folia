@@ -343,6 +343,78 @@ async function scenarioC_ipc({ page, send, ev, screenshot }) {
   return out;
 }
 
+/**
+ * 场景 D · Word 导出 IPC 回归（ISS-218）
+ *
+ * 用户真机遇到 `write_binary_export ... got JSON`。这里在真实 WKWebView 中
+ * 分别走当前 raw ArrayBuffer 请求与旧 `{ path, bytes }` JSON 请求，最后由
+ * Node 侧回读落盘字节；同时断言 JSON 兼容通道仍复用扩展名白名单。
+ */
+async function scenarioD_wordExportIpc({ ev, screenshot }) {
+  const out = {};
+  const { readFileSync, unlinkSync } = await import('node:fs');
+  const stamp = Date.now();
+  const rawPath = `/tmp/folia-etv-export-${stamp}-raw.docx`;
+  const legacyPath = `/tmp/folia-etv-export-${stamp}-legacy.docx`;
+  const rejectedPath = `/tmp/folia-etv-export-${stamp}.txt`;
+  const expected = [80, 75, 3, 4];
+
+  out.rawInvoke = await ev(async (p, bytes) => {
+    try {
+      await window.__TAURI_INTERNALS__.invoke(
+        'write_binary_export',
+        new Uint8Array(bytes).buffer,
+        { headers: { 'x-folia-export-path': encodeURIComponent(p) } },
+      );
+      return true;
+    } catch (e) {
+      return { __error: String(e?.message || e) };
+    }
+  }, rawPath, expected);
+
+  out.legacyJsonInvoke = await ev(async (p, bytes) => {
+    try {
+      await window.__TAURI_INTERNALS__.invoke('write_binary_export', { path: p, bytes });
+      return true;
+    } catch (e) {
+      return { __error: String(e?.message || e) };
+    }
+  }, legacyPath, expected);
+
+  out.extensionGuard = await ev(async (p, bytes) => {
+    try {
+      await window.__TAURI_INTERNALS__.invoke('write_binary_export', { path: p, bytes });
+      return { rejected: false };
+    } catch (e) {
+      return { rejected: true, message: String(e?.message || e) };
+    }
+  }, rejectedPath, expected);
+
+  const readBytes = (path) => {
+    try {
+      return Array.from(readFileSync(path));
+    } catch (error) {
+      return { __error: error.message };
+    }
+  };
+  out.rawBytes = readBytes(rawPath);
+  out.legacyBytes = readBytes(legacyPath);
+  out.passed =
+    out.rawInvoke === true &&
+    out.legacyJsonInvoke === true &&
+    JSON.stringify(out.rawBytes) === JSON.stringify(expected) &&
+    JSON.stringify(out.legacyBytes) === JSON.stringify(expected) &&
+    out.extensionGuard?.rejected === true;
+
+  await screenshot('d-word-export-ipc');
+  for (const path of [rawPath, legacyPath, rejectedPath]) {
+    try {
+      unlinkSync(path);
+    } catch {}
+  }
+  return out;
+}
+
 /* ──────────────── 入口 ─────────────────────────────────────────────────── */
 
 async function main() {
@@ -375,6 +447,7 @@ async function main() {
     ['A-keyboard', scenarioA_keyboard],
     ['B-drop', scenarioB_drop],
     ['C-ipc', scenarioC_ipc],
+    ['D-word-export-ipc', scenarioD_wordExportIpc],
   ];
 
   for (const [name, fn] of scenarioDefs) {

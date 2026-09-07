@@ -25,13 +25,12 @@ export async function exportToWord(
 
   // 4. Write the blob to file——ISS-201：走受控 Rust 命令（.docx 白名单 +
   // denied-root 黑名单 + 200MB 上限），不再依赖 fs 插件的宽泛 allow-*。
-  // ISS-215：字节作为 raw IPC body 直达（InvokeBody::Raw），路径经
-  // x-folia-export-path header 携带（encodeURIComponent 保证 header 值
-  // ASCII），不再 JSON 数字数组化——大 docx 导出不再有数倍序列化内存峰值。
+  // ISS-215/218：ArrayBuffer 直接作为 IPC body，交由 Tauri 设置正确的
+  // content-type；路径经 x-folia-export-path header 携带。Rust 端同时兼容
+  // WebView 将二进制 body 降级成 JSON 数字数组的情形，避免导出整体失败。
   const buffer = await blob.arrayBuffer();
-  await invoke('write_binary_export', new Uint8Array(buffer), {
+  await invoke('write_binary_export', buffer, {
     headers: {
-      'content-type': 'application/octet-stream',
       'x-folia-export-path': encodeURIComponent(path),
     },
   });

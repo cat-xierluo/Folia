@@ -36,6 +36,14 @@
 
 > ⚠️ **2026-08-14 数据恢复说明**：本文件 DEC-065 ~ DEC-137 正文因一次 `git stash pop` 误操作覆盖丢失（local 文件，git 无历史备份）。以下已从 CHANGELOG.md（权威变更记录）重建决策骨架——编号/ISS/PR/版本/结论可追溯，但部分早期条目（v0.3.10~v0.4.3，CHANGELOG 未逐条标 DEC 号）按版本聚合；完整根因分析详见 CHANGELOG 对应版本段与 PR。代码无损失（全部已合并）。排列沿用本文件既有降序惯例（新决策在前），与 DEC-064→DEC-001 衔接。
 
+### [DEC-143] - 2026-09-07 - Word 导出二进制 IPC 必须保留 JSON 兼容通道（ISS-218）
+
+**背景**：ISS-215 为降低大 DOCX 的 IPC 内存峰值，将 `write_binary_export` 从 JSON `{ path, bytes }` 改成 raw body + 路径 header。该路径仅做了纯函数单测，真机明确标为 `NOT_VERIFIED`。用户在 macOS 已发布应用中首次实测即收到 `InvokeBody::Json`，Rust 端因“一律拒绝 JSON”中断导出。
+
+**决定**：raw body 仍是首选路径；前端直接发送 `ArrayBuffer`，不手工设置由 Tauri 负责的 content-type。Rust 请求适配层同时接受 (1) raw + header、(2) JSON 数字数组 + header、(3) 旧 `{ path, bytes }` JSON 对象。所有形态在适配后统一进入 `write_export_bytes`，扩展名白名单、绝对路径、denied-root 与 200MB 上限不变；JSON 字节逐项严格校验 0..255，非法值 fail-closed。
+
+**影响**：正常 raw 通道继续保留 ISS-215 的内存收益；仅在平台降级或前后端资源短暂不一致时承担 JSON 序列化开销，以“功能可用”优先于性能优化。以后修改 IPC 传输形态必须给请求体分派本身补回归测试，并完成目标 WebView 真机验收，不能再以纯函数测试替代传输层验证。
+
 ### [DEC-141] - 2026-08-28 - 编辑器 HTML 拆块重组机制 + 本地媒体受控 data URL 通路（ISS-205/206，PR #137~#145）
 
 **背景**：2026-08-27~28 连续修复两组用户报告缺陷，各引入一项影响后续同类问题的机制级决策，合并为一条 DEC 记录（增量修复 ISS-207/208/198 依惯例仅留 CHANGELOG）。

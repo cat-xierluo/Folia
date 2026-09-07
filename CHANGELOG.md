@@ -18,6 +18,8 @@ All notable changes of this project will be documented in this file.
 
 ### Fixed
 
+- **修复 Word 导出提示 `write_binary_export expects a raw binary body ... got JSON`（ISS-218）**：ISS-215 的 raw IPC 优化在真实 WKWebView 中可能退化为 JSON 数字数组，而 Rust 命令此前对所有 JSON body 直接拒绝，导致 `.docx` 完全无法导出。前端改为直接发送 `ArrayBuffer` 并让 Tauri 管理 content-type；Rust 端保留 raw 快路径，同时兼容 JSON array fallback 与旧 `{ path, bytes }` 请求，三条路径继续复用 `.docx` 白名单、敏感路径黑名单和 200MB 上限；非法 JSON 字节严格拒绝。新增请求适配层回归测试，覆盖用户截图中的 JSON 失败路径。
+
 - **autosave 不再以死链 blob: 引用写盘（ISS-210）**：自动保存 effect 现与手动保存同语义——800ms tick 先把 pending 图片落盘到 `<doc>.assets/` 并把正文中的 `blob:` 引用替换为相对路径，再写文件。此前开启 autosave 时含未落盘图片的文档会以死链内容写盘（重启后图片丢失），直到手动保存才修复。
 - **修复图片资产跨文档重插时写出错误相对路径（ISS-211）**：同一图片（hash 去重）曾被文档 A 落盘后，再插入文档 B 时按 B 的文档名重算 `<B>.assets/<file>` 相对路径，不再沿用 A 的目录；未保存过的新文档仍走 blob: 通道由保存流程改写。
 
