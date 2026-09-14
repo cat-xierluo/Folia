@@ -2,6 +2,12 @@
 
 All notable changes of this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- **远程图片弱网/代理黑洞下不再静默挂起（ISS-217）**：系统代理（如 PacketTun）对某些域名黑洞时，远程 https 图片请求挂起 60s+ 且无 error 事件——既有 ISS-208 诊断 banner 不触发，编辑器裸显示原始 `![](https://…)` 语法，代理恢复后也永不自愈（必须整页 reload）。三件套：(1) **懒加载**——远程 http(s) 图片自动加 `loading="lazy"`，长文档首开不再 43 张图并发全量拉取把弱网/代理打死（视口外图片滚动到才加载）；(2) **挂起看门狗**——进入视口的远程图片 30s 未加载完成（`complete` 且无 error）即出现「图片加载超时」占位条目，聚合进既有诊断 banner（上限 3 条明细 + 「还有 N 张」汇总行，批量重试按钮）；(3) **单图重试**——诊断条目新增「重试」按钮（首次接线 `MediaPlaceholder.onRetry`），同元素改写为 `?folioRetry=N` 唯一 URL 强制重新请求（实证：同 URL 的任何重启方式都会被浏览器按 URL 去重到挂起中的在途请求上；带 query 的预签名 URL 走 remove/restore 尽力而为路径）。后续真实 load/error 到达时条目自动升级或清除（与 ISS-208 同一条共享记账路径）。验证：815/815 单测（T1-T11 全 TDD 先红后绿）、typecheck/lint 零错误、新增 e2e 全链路（挂起→占位→重试→放行→清除→源码零污染 round-trip）、真机 WKWebView 截图验证（30s 内占位出现、挂起中重试不崩溃不 reload、Cmd+S 落盘字节零污染——无 `loading=`/`folioRetry=` 泄漏）。
+
 ## [0.8.0] - 2026-09-04
 
 ### Changed
