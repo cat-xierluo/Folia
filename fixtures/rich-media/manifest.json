@@ -9,10 +9,7 @@
       "file": "double-mermaid.md",
       "scenario": "render",
       "kind": "mermaid",
-      "blocks": [
-        "mermaid:flowchart",
-        "mermaid:sequence"
-      ],
+      "blocks": ["mermaid:flowchart", "mermaid:sequence"],
       "asserts": [
         "main IR: all .vditor-ir__preview contain SVG",
         "HTML copy: includes rendered SVG, not raw source",
@@ -25,26 +22,20 @@
       "file": "illegal-mermaid.md",
       "scenario": "render-error",
       "kind": "mermaid",
-      "blocks": [
-        "mermaid:invalid"
-      ],
+      "blocks": ["mermaid:invalid"],
       "asserts": [
         "main IR: visible error summary, source remains editable",
         "no console error from folia, only from mermaid renderer",
         "HTML copy / Word artifact carry error placeholder, not empty"
       ],
-      "expectedDiagnostics": [
-        "mermaid-syntax-error"
-      ]
+      "expectedDiagnostics": ["mermaid-syntax-error"]
     },
     {
       "id": "multi-line-svg",
       "file": "multi-line-svg.md",
       "scenario": "render",
       "kind": "svg",
-      "blocks": [
-        "svg:multi-line"
-      ],
+      "blocks": ["svg:multi-line"],
       "asserts": [
         "main IR: single coherent <svg> with text",
         "no whitespace strip after the block",
@@ -57,9 +48,7 @@
       "file": "complex-svg-features.md",
       "scenario": "render",
       "kind": "svg",
-      "blocks": [
-        "svg:defs+marker+clipPath+use+style+foreignObject"
-      ],
+      "blocks": ["svg:defs+marker+clipPath+use+style+foreignObject"],
       "asserts": [
         "main IR: keep vector SVG with feature support",
         "HTML copy: canonical subset, complex parts may rasterize",
@@ -72,29 +61,20 @@
       "file": "dangerous-svg-attrs.md",
       "scenario": "sanitize",
       "kind": "svg",
-      "blocks": [
-        "svg:onload",
-        "svg:xlink-javascript"
-      ],
+      "blocks": ["svg:onload", "svg:xlink-javascript"],
       "asserts": [
         "onload attribute stripped in final sanitize",
         "<a xlink:href=\"javascript:...\"> stripped",
         "no alert/console error fired during render"
       ],
-      "expectedDiagnostics": [
-        "svg-attrs-stripped"
-      ]
+      "expectedDiagnostics": ["svg-attrs-stripped"]
     },
     {
       "id": "relative-png-webp",
       "file": "relative-png-webp.md",
       "scenario": "resource-resolve",
       "kind": "image",
-      "blocks": [
-        "img:relative-png",
-        "img:relative-png-red",
-        "img:relative-webp"
-      ],
+      "blocks": ["img:relative-png", "img:relative-png-red", "img:relative-webp"],
       "asserts": [
         "all <img> resolve to relative path under fixtures/rich-media/assets/",
         "naturalWidth > 0 for PNG / WebP",
@@ -107,11 +87,7 @@
       "file": "unicode-paths.md",
       "scenario": "resource-resolve",
       "kind": "image",
-      "blocks": [
-        "img:unicode-cn",
-        "img:unicode-space",
-        "img:unicode-emoji"
-      ],
+      "blocks": ["img:unicode-cn", "img:unicode-space", "img:unicode-emoji"],
       "asserts": [
         "all <img> resolve correctly with %-encoded paths",
         "naturalWidth > 0"
@@ -123,49 +99,51 @@
       "file": "missing-image.md",
       "scenario": "resource-resolve",
       "kind": "image",
-      "blocks": [
-        "img:relative-missing"
-      ],
+      "blocks": ["img:relative-missing"],
       "asserts": [
         "UI shows not-found placeholder",
         "diagnostics: not-found"
       ],
-      "expectedDiagnostics": [
-        "not-found"
-      ]
+      "expectedDiagnostics": ["not-found"]
     },
     {
       "id": "corrupt-image",
       "file": "corrupt-image.md",
       "scenario": "resource-resolve",
       "kind": "image",
-      "blocks": [
-        "img:corrupt-bytes"
-      ],
+      "blocks": ["img:corrupt-bytes"],
       "asserts": [
         "UI shows decode-failed placeholder",
         "diagnostics: decode-failed"
       ],
-      "expectedDiagnostics": [
-        "decode-failed"
-      ]
+      "expectedDiagnostics": ["decode-failed"]
     },
     {
       "id": "http-blocked",
       "file": "http-blocked.md",
       "scenario": "resource-resolve",
       "kind": "image",
-      "blocks": [
-        "img:http-scheme"
-      ],
+      "blocks": ["img:http-scheme"],
       "asserts": [
         "CSP blocks http: scheme",
         "UI shows blocked-scheme placeholder",
         "diagnostics: blocked-scheme"
       ],
-      "expectedDiagnostics": [
-        "blocked-scheme"
-      ]
+      "expectedDiagnostics": ["blocked-scheme"]
+    },
+    {
+      "id": "remote-image-hang",
+      "file": "remote-image-hang.md",
+      "scenario": "resource-resolve",
+      "kind": "image",
+      "blocks": ["img:https-hang-route"],
+      "asserts": [
+        "e2e route 黑洞模拟挂起：~40s 内 timeout 占位出现",
+        "单条重试(同URL)后新请求放行→加载成功、条目清除",
+        "远程 img 带 loading=lazy、data URI 不带",
+        "输入 round-trip 后源码不含 loading=（ISS-217）"
+      ],
+      "expectedDiagnostics": ["timeout"]
     },
     {
       "id": "https-image",
@@ -184,9 +162,7 @@
       "file": "data-uri.md",
       "scenario": "resource-resolve",
       "kind": "image",
-      "blocks": [
-        "img:data-png"
-      ],
+      "blocks": ["img:data-png"],
       "asserts": [
         "data:image/png is parsed and rendered",
         "naturalWidth > 0"
@@ -203,71 +179,18 @@
         "tests in src/__tests__/rich-media/a-b-out-of-order.test.ts and e2e/rich-media/a-b-generation.spec.ts validate generation / cancellation"
       ],
       "expectedDiagnostics": []
-    },
-    {
-      "id": "remote-image-hang",
-      "file": "remote-image-hang.md",
-      "scenario": "resource-resolve",
-      "kind": "image",
-      "blocks": [
-        "img:https-hang-route"
-      ],
-      "asserts": [
-        "e2e route 黑洞模拟挂起：~40s 内 timeout 占位出现",
-        "单条重试(同URL)后新请求放行→加载成功、条目清除",
-        "远程 img 带 loading=lazy、data URI 不带",
-        "输入 round-trip 后源码不含 loading=（ISS-217）"
-      ],
-      "expectedDiagnostics": [
-        "timeout"
-      ]
     }
   ],
   "assets": {
     "root": "assets/",
     "files": [
-      {
-        "name": "sample.png",
-        "sizeBytes": 308,
-        "format": "PNG 1x1 transparent",
-        "purpose": "general relative PNG"
-      },
-      {
-        "name": "flowchart.png",
-        "sizeBytes": 295,
-        "format": "PNG 1x1 red",
-        "purpose": "second relative PNG"
-      },
-      {
-        "name": "sample.webp",
-        "sizeBytes": 72,
-        "format": "WebP 1x1 transparent",
-        "purpose": "general relative WebP"
-      },
-      {
-        "name": "中文名.png",
-        "sizeBytes": 308,
-        "format": "PNG 1x1 transparent (CJK filename)",
-        "purpose": "unicode CN"
-      },
-      {
-        "name": "space file.png",
-        "sizeBytes": 308,
-        "format": "PNG 1x1 transparent (space filename)",
-        "purpose": "unicode space"
-      },
-      {
-        "name": "emoji🖼️.png",
-        "sizeBytes": 308,
-        "format": "PNG 1x1 transparent (emoji filename)",
-        "purpose": "unicode emoji"
-      },
-      {
-        "name": "corrupt.png",
-        "sizeBytes": 20,
-        "format": "ASCII text (not a PNG)",
-        "purpose": "decode-failed"
-      }
+      { "name": "sample.png", "sizeBytes": 308, "format": "PNG 1x1 transparent", "purpose": "general relative PNG" },
+      { "name": "flowchart.png", "sizeBytes": 295, "format": "PNG 1x1 red", "purpose": "second relative PNG" },
+      { "name": "sample.webp", "sizeBytes": 72, "format": "WebP 1x1 transparent", "purpose": "general relative WebP" },
+      { "name": "中文名.png", "sizeBytes": 308, "format": "PNG 1x1 transparent (CJK filename)", "purpose": "unicode CN" },
+      { "name": "space file.png", "sizeBytes": 308, "format": "PNG 1x1 transparent (space filename)", "purpose": "unicode space" },
+      { "name": "emoji🖼️.png", "sizeBytes": 308, "format": "PNG 1x1 transparent (emoji filename)", "purpose": "unicode emoji" },
+      { "name": "corrupt.png", "sizeBytes": 20, "format": "ASCII text (not a PNG)", "purpose": "decode-failed" }
     ]
   }
 }
