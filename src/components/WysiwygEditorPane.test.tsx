@@ -1837,3 +1837,202 @@ describe('WysiwygEditorPane 图片诊断 banner (ISS-208 review M2: 重建+去�
     });
   });
 });
+
+describe('WysiwygEditorPane 远程图片挂起看门狗 + 重试 (ISS-217)', () => {
+  let host: HTMLDivElement;
+
+  beforeEach(() => {
+    vditorCalls.length = 0;
+    setValueCalls.length = 0;
+    focusCalls.length = 0;
+    host = document.createElement('div');
+    document.body.append(host);
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    host.remove();
+    vi.clearAllMocks();
+  });
+
+  /** 挂起模拟：jsdom img 永不 complete；实例级覆盖 currentSrc 模拟「已发起请求」 */
+  function appendHungImg(irHost: HTMLElement, src: string, alt = '图'): HTMLImageElement {
+    const img = document.createElement('img');
+    img.setAttribute('src', src);
+    img.alt = alt;
+    Object.defineProperty(img, 'currentSrc', { value: src, configurable: true });
+    irHost.appendChild(img);
+    return img;
+  }
+
+  async function renderPane(props?: { filePath?: string }): Promise<Root> {
+    let root!: Root;
+    await act(async () => {
+      root = createRoot(host);
+      root.render(
+        renderWithProvider(
+          React.createElement(WysiwygEditorPane, {
+            source: '正文',
+            onChange: () => undefined,
+            filePath: props?.filePath,
+          }),
+        ),
+      );
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    return root;
+  }
+
+  /** 推进足够时间让看门狗完成「首次观察 + 超时上报」 */
+  async function advanceToTimeout(): Promise<void> {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(40_000);
+    });
+  }
+
+  it('T6: 远程图片挂起超时 → banner 出现 timeout 占位', async () => {
+    const root = await renderPane();
+    const irHost = host.querySelector<HTMLElement>('.vditor-ir');
+    expect(irHost).not.toBeNull();
+    appendHungImg(irHost!, 'https://cos.example.com/hang-1.webp');
+
+    // 未超时前无 banner
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    expect(host.querySelector('[data-testid="media-placeholder-timeout"]')).toBeNull();
+
+    await advanceToTimeout();
+    const placeholder = host.querySelector('[data-testid="media-placeholder-timeout"]');
+    expect(placeholder).not.toBeNull();
+    expect(host.textContent).toContain('加载超时');
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it('T7: timeout 后真实 error 到达 → 条目升级为「找不到图片」且仅一条', async () => {
+    const root = await renderPane();
+    const irHost = host.querySelector<HTMLElement>('.vditor-ir')!;
+    const img = appendHungImg(irHost, 'https://cos.example.com/hang-2.webp');
+    await advanceToTimeout();
+    expect(host.textContent).toContain('加载超时');
+
+    await act(async () => {
+      img.dispatchEvent(new Event('error', { bubbles: false }));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    // 升级后的消息（seen-src 分支替换 + 立即 flush）
+    expect(host.textContent).toContain('找不到图片');
+    expect(host.textContent).not.toContain('加载超时');
+    // 仅一条（无重复条目）
+    const entries = host.querySelectorAll('[data-testid^="media-placeholder-"]');
+    expect(entries.length).toBe(1);
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it('T8: timeout 后 load 到达 → banner 清除', async () => {
+    const root = await renderPane();
+    const irHost = host.querySelector<HTMLElement>('.vditor-ir')!;
+    const img = appendHungImg(irHost, 'https://cos.example.com/hang-3.webp');
+    await advanceToTimeout();
+    expect(host.textContent).toContain('加载超时');
+
+    await act(async () => {
+      img.dispatchEvent(new Event('load', { bubbles: false }));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(host.textContent).not.toContain('加载超时');
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it('T9: 5 张挂起 → 最多渲染 3 条 + 「还有 N 张」汇总行', async () => {
+    const root = await renderPane();
+    const irHost = host.querySelector<HTMLElement>('.vditor-ir')!;
+    for (let i = 1; i <= 5; i += 1) {
+      appendHungImg(irHost, `https://cos.example.com/hang-${i}.webp`);
+    }
+    await advanceToTimeout();
+
+    expect(host.textContent).toContain('还有 2 张');
+    // 3 条明细 + 1 条汇总 = 4 个 timeout 占位
+    expect(host.querySelectorAll('[data-testid="media-placeholder-timeout"]').length).toBe(4);
+    // 汇总行也有重试按钮（批量重试）
+    expect(host.querySelectorAll('button.media-placeholder__retry').length).toBeGreaterThanOrEqual(4);
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it('T10: 单条重试移除 src 后 RAF 恢复同 URL；非 http 条目无重试按钮', async () => {
+    const root = await renderPane();
+    const irHost = host.querySelector<HTMLElement>('.vditor-ir')!;
+
+    // 一张远程挂起图（有重试）+ 一张本地路径错误图（无重试）
+    const remoteImg = appendHungImg(irHost, 'https://cos.example.com/hang-retry.webp');
+    const localImg = document.createElement('img');
+    localImg.setAttribute('src', '/tmp/broken.png');
+    localImg.alt = '本地图';
+    Object.defineProperty(localImg, 'currentSrc', { value: '/tmp/broken.png', configurable: true });
+    irHost.appendChild(localImg);
+    await act(async () => {
+      localImg.dispatchEvent(new Event('error', { bubbles: false }));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    await advanceToTimeout();
+
+    // 仅远程 timeout 条目有重试按钮
+    const retryButtons = host.querySelectorAll<HTMLButtonElement>('button.media-placeholder__retry');
+    expect(retryButtons.length).toBe(1);
+
+    await act(async () => {
+      retryButtons[0].click();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(remoteImg.getAttribute('src')).toBeNull(); // RAF 前无 src 状态
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(32);
+    });
+    expect(remoteImg.getAttribute('src')).toBe('https://cos.example.com/hang-retry.webp');
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it('T11: filePath 切换 → 诊断清空', async () => {
+    const root = await renderPane({ filePath: '/a.md' });
+    const irHost = host.querySelector<HTMLElement>('.vditor-ir')!;
+    appendHungImg(irHost, 'https://cos.example.com/hang-doc.webp');
+    await advanceToTimeout();
+    expect(host.textContent).toContain('加载超时');
+
+    await act(async () => {
+      root.render(
+        renderWithProvider(
+          React.createElement(WysiwygEditorPane, {
+            source: '正文',
+            onChange: () => undefined,
+            filePath: '/b.md',
+          }),
+        ),
+      );
+      await vi.advanceTimersByTimeAsync(100);
+    });
+    expect(host.textContent).not.toContain('加载超时');
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+});

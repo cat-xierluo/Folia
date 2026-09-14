@@ -59,6 +59,9 @@ export interface RenderDiagnostic {
   message: string;
   blockIndex?: number;
   language?: string;
+  /** ISS-217：图片类诊断（timeout/not-found/decode-failed）携带的图片地址，
+   * banner 重试按钮据此定位编辑器内的 img 节点。非图片诊断不填。 */
+  src?: string;
 }
 
 export interface RenderOptions {
