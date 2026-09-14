@@ -111,16 +111,13 @@ export function watchRemoteImages(host: HTMLElement, options: WatchRemoteImagesO
         observer?.unobserve(img);
         return;
       }
-      let entry = tracked.get(img);
+      const entry = tracked.get(img);
       if (!entry) {
-        tracked.set(img, {
-          armedSrc: currentSrc,
-          visibleSince: null,
-          reported: false,
-        });
-        observer?.observe(img);
+        const created = { armedSrc: currentSrc, visibleSince: null as number | null, reported: false };
         // 无 IO 环境（极老引擎 / 简化测试环境）退化为「登记即视为可见」。
-        if (!observer) tracked.get(img)!.visibleSince = now;
+        if (!observer) created.visibleSince = now;
+        tracked.set(img, created);
+        observer?.observe(img);
         return;
       }
       // 重试改写了 src：重新武装看门狗（对新的唯一 URL 重新计时上报）。
