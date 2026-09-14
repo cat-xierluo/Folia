@@ -6,6 +6,10 @@ import { WysiwygEditorPane } from './WysiwygEditorPane';
 import { FOLIA_IR_SVG_FRAGMENT_CLASS, FOLIA_IR_SVG_ROOT_CLASS } from '../services/vditorIrSanitizeService';
 import { ImageAssetStoreProvider } from '../context/ImageAssetStoreProvider';
 import * as localImageResolver from '../services/localImageResolver';
+import {
+  installFakeIntersectionObserver,
+  type FakeIntersectionObserverHandle,
+} from '../test/fakeIntersectionObserver';
 
 /**
  * DEC-119 / ISS-179 Phase 3 主编辑器接入：WysiwygEditorPane 现在依赖
@@ -1840,6 +1844,7 @@ describe('WysiwygEditorPane 图片诊断 banner (ISS-208 review M2: 重建+去�
 
 describe('WysiwygEditorPane 远程图片挂起看门狗 + 重试 (ISS-217)', () => {
   let host: HTMLDivElement;
+  let io: FakeIntersectionObserverHandle;
 
   beforeEach(() => {
     vditorCalls.length = 0;
@@ -1848,20 +1853,21 @@ describe('WysiwygEditorPane 远程图片挂起看门狗 + 重试 (ISS-217)', () 
     host = document.createElement('div');
     document.body.append(host);
     vi.useFakeTimers();
+    io = installFakeIntersectionObserver();
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    io.uninstall();
     host.remove();
     vi.clearAllMocks();
   });
 
-  /** 挂起模拟：jsdom img 永不 complete；实例级覆盖 currentSrc 模拟「已发起请求」 */
+  /** 挂起模拟：jsdom img 永不 complete；看门狗用「进入视口」判定开始加载 */
   function appendHungImg(irHost: HTMLElement, src: string, alt = '图'): HTMLImageElement {
     const img = document.createElement('img');
     img.setAttribute('src', src);
     img.alt = alt;
-    Object.defineProperty(img, 'currentSrc', { value: src, configurable: true });
     irHost.appendChild(img);
     return img;
   }
@@ -1884,18 +1890,27 @@ describe('WysiwygEditorPane 远程图片挂起看门狗 + 重试 (ISS-217)', () 
     return root;
   }
 
-  /** 推进足够时间让看门狗完成「首次观察 + 超时上报」 */
+  /** 推进一个 sweep 周期让看门狗登记并 observe 图片，然后进入视口开始计时 */
+  async function armWatchdog(img: HTMLImageElement): Promise<void> {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6_000);
+    });
+    io.intersect(img);
+  }
+
+  /** 从进入视口起推进到超时（30s 默认阈值 + sweep 余量） */
   async function advanceToTimeout(): Promise<void> {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(40_000);
     });
   }
 
-  it('T6: 远程图片挂起超时 → banner 出现 timeout 占位', async () => {
+  it('T6: 远程图片视口内挂起超时 → banner 出现 timeout 占位', async () => {
     const root = await renderPane();
     const irHost = host.querySelector<HTMLElement>('.vditor-ir');
     expect(irHost).not.toBeNull();
-    appendHungImg(irHost!, 'https://cos.example.com/hang-1.webp');
+    const img = appendHungImg(irHost!, 'https://cos.example.com/hang-1.webp');
+    await armWatchdog(img);
 
     // 未超时前无 banner
     await act(async () => {
@@ -1913,10 +1928,26 @@ describe('WysiwygEditorPane 远程图片挂起看门狗 + 重试 (ISS-217)', () 
     });
   });
 
+  it('T6b: 视口外（未 intersect）的 lazy 图片不报超时——防假阳性', async () => {
+    const root = await renderPane();
+    const irHost = host.querySelector<HTMLElement>('.vditor-ir')!;
+    appendHungImg(irHost, 'https://cos.example.com/offscreen.webp');
+    // 已被 sweep 登记但从未进入视口
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(host.querySelector('[data-testid="media-placeholder-timeout"]')).toBeNull();
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
   it('T7: timeout 后真实 error 到达 → 条目升级为「找不到图片」且仅一条', async () => {
     const root = await renderPane();
     const irHost = host.querySelector<HTMLElement>('.vditor-ir')!;
     const img = appendHungImg(irHost, 'https://cos.example.com/hang-2.webp');
+    await armWatchdog(img);
     await advanceToTimeout();
     expect(host.textContent).toContain('加载超时');
 
@@ -1940,6 +1971,7 @@ describe('WysiwygEditorPane 远程图片挂起看门狗 + 重试 (ISS-217)', () 
     const root = await renderPane();
     const irHost = host.querySelector<HTMLElement>('.vditor-ir')!;
     const img = appendHungImg(irHost, 'https://cos.example.com/hang-3.webp');
+    await armWatchdog(img);
     await advanceToTimeout();
     expect(host.textContent).toContain('加载超时');
 
@@ -1957,8 +1989,10 @@ describe('WysiwygEditorPane 远程图片挂起看门狗 + 重试 (ISS-217)', () 
   it('T9: 5 张挂起 → 最多渲染 3 条 + 「还有 N 张」汇总行', async () => {
     const root = await renderPane();
     const irHost = host.querySelector<HTMLElement>('.vditor-ir')!;
-    for (let i = 1; i <= 5; i += 1) {
-      appendHungImg(irHost, `https://cos.example.com/hang-${i}.webp`);
+    const imgs = Array.from({ length: 5 }, (_, i) =>
+      appendHungImg(irHost, `https://cos.example.com/hang-${i + 1}.webp`));
+    for (const img of imgs) {
+      await armWatchdog(img);
     }
     await advanceToTimeout();
 
@@ -1982,12 +2016,12 @@ describe('WysiwygEditorPane 远程图片挂起看门狗 + 重试 (ISS-217)', () 
     const localImg = document.createElement('img');
     localImg.setAttribute('src', '/tmp/broken.png');
     localImg.alt = '本地图';
-    Object.defineProperty(localImg, 'currentSrc', { value: '/tmp/broken.png', configurable: true });
     irHost.appendChild(localImg);
     await act(async () => {
       localImg.dispatchEvent(new Event('error', { bubbles: false }));
       await vi.advanceTimersByTimeAsync(0);
     });
+    await armWatchdog(remoteImg);
     await advanceToTimeout();
 
     // 仅远程 timeout 条目有重试按钮
@@ -1998,12 +2032,9 @@ describe('WysiwygEditorPane 远程图片挂起看门狗 + 重试 (ISS-217)', () 
       retryButtons[0].click();
       await vi.advanceTimersByTimeAsync(0);
     });
-    expect(remoteImg.getAttribute('src')).toBeNull(); // RAF 前无 src 状态
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(32);
-    });
-    expect(remoteImg.getAttribute('src')).toBe('https://cos.example.com/hang-retry.webp');
+    // 同元素改写为唯一 URL（?folioRetry=N）——元素身份保留、强制重新请求
+    expect(remoteImg.isConnected).toBe(true);
+    expect(remoteImg.getAttribute('src')).toBe('https://cos.example.com/hang-retry.webp?folioRetry=1');
 
     await act(async () => {
       root.unmount();
@@ -2013,7 +2044,8 @@ describe('WysiwygEditorPane 远程图片挂起看门狗 + 重试 (ISS-217)', () 
   it('T11: filePath 切换 → 诊断清空', async () => {
     const root = await renderPane({ filePath: '/a.md' });
     const irHost = host.querySelector<HTMLElement>('.vditor-ir')!;
-    appendHungImg(irHost, 'https://cos.example.com/hang-doc.webp');
+    const img = appendHungImg(irHost, 'https://cos.example.com/hang-doc.webp');
+    await armWatchdog(img);
     await advanceToTimeout();
     expect(host.textContent).toContain('加载超时');
 

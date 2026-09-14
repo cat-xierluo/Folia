@@ -840,22 +840,26 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
     const diagBySrc = new Map<string, RenderDiagnostic>();
     setImageDiagnostics([]);
 
-    // ISS-217：error 与 timeout 两条来源共用的插入/替换记账——保证同 src
-    // 永远只有一条诊断（timeout 先出现、error 后到时原地替换升级），以及
-    // 两个索引的完整写入（后续 load 才能按元素/src 命中清除）。
+    // ISS-217：error 与 timeout 两条来源共用的插入/替换记账——元素身份
+    // 优先于 src 匹配（重试会把同一元素的 src 改成 ?folioRetry=N 唯一
+    // URL，后续 error 携带新 src，按元素才能升级原条目而不是追加第二条）。
     const reportDiagnostic = (img: HTMLImageElement, diag: RenderDiagnostic): void => {
-      const src = diag.src ?? img.currentSrc ?? img.src ?? '';
+      const src = diag.src ?? rawImgSrc(img);
       if (!src) return;
-      if (seen.has(src)) {
+      const existing = diagByElement.get(img) ?? (seen.has(src) ? diagBySrc.get(src) : undefined);
+      if (existing) {
         // 重建节点/重复上报:不重复入列,但必须把「最新 diag 对象引用」
         // 写回两条索引——否则后续 load 查不到关联,banner 残留(_review M2)。
-        const existing = diagBySrc.get(src);
-        if (existing) {
-          const at = aggregate.indexOf(existing);
-          if (at >= 0) aggregate[at] = diag;
+        const at = aggregate.indexOf(existing);
+        if (at >= 0) aggregate[at] = diag;
+        // 旧 src 键（可能与重试后的新 src 不同）随旧条目一并退役。
+        if (existing.src && existing.src !== src) {
+          diagBySrc.delete(existing.src);
+          seen.delete(existing.src);
         }
         diagByElement.set(img, diag);
         diagBySrc.set(src, diag);
+        seen.add(src);
         // ISS-217：原实现 seen 分支替换后不 flush，升级消息要等下一次
         // 事件才渲染；timeout→error 的升级正依赖此路径，补上立即 flush。
         setImageDiagnostics([...aggregate]);
@@ -868,8 +872,15 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
       setImageDiagnostics([...aggregate]);
     };
 
+    // ISS-217：诊断携带原始 src attribute 而非解析后的 img.src 属性——
+    // 后者会把相对路径解析成绝对 URL（http://localhost/...），导致「仅远程
+    // 图片可重试」的判定失效，且与 retryRemoteImageByUrl 的 attribute 精确
+    // 匹配天然一致。
+    const rawImgSrc = (img: HTMLImageElement): string =>
+      img.getAttribute('src') ?? img.currentSrc ?? img.src ?? '';
+
     const classifyError = (img: HTMLImageElement, error: boolean): RenderDiagnostic | null => {
-      const src = img.currentSrc || img.src || '';
+      const src = rawImgSrc(img);
       if (!src) return null;
       // CSP 不再拦截 http: 图片（ISS-110 放开 img-src/media-src 的 http:），
       // http 图片失败只可能是 DNS/网络/404/解码，按 not-found/decode-failed 归类，
@@ -890,7 +901,7 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
     const handleImgError = (event: Event): void => {
       const target = event.target as Element | null;
       if (!(target instanceof HTMLImageElement)) return;
-      const src = target.currentSrc || target.src || '';
+      const src = rawImgSrc(target);
       if (!src) return;
       // 同 src 重复 error 更新条目（不重复入列），保证 aggregate 单条且
       // 后续 load 可按 src 移除（重建节点/重复失败均覆盖）。
@@ -905,20 +916,26 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
     const handleImgLoad = (event: Event): void => {
       const target = event.target as Element | null;
       if (!(target instanceof HTMLImageElement)) return;
-      const src = target.currentSrc || target.src || '';
+      const src = rawImgSrc(target);
       if (!src) return;
       // 主查找:元素级(error 与 load 之间元素身份稳定,src 可能已从原始
       // 路径变为 data URL);兜底:src 级(重建节点的 src 命中旧错误)。
       const diag = diagByElement.get(target) ?? diagBySrc.get(src);
       if (!diag) return;
       diagByElement.delete(target);
+      // 清理条目自身的 src 键（重试后可能与 load 携带的 src 不同）+ 本次
+      // load 的 src 键兜底。
+      if (diag.src) {
+        diagBySrc.delete(diag.src);
+        seen.delete(diag.src);
+      }
       diagBySrc.delete(src);
+      seen.delete(src);
       const index = aggregate.indexOf(diag);
       if (index >= 0) {
         aggregate.splice(index, 1);
         setImageDiagnostics([...aggregate]);
       }
-      seen.delete(src);
     };
 
     // ISS-217：挂起看门狗。只对「已发起请求」（currentSrc 非空——lazy
@@ -927,7 +944,7 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
     // 到达时自动清除）。
     const stopWatchdog = watchRemoteImages(host, {
       onTimeout: (img) => {
-        const src = img.currentSrc || img.src || '';
+        const src = rawImgSrc(img);
         if (!src) return;
         reportDiagnostic(img, {
           code: 'timeout',
