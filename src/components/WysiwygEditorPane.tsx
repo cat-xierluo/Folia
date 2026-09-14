@@ -877,7 +877,7 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
     // 图片可重试」的判定失效，且与 retryRemoteImageByUrl 的 attribute 精确
     // 匹配天然一致。
     const rawImgSrc = (img: HTMLImageElement): string =>
-      img.getAttribute('src') ?? img.currentSrc ?? img.src ?? '';
+      img.getAttribute('src') ?? '';
 
     const classifyError = (img: HTMLImageElement, error: boolean): RenderDiagnostic | null => {
       const src = rawImgSrc(img);
@@ -938,10 +938,11 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
       }
     };
 
-    // ISS-217：挂起看门狗。只对「已发起请求」（currentSrc 非空——lazy
-    // 未进视口的图片浏览器不会设置 currentSrc）且 !complete 的远程图片
-    // 计时，30s 无进展上报 timeout（文案软化：慢网大图也可能超时，load
-    // 到达时自动清除）。
+    // ISS-217：挂起看门狗。只对「进入过视口」（IntersectionObserver——
+    // lazy 视口外的图片不参与计时）且 !complete 的远程图片计时，30s 无
+    // 进展上报 timeout（文案软化：慢网大图也可能超时，load 到达时自动
+    // 清除；currentSrc 不能作开始信号——挂起中的请求其为空串，见服务
+    // 头注实证）。
     const stopWatchdog = watchRemoteImages(host, {
       onTimeout: (img) => {
         const src = rawImgSrc(img);
@@ -1226,9 +1227,9 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
                   lockComplexTables();
                   const host = hostRef.current;
                   if (host) {
-                void resolveLocalImages(host, filePath);
-                applyLazyLoadingToRemoteImages(host);
-              }
+                    void resolveLocalImages(host, filePath);
+                    applyLazyLoadingToRemoteImages(host);
+                  }
                   if (sanitized.sourceChanged) emitEditorValueIfChanged(editor);
                 } catch (error) {
                   sanitizingRef.current = false;
@@ -1584,7 +1585,8 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
     return attachCodeBlockCopy(host, overlay, codeCopyLabels);
   }, [codeCopyLabels]);
 
-  // ISS-217：banner 重试——同 URL 强制重新请求（remove src → RAF 恢复）。
+  // ISS-217：banner 重试——同元素改写为唯一 URL 强制重新请求（无 query
+  // 时 ?folioRetry=N；带 query 走 remove→RAF 恢复，见服务实现）。
   // 匹配 0 个元素（图片已删除 / 文档已切换）时把该条诊断视为已解决并
   // 移除，避免死按钮。批量重试 = 对全部可重试 src 去重后逐个执行。
   const retryImageDiagnosticBySrc = useCallback((src: string) => {

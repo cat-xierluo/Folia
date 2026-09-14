@@ -123,6 +123,34 @@ test.describe('ISS-217 远程图片挂起看门狗 + 重试', () => {
       '全程挂起的 hangB 条目应保留',
     ).toHaveCount(1);
 
+    // 3b. 持续黑洞下的二次重试（review I1）：重试 bust 后再次挂起 →
+    // 看门狗重新武装再上报（条目升级不重复）；二次点击走签名路径，
+    // 条目不得被静默删除。
+    const hangBEntry = banner
+      .locator('[data-testid="media-placeholder-timeout"]')
+      .filter({ hasText: '挂起B' });
+    await hangBEntry.locator('button.media-placeholder__retry').click(); // 第一次：bust
+    await expect
+      .poll(
+        () => page.evaluate(() => {
+          const img = Array.from(document.querySelectorAll('.vditor-ir img'))
+            .find((el) => (el.getAttribute('src') ?? '').includes('hang-b'));
+          return img?.getAttribute('src') ?? '';
+        }),
+        { timeout: 10_000, message: '第一次重试后 hang-b src 应带 folioRetry' },
+      )
+      .toContain('folioRetry=1');
+    // 等看门狗重新武装并再次上报（sweep ≤5s 重置 + 30s 阈值 + 余量）——
+    // 条目的 diag.src 升级为 ?folioRetry=1 后，二次点击才走签名路径。
+    await page.waitForTimeout(40_000);
+    await expect(hangBEntry).toHaveCount(1);
+    await hangBEntry.locator('button.media-placeholder__retry').click(); // 第二次：签名路径
+    await page.waitForTimeout(1_500);
+    await expect(
+      hangBEntry,
+      '二次重试不得静默删除仍在挂起的条目（review I1）',
+    ).toHaveCount(1);
+
     // 4. round-trip 守卫：IR 内输入 → Lute 重新生成 source → 切源码模式读取。
     //    （不用 Alt+s 快捷键：macOS 上 Option+S 的 e.key 是 'ß'，与
     //    AppLayout 的 e.key === 's' 判定不匹配——点「源码模式」按钮等价。）
@@ -142,5 +170,6 @@ test.describe('ISS-217 远程图片挂起看门狗 + 重试', () => {
     expect(sourceText).toContain('挂起A');
     expect(sourceText).toContain('x');
     expect(sourceText, 'loading 属性不得泄漏进 markdown source').not.toContain('loading=');
+    expect(sourceText, 'folioRetry 重试参数不得泄漏进 markdown source').not.toContain('folioRetry=');
   });
 });

@@ -2068,3 +2068,81 @@ describe('WysiwygEditorPane 远程图片挂起看门狗 + 重试 (ISS-217)', () 
     });
   });
 });
+
+describe('WysiwygEditorPane 重试后再挂起 (ISS-217 review I1)', () => {
+  let host: HTMLDivElement;
+  let io: FakeIntersectionObserverHandle;
+
+  beforeEach(() => {
+    vditorCalls.length = 0;
+    setValueCalls.length = 0;
+    focusCalls.length = 0;
+    host = document.createElement('div');
+    document.body.append(host);
+    vi.useFakeTimers();
+    io = installFakeIntersectionObserver();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    io.uninstall();
+    host.remove();
+    vi.clearAllMocks();
+  });
+
+  it('T12: 重试后再次挂起——看门狗重新武装上报 bust src，二次重试走签名路径不删条目', async () => {
+    let root!: Root;
+    await act(async () => {
+      root = createRoot(host);
+      root.render(
+        renderWithProvider(
+          React.createElement(WysiwygEditorPane, {
+            source: '正文',
+            onChange: () => undefined,
+          }),
+        ),
+      );
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    const irHost = host.querySelector<HTMLElement>('.vditor-ir')!;
+    const img = document.createElement('img');
+    img.setAttribute('src', 'https://cos.example.com/hang-again.webp');
+    img.alt = '图';
+    irHost.appendChild(img);
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(6_000); });
+    io.intersect(img);
+    await act(async () => { await vi.advanceTimersByTimeAsync(40_000); });
+    expect(host.textContent).toContain('加载超时');
+    expect(host.querySelectorAll('[data-testid="media-placeholder-timeout"]').length).toBe(1);
+
+    // 第一次重试：同元素 bust → ?folioRetry=1，条目保留
+    await act(async () => {
+      host.querySelector<HTMLButtonElement>('button.media-placeholder__retry')!.click();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(img.getAttribute('src')).toBe('https://cos.example.com/hang-again.webp?folioRetry=1');
+
+    // 再次挂起：sweep 检测 src 变化重置 → 重新 intersect 计时 → 再次上报（元素路径升级，仍 1 条）
+    await act(async () => { await vi.advanceTimersByTimeAsync(6_000); });
+    io.intersect(img);
+    await act(async () => { await vi.advanceTimersByTimeAsync(40_000); });
+    expect(host.querySelectorAll('[data-testid="media-placeholder-timeout"]').length).toBe(1);
+
+    // 二次重试：条目 diag.src 已是 ?folioRetry=1（带 query）→ 签名路径 remove→RAF，条目不删
+    await act(async () => {
+      host.querySelector<HTMLButtonElement>('button.media-placeholder__retry')!.click();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(img.getAttribute('src')).toBeNull();
+    await act(async () => { await vi.advanceTimersByTimeAsync(32); });
+    expect(img.getAttribute('src')).toBe('https://cos.example.com/hang-again.webp?folioRetry=1');
+    // 关键断言：条目未被静默删除（review I1 的失败形态）
+    expect(host.textContent).toContain('加载超时');
+    expect(host.querySelectorAll('[data-testid="media-placeholder-timeout"]').length).toBe(1);
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+});

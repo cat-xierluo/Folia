@@ -66,8 +66,9 @@ export interface WatchRemoteImagesOptions {
   /** 图片挂起超时（从首次进入视口起算）。 */
   timeoutMs?: number;
   sweepIntervalMs?: number;
-  /** 超时回调；`img.currentSrc || img.src` 为权威地址。每元素至多一次，
-   * 直到元素从 DOM 移除并重建。 */
+  /** 超时回调；原始 src attribute（`getAttribute('src')`）为权威地址。
+   * 每个「src 生命周期」至多一次——重试改写 src 后重新计时（见 armedSrc），
+   * 元素从 DOM 移除并重建后亦然。 */
   onTimeout: (img: HTMLImageElement) => void;
 }
 
@@ -79,7 +80,13 @@ export interface WatchRemoteImagesOptions {
 export function watchRemoteImages(host: HTMLElement, options: WatchRemoteImagesOptions): () => void {
   const timeoutMs = options.timeoutMs ?? REMOTE_IMAGE_TIMEOUT_MS;
   const sweepIntervalMs = options.sweepIntervalMs ?? REMOTE_IMAGE_SWEEP_INTERVAL_MS;
-  const tracked = new WeakMap<HTMLImageElement, { visibleSince: number | null; reported: boolean }>();
+  // armedSrc：本轮计时锚定的 src。重试（同元素改写 ?folioRetry=N 唯一 URL）
+  // 会改变 src——sweep 检测到变化即重置 entry，让新一轮挂起能再次上报
+  //（否则 reported 永久锁死，重试后的挂起永远无新信号，看门狗死亡）。
+  const tracked = new WeakMap<
+    HTMLImageElement,
+    { armedSrc: string; visibleSince: number | null; reported: boolean }
+  >();
 
   // 首次 intersect 起算（此后滚出视口不清零——请求已在途）。
   const observer = typeof IntersectionObserver !== 'undefined'
@@ -97,7 +104,8 @@ export function watchRemoteImages(host: HTMLElement, options: WatchRemoteImagesO
     if (!host.isConnected) return;
     const now = Date.now();
     host.querySelectorAll('img').forEach((img) => {
-      if (!isRemoteSrc(img.getAttribute('src'))) return;
+      const currentSrc = img.getAttribute('src');
+      if (!currentSrc || !isRemoteSrc(currentSrc)) return;
       if (img.complete) {
         // 已结束（成功或 error 后均为 true）：解除观察，WeakMap 条目随 GC。
         observer?.unobserve(img);
@@ -105,11 +113,26 @@ export function watchRemoteImages(host: HTMLElement, options: WatchRemoteImagesO
       }
       let entry = tracked.get(img);
       if (!entry) {
-        entry = { visibleSince: null, reported: false };
-        tracked.set(img, entry);
+        tracked.set(img, {
+          armedSrc: currentSrc,
+          visibleSince: null,
+          reported: false,
+        });
         observer?.observe(img);
         // 无 IO 环境（极老引擎 / 简化测试环境）退化为「登记即视为可见」。
-        if (!observer) entry.visibleSince = now;
+        if (!observer) tracked.get(img)!.visibleSince = now;
+        return;
+      }
+      // 重试改写了 src：重新武装看门狗（对新的唯一 URL 重新计时上报）。
+      // re-observe 是关键：元素可能从未离开视口（IO 只在交叉状态变化时
+      // 回调），unobserve→observe 按规范会强制派发一次初始回调（真引擎
+      // 对 in-viewport 元素 isIntersecting=true），让 visibleSince 重新起算。
+      if (entry.armedSrc !== currentSrc) {
+        entry.armedSrc = currentSrc;
+        entry.visibleSince = null;
+        entry.reported = false;
+        observer?.unobserve(img);
+        observer?.observe(img);
         return;
       }
       if (entry.visibleSince !== null && !entry.reported && now - entry.visibleSince >= timeoutMs) {

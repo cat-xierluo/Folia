@@ -144,6 +144,27 @@ describe('remoteImageLoadService (ISS-217)', () => {
       io.uninstall();
     });
 
+    it('src 被外部改写（重试 bust）后重置计时，再次挂起可再次上报——防看门狗死亡', () => {
+      const io = installFakeIntersectionObserver();
+      const onTimeout = vi.fn();
+      const img = appendImg(host, 'https://cos.example.com/hang.webp');
+      watchRemoteImages(host, { onTimeout, timeoutMs: 500, sweepIntervalMs: 100 });
+      vi.advanceTimersByTime(100);
+      io.intersect(img);
+      vi.advanceTimersByTime(1000);
+      expect(onTimeout).toHaveBeenCalledTimes(1);
+
+      // 模拟重试：同元素改写为唯一 URL，请求再次挂起
+      img.setAttribute('src', 'https://cos.example.com/hang.webp?folioRetry=1');
+      vi.advanceTimersByTime(100); // sweep 检测到 src 变化 → 重置 entry
+      io.intersect(img); // 重新进入计时（仍 intersecting 语义）
+      vi.advanceTimersByTime(400);
+      expect(onTimeout).toHaveBeenCalledTimes(1); // 未到新一轮阈值
+      vi.advanceTimersByTime(200);
+      expect(onTimeout).toHaveBeenCalledTimes(2); // 新一轮超时上报
+      io.uninstall();
+    });
+
     it('元素重建（旧节点移除、新节点同 src）重新计时、可再次报告', () => {
       const io = installFakeIntersectionObserver();
       const onTimeout = vi.fn();
