@@ -117,6 +117,19 @@ describe('settingsService', () => {
     expect(getSettings().tocAlwaysPinned).toBe(false);
   });
 
+  it('persists and normalizes the tab mode preference', () => {
+    expect(getSettings().tabMode).toBe('multi');
+
+    updateSettings({ tabMode: 'single' });
+    expect(getSettings().tabMode).toBe('single');
+
+    updateSettings({ locale: 'en-US' });
+    expect(getSettings().tabMode).toBe('single');
+
+    localStorage.setItem('folia-settings', JSON.stringify({ tabMode: 'bogus' }));
+    expect(getSettings().tabMode).toBe('multi');
+  });
+
   it('migrates legacy export settings without recursive reads', () => {
     localStorage.setItem('folia-export-settings', JSON.stringify({ defaultPresetId: 'academic' }));
 

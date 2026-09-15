@@ -181,6 +181,8 @@ export interface AppSettings {
   autoUpdateCheck: boolean;
   defaultEncoding: DefaultEncoding;
   reopenLastFile: boolean;
+  /** 标签模式：multi 多标签（浏览器式，默认）/ single 单标签（一次只保留一个文档）。 */
+  tabMode: 'multi' | 'single';
   /** ISS-188：磁盘文件外部修改时是否自动重新加载编辑器。默认开启；
    *  当前 tab 处于 dirty 时（用户有未保存改动）自动降级为提示，绝不静默覆盖。 */
   autoReloadExternalChanges: boolean;
@@ -234,6 +236,7 @@ const defaults: AppSettings = {
   autoUpdateCheck: true,
   defaultEncoding: 'UTF-8',
   reopenLastFile: true,
+  tabMode: 'multi',
   autoReloadExternalChanges: true,
   locale: 'zh-CN',
   exportPresetId: 'legal',
@@ -288,6 +291,10 @@ function normalizeCustomExportPresets(value: unknown): CustomPresetRegistry {
     }
   }
   return result as CustomPresetRegistry;
+}
+
+function normalizeTabMode(value: unknown): AppSettings['tabMode'] {
+  return value === 'single' ? 'single' : 'multi';
 }
 
 function normalizeLocale(value: unknown): AppLocale {
@@ -777,6 +784,7 @@ export function getSettings(): AppSettings {
       previewLatinCustomFont: normalizeCustomFontName(stored.previewLatinCustomFont),
       previewHeadingCustomFont: normalizeCustomFontName(stored.previewHeadingCustomFont),
       tocAlwaysPinned: stored.tocAlwaysPinned === true,
+      tabMode: normalizeTabMode(stored.tabMode),
     };
   } catch {
     return { ...defaults };
@@ -848,6 +856,7 @@ export function updateSettings(patch: Partial<AppSettings>): AppSettings {
     themeId: normalizeThemeId(requestedThemeId, customThemePresets, disabledThemePresetIds),
     license,
     tocAlwaysPinned: (patch.tocAlwaysPinned ?? current.tocAlwaysPinned) === true,
+    tabMode: normalizeTabMode(patch.tabMode ?? current.tabMode),
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
   emitSettingsChanged(merged);

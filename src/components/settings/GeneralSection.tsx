@@ -100,6 +100,22 @@ export function GeneralSection() {
         />
       </div>
 
+      {/* 标签模式：multi（浏览器式多标签，默认）/ single（单标签，一次只保留一个文档）。 */}
+      <div className="settings-row">
+        <div>
+          <div className="settings-label">{t('tabModeLabel')}</div>
+          <div className="settings-desc">{t('tabModeDesc')}</div>
+        </div>
+        <select
+          className="settings-select"
+          value={settings.tabMode}
+          onChange={(e) => handleChange({ tabMode: e.target.value as 'multi' | 'single' })}
+        >
+          <option value="multi">{t('tabModeMulti')}</option>
+          <option value="single">{t('tabModeSingle')}</option>
+        </select>
+      </div>
+
       {/* ISS-188：磁盘文件外部修改自动重新加载编辑器。当前 tab 处于 dirty 时
           （用户有未保存改动）自动降级为提示，绝不静默覆盖。 */}
       <div className="settings-row">

@@ -240,7 +240,34 @@ export function AppLayout() {
       tocRefreshTimerRef.current = null;
     }
   }, []);
-  const session = useSession();
+  // Issue #68：保存确认对话框挂载状态。resolve 由 confirmCloseDirty 触发——
+  // 它返回一个 Promise，把 resolve 回调暂存到 state，用户点按钮时回调兑现。
+  const [pendingClose, setPendingClose] = useState<{
+    fileName: string;
+    resolve: (result: ConfirmCloseResult) => void;
+  } | null>(null);
+  // Issue #68：把原来的同步 window.confirm 升级为异步三选项对话框。
+  // 返回 Promise，resolve 回调暂存到 pendingClose state，由 ConfirmCloseDialog
+  // 的按钮兑现。这样 closeTab / 退出循环可以 await 它。
+  const confirmCloseDirty = useCallback((fileName: string) => {
+    return new Promise<ConfirmCloseResult>((resolve) => {
+      setPendingClose({ fileName, resolve });
+    });
+  }, []);
+
+  // 单标签模式：打开新文档替换当前前的未保存确认。复用 Issue #68 的三选项
+  // 对话框——「保存」在此语义下等价于放弃替换（用户应先手动保存再打开），
+  // 「放弃」= 丢弃改动继续替换，「取消」= 不替换。
+  const confirmCloseDirtyRef = useRef(confirmCloseDirty);
+  useEffect(() => { confirmCloseDirtyRef.current = confirmCloseDirty; });
+  const confirmReplaceDirty = useCallback(async () => {
+    const tab = activeTabRef.current;
+    if (!tab?.file.dirty) return true;
+    const result = await confirmCloseDirtyRef.current(tab.file.name);
+    return result === 'discard';
+  }, []);
+
+  const session = useSession({ confirmReplaceDirty });
   const {
     activeFile: file,
     activeTab,
@@ -258,20 +285,20 @@ export function AppLayout() {
   useEffect(() => {
     activeTabIdRef.current = activeTabId;
   }, [activeTabId]);
-  // Issue #68：保存确认对话框挂载状态。resolve 由 confirmCloseDirty 触发——
-  // 它返回一个 Promise，把 resolve 回调暂存到 state，用户点按钮时回调兑现。
-  const [pendingClose, setPendingClose] = useState<{
-    fileName: string;
-    resolve: (result: ConfirmCloseResult) => void;
-  } | null>(null);
-  // Issue #68：把原来的同步 window.confirm 升级为异步三选项对话框。
-  // 返回 Promise，resolve 回调暂存到 pendingClose state，由 ConfirmCloseDialog
-  // 的按钮兑现。这样 closeTab / 退出循环可以 await 它。
-  const confirmCloseDirty = useCallback((fileName: string) => {
-    return new Promise<ConfirmCloseResult>((resolve) => {
-      setPendingClose({ fileName, resolve });
-    });
-  }, []);
+  // 跟踪最新 activeTab，供 confirmReplaceDirty（声明在 session 解构之前）读取。
+  // session 每次渲染都是新对象（useSession 返回值），经 ref 传递不属于 mutation。
+  const activeTabRef = useRef(activeTab);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/immutability -- ref 同步最新 activeTab，同 activeTabIdRef 模式
+    activeTabRef.current = activeTab;
+  }, [activeTab]);
+
+  // 切到单标签模式：收敛到当前标签（closeOthers 保留 dirty 标签，不会丢草稿；
+  // 残余的 dirty 标签会在各自被打开/替换时逐个走确认流程）。
+  useEffect(() => {
+    if (settings.tabMode !== 'single') return;
+    if (session.tabs.length > 1) session.closeOthers(session.activeTabId);
+  }, [settings.tabMode, session]);
   const windowLabel = useMemo(() => detectCurrentWindowLabel(), []);
   const isTearOffSupported = useMemo(
     () => '__TAURI_INTERNALS__' in window,
@@ -488,7 +515,7 @@ export function AppLayout() {
     const { openFile } = await import('../services/fileService');
     const opened = await openFile(settings.defaultEncoding);
     if (opened) {
-      openInNewTab(opened);
+      void openInNewTab(opened);
       cancelPendingTocRefresh();
       setToc(extractMarkdownToc(opened.content));
       if (opened.path) setLastOpenedPath(opened.path);
@@ -541,7 +568,7 @@ export function AppLayout() {
       await notifyIoError('open', error);
       return;
     }
-    openInNewTab(opened);
+    void openInNewTab(opened);
     cancelPendingTocRefresh();
     setToc(opened.fileType === 'docx' ? [] : extractMarkdownToc(opened.content));
     setLastOpenedPath(path);
@@ -1467,6 +1494,7 @@ export function AppLayout() {
         dirty={file.dirty}
         fileName={file.name}
         tabBar={
+          settings.tabMode === 'single' ? null : (
           <TabBar
             tabs={session.tabs}
             activeTabId={session.activeTabId}
@@ -1478,6 +1506,7 @@ export function AppLayout() {
             onTearOffViaDrag={isTearOffSupported ? tearOffViaDrag : undefined}
             onMergeBackDrop={isTearOffSupported ? handleMergeBackDrop : undefined}
           />
+          )
         }
         editorMode={editorMode}
         wordPreviewVisible={rightPanelMode === 'word'}
@@ -1509,7 +1538,7 @@ export function AppLayout() {
             recentFiles={session.recentFiles}
             onOpenFile={handleOpen}
             onOpenRecent={(path) => { void handleOpenPath(path); }}
-            onNew={() => session.openInNewTab(createEmptyFile())}
+            onNew={() => { void session.openInNewTab(createEmptyFile()); }}
             onRemoveRecent={(path) => session.removeRecentFile(path)}
             onClearRecent={() => session.clearRecentFiles()}
           />

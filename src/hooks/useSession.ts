@@ -3,6 +3,7 @@ import type { OpenedFile } from '../types/document';
 import { createEmptyFile } from '../types/document';
 import type { Tab, EditorMode, RightPanelMode } from '../types/session';
 import { sessionReducer, bootstrapSessionForWindow } from './sessionReducer';
+import { useSettings } from './useSettings';
 import { loadSession, saveSession } from '../services/sessionStore';
 import {
   closeTabWindow,
@@ -33,7 +34,11 @@ export interface CloseOptions {
  * 多标签会话 hook。状态转换走纯函数 sessionReducer（已单测覆盖），
  * 本 hook 负责：初始化（启动恢复）、debounce 持久化草稿、派生 activeFile/editorMode 等。
  */
-export function useSession() {
+export function useSession(options?: {
+  /** 单标签模式替换当前 tab 前的未保存确认；resolve(false) 取消替换。 */
+  confirmReplaceDirty?: (fileName: string) => Promise<boolean>;
+}) {
+  const settings = useSettings();
   const [state, dispatch] = useReducer(sessionReducer, undefined, () => {
     const windowLabel = detectCurrentWindowLabel();
     const initialTabIds = detectCurrentWindowTabIds();
@@ -43,6 +48,10 @@ export function useSession() {
   // 始终持有最新 state，供卸载/关窗时的同步 flush 读取（避免闭包时效问题）。
   const stateRef = useRef(state);
   useEffect(() => { stateRef.current = state; }, [state]);
+
+  // 确认回调走 ref：openInNewTab 不因调用方重渲染而重建，同时始终拿到最新实现。
+  const confirmReplaceDirtyRef = useRef(options?.confirmReplaceDirty);
+  useEffect(() => { confirmReplaceDirtyRef.current = options?.confirmReplaceDirty; });
 
   // state 变化后 debounce 持久化草稿（含未保存内容）；卸载时清理定时器。
   // 持久化失败（存储配额用尽等，ISS-198）记录时间戳，StatusBar 据此提示「会话未能持久化」。
@@ -169,10 +178,20 @@ export function useSession() {
   const activeTab = state.tabs.find((t) => t.id === state.activeTabId) ?? state.tabs[0];
   const activeFile = activeTab?.file ?? createEmptyFile();
 
-  const openInNewTab = useCallback((file: OpenedFile) => {
-    dispatch({ type: 'openInNewTab', file });
+  const openInNewTab = useCallback(async (file: OpenedFile) => {
+    if (settings.tabMode === 'single') {
+      const active = stateRef.current.tabs.find((t) => t.id === stateRef.current.activeTabId);
+      if (active?.file.dirty && confirmReplaceDirtyRef.current) {
+        const proceed = await confirmReplaceDirtyRef.current(active.file.name);
+        // await 期间用户可能已切换或关闭标签；确认失败即放弃，不执行替换。
+        if (!proceed) return;
+      }
+      dispatch({ type: 'openInNewTab', file, mode: 'single' });
+    } else {
+      dispatch({ type: 'openInNewTab', file });
+    }
     dispatch({ type: 'recordRecentFile', file });
-  }, []);
+  }, [settings.tabMode]);
 
   // ISS-88：TabBar「+」专用——新增占位标签（欢迎页状态）；空占位无 path，不记录最近文件。
   const newBlankTab = useCallback(() => {

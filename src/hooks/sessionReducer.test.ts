@@ -131,6 +131,39 @@ describe('sessionReducer.openInNewTab', () => {
     expect(next.tabs[next.tabs.length - 1].file.name).toBe('new.md');
     expect(next.activeTabId).toBe(next.tabs[next.tabs.length - 1].id);
   });
+
+  it('mode=single 时打开新文档替换当前，始终只保留一个标签', () => {
+    const t1 = makeTabFromFile(file('a.md', 'A'));
+    const t2 = makeTabFromFile(file('b.md', 'B'));
+    const start = stateWith([t1, t2], t1.id);
+
+    const next = sessionReducer(start, { type: 'openInNewTab', file: file('c.md', 'C'), mode: 'single' });
+
+    expect(next.tabs).toHaveLength(1);
+    expect(next.tabs[0].file.name).toBe('c.md');
+    expect(next.activeTabId).toBe(next.tabs[0].id);
+  });
+
+  it('mode=single 重复打开同一文档也收敛为单标签', () => {
+    const t1 = makeTabFromFile(file('a.md', 'A'));
+    const t2 = makeTabFromFile(file('b.md', 'B'));
+    const start = stateWith([t1, t2], t2.id);
+
+    const next = sessionReducer(start, { type: 'openInNewTab', file: file('a.md', 'A2'), mode: 'single' });
+
+    expect(next.tabs).toHaveLength(1);
+    expect(next.tabs[0].file.content).toBe('A2');
+    expect(next.activeTabId).toBe(next.tabs[0].id);
+  });
+
+  it('mode 缺省时保持多标签行为（追加而非替换）', () => {
+    const t1 = makeTabFromFile(file('a.md', 'A'));
+    const start = stateWith([t1], t1.id);
+
+    const next = sessionReducer(start, { type: 'openInNewTab', file: file('b.md', 'B') });
+
+    expect(next.tabs).toHaveLength(2);
+  });
 });
 
 describe('sessionReducer.newBlankTab', () => {

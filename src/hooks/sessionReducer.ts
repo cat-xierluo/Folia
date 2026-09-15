@@ -46,7 +46,7 @@ export function bootstrapSessionForWindow(
 }
 
 export type SessionAction =
-  | { type: 'openInNewTab'; file: OpenedFile }
+  | { type: 'openInNewTab'; file: OpenedFile; mode?: 'multi' | 'single' }
   // ISS-88：TabBar「+」专用——新增一个占位标签（欢迎页状态），不携带文件。
   | { type: 'newBlankTab' }
   | { type: 'switchTab'; id: string }
@@ -72,6 +72,12 @@ export type SessionAction =
 export function sessionReducer(state: SessionState, action: SessionAction): SessionState {
   switch (action.type) {
     case 'openInNewTab': {
+      // 单标签模式：始终只保留一个 tab（打开 = 替换当前）。dirty 确认由 useSession
+      // 在 dispatch 前完成，reducer 只负责执行替换。
+      if (action.mode === 'single') {
+        const singleTab = makeTabFromFile(action.file);
+        return { ...state, tabs: [singleTab], activeTabId: singleTab.id };
+      }
       const active = state.tabs.find((t) => t.id === state.activeTabId);
       // 当前 active 是干净占位标签时替换它，避免占位标签累积成「未命名」空标签（I-1）。
       const replaceActivePlaceholder = !!active?.isPlaceholder && !active.file.dirty;
