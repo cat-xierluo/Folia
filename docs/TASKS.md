@@ -34,6 +34,12 @@
 
 ### 缺陷类
 
+#### 🟡 ISS-219 Word 导出 raw IPC 在真实 WKWebView 退化为 JSON 后失败（原 #167 登记 ISS-218，与 PR #169 的 iCloud ISS-218 撞号改号；fork 冲突由 maintainer 代为 rebase——ISS-218/DEC-143 归 iCloud，本条为 ISS-219/DEC-144）
+
+- **现象:** macOS Folia 导出 Word 弹窗报错：`write_binary_export expects a raw binary body (application/octet-stream), got JSON`，目标文件未生成。
+- **根因:** ISS-215 把导出请求改为 raw body 后，Rust 命令对所有 `InvokeBody::Json` 一律拒绝；但 Tauri 的二进制传输允许平台/WebView 降级为 JSON 数字数组，且已发布的 ISS-201 前端仍可能发送 `{ path, bytes }` JSON 对象。该路径此前明确标记 `NOT_VERIFIED`，单测只覆盖了下层 `write_export_bytes`，没有覆盖请求体分派。
+- **验收:** 前端直接发送 `ArrayBuffer` 且不手工覆盖 content-type；Rust 同时接受 raw、JSON array fallback、旧 `{ path, bytes }`，三路复用既有 `.docx`/绝对路径/denied-root/200MB 校验链；非法 JSON byte fail-closed；补 Rust 回归测试与 macOS WKWebView 真机导出（真机落盘与 raw 通道仍为 NOT_VERIFIED，移交跟进）。
+
 #### ✅ ISS-218 iCloud「优化 Mac 存储」卸载本地副本被自动重读误判为外部修改——文件被强拉回本地 / 弱网读空致编辑器空白 + autosave 覆盖原文风险（已 PR #169，2026-09-19 squash merge 2b685a8；fork 分支无 CI 记录，maintainer 本地独立复跑 cargo 70/70 + PR 新增前端 8 用例全绿、124 项本机既有基线失败与 pristine main 逐条一致后合并；残余移交见下方「未覆盖」）
 
 - **发现（用户报告 + 本机取证）**：在 iCloud 同步目录打开 md，离开一段时间后回到 Folia 页面空白。本机环境：`~/Documents` 开启「桌面与文稿」同步（`~/Library/Mobile Documents/com~apple~CloudDocs/Documents -> ~/Documents`）、`com.apple.bird optimize-storage = 1`、磁盘余量 4.7GB（98%）——iCloud 会积极卸载不常访问的文件（连数日前用过的 `node_modules` 也被整批卸载为占位）。

@@ -1,4 +1,5 @@
 use std::{
+  borrow::Cow,
   collections::HashMap,
   path::{Path, PathBuf},
   sync::{Arc, Mutex},
@@ -253,12 +254,13 @@ fn validate_writable_document(path: &Path) -> Result<(), String> {
 ///
 /// 字节上限用独立的 MAX_EXPORT_BYTES(与资产上限分离,理由见其注释)。
 ///
-/// ISS-215：IPC 序列化收敛。此前 `(path, bytes: Vec<u8>)` 走 JSON 数字
+/// ISS-215/219：IPC 序列化收敛。此前 `(path, bytes: Vec<u8>)` 走 JSON 数字
 /// 数组序列化，200MB 级 docx 在 webview 序列化与 Rust 反序列化两侧各有
 /// 数倍内存峰值，与 read 侧 `tauri::ipc::Response` 的原始字节通道不对称。
-/// 现改为 raw request：字节作为 `InvokeBody::Raw` 原样直达，路径经
+/// 现优先使用 raw request：字节作为 `InvokeBody::Raw` 原样直达，路径经
 /// `x-folia-export-path` header 携带（前端 encodeURIComponent，header 值
-/// 保证 ASCII；此处 percent-decode 还原）。校验链零变化。
+/// 保证 ASCII；此处 percent-decode 还原）。若平台把 body 降级为 JSON，
+/// 请求适配层负责兼容后仍进入本函数；校验链零变化。
 fn write_export_bytes(path: &Path, bytes: &[u8]) -> Result<(), String> {
   if !is_absolute_path(path) {
     return Err(format!("path must be absolute: {}", path.display()));
@@ -298,24 +300,76 @@ fn decode_export_path_header(value: &str) -> Result<PathBuf, String> {
     .map_err(|error| format!("invalid x-folia-export-path header: {error}"))
 }
 
+/// 严格把 JSON 数字数组还原为字节。Tauri 在部分 WebView / 平台会把二进制
+/// invoke body 降级成 JSON array；兼容降级不应以静默截断或丢弃非法元素为代价。
+fn decode_export_json_bytes(values: &[serde_json::Value]) -> Result<Vec<u8>, String> {
+  if values.len() > MAX_EXPORT_BYTES {
+    return Err(format!(
+      "export payload too large: {} bytes exceeds the {} byte limit",
+      values.len(),
+      MAX_EXPORT_BYTES
+    ));
+  }
+  values
+    .iter()
+    .enumerate()
+    .map(|(index, value)| {
+      value
+        .as_u64()
+        .filter(|number| *number <= u8::MAX as u64)
+        .map(|number| number as u8)
+        .ok_or_else(|| format!("invalid export byte at index {index}"))
+    })
+    .collect()
+}
+
+/// 解析 Word 导出 IPC 契约。
+///
+/// 首选 ISS-215 的 raw body + header 路径；同时兼容两种 JSON 形态：
+/// 1. Tauri 把 ArrayBuffer / Uint8Array 降级后的数字数组（路径仍在 header）；
+/// 2. ISS-215 之前发布版本使用的 `{ path, bytes }` 对象。
+///
+/// 三条路径最终都进入 `write_export_bytes`，不会绕过路径、扩展名或大小校验。
+fn decode_binary_export_request<'a>(
+  headers: &tauri::http::HeaderMap,
+  body: &'a tauri::ipc::InvokeBody,
+) -> Result<(PathBuf, Cow<'a, [u8]>), String> {
+  let header_path = || {
+    headers
+      .get("x-folia-export-path")
+      .and_then(|value| value.to_str().ok())
+      .ok_or_else(|| "missing x-folia-export-path header".to_string())
+      .and_then(decode_export_path_header)
+  };
+
+  match body {
+    tauri::ipc::InvokeBody::Raw(bytes) => Ok((header_path()?, Cow::Borrowed(bytes))),
+    tauri::ipc::InvokeBody::Json(serde_json::Value::Array(values)) => Ok((
+      header_path()?,
+      Cow::Owned(decode_export_json_bytes(values)?),
+    )),
+    tauri::ipc::InvokeBody::Json(serde_json::Value::Object(payload)) => {
+      let path = payload
+        .get("path")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| "missing legacy export path".to_string())?;
+      let bytes = payload
+        .get("bytes")
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| "missing legacy export bytes".to_string())?;
+      Ok((
+        PathBuf::from(path),
+        Cow::Owned(decode_export_json_bytes(bytes)?),
+      ))
+    }
+    tauri::ipc::InvokeBody::Json(_) => Err("unsupported JSON export body".into()),
+  }
+}
+
 #[tauri::command]
 fn write_binary_export(request: tauri::ipc::Request) -> Result<(), String> {
-  let path_header = request
-    .headers()
-    .get("x-folia-export-path")
-    .and_then(|value| value.to_str().ok())
-    .ok_or_else(|| "missing x-folia-export-path header".to_string())?;
-  let path = decode_export_path_header(path_header)?;
-  let bytes = match request.body() {
-    tauri::ipc::InvokeBody::Raw(bytes) => bytes,
-    tauri::ipc::InvokeBody::Json(_) => {
-      return Err(
-        "write_binary_export expects a raw binary body (application/octet-stream), got JSON"
-          .into(),
-      )
-    }
-  };
-  write_export_bytes(&path, bytes)
+  let (path, bytes) = decode_binary_export_request(request.headers(), request.body())?;
+  write_export_bytes(&path, bytes.as_ref())
 }
 
 /// 将粘贴 / 拖入的图片字节原子落盘到文档同目录的 `<doc>.assets/` 子目录
@@ -2284,6 +2338,58 @@ mod tests {
     // 不猜测、不半解码。
     let err = decode_export_path_header("%FF%FE%80.docx").unwrap_err();
     assert!(err.contains("invalid x-folia-export-path header"), "{err}");
+  }
+
+  /// ISS-219 回归：真实 WKWebView 曾把二进制 invoke body 交付为 JSON array，
+  /// 旧实现一律报 `expects a raw binary body ... got JSON`，Word 导出完全失败。
+  #[test]
+  fn write_binary_export_accepts_json_array_transport_fallback() {
+    let dir = std::env::temp_dir().join(format!("iss218-export-json-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("案件 卷宗.docx");
+
+    let mut headers = tauri::http::HeaderMap::new();
+    let encoded = percent_encoding::utf8_percent_encode(
+      path.to_string_lossy().as_ref(),
+      percent_encoding::NON_ALPHANUMERIC,
+    )
+    .to_string();
+    headers.insert(
+      "x-folia-export-path",
+      tauri::http::HeaderValue::from_str(&encoded).unwrap(),
+    );
+    let body = tauri::ipc::InvokeBody::Json(serde_json::json!([80, 75, 3, 4]));
+
+    let (decoded_path, bytes) = decode_binary_export_request(&headers, &body).unwrap();
+    write_export_bytes(&decoded_path, bytes.as_ref()).unwrap();
+    assert_eq!(std::fs::read(&path).unwrap(), vec![80, 75, 3, 4]);
+
+    let _ = std::fs::remove_dir_all(&dir);
+  }
+
+  /// 兼容已经发布过的 ISS-201 `{ path, bytes }` JSON 调用，避免前后端资源
+  /// 版本短暂不一致时再次把导出功能整体打断。
+  #[test]
+  fn write_binary_export_accepts_legacy_json_object() {
+    let body = tauri::ipc::InvokeBody::Json(serde_json::json!({
+      "path": "/tmp/legacy.docx",
+      "bytes": [80, 75]
+    }));
+    let (path, bytes) =
+      decode_binary_export_request(&tauri::http::HeaderMap::new(), &body).unwrap();
+    assert_eq!(path, PathBuf::from("/tmp/legacy.docx"));
+    assert_eq!(bytes.as_ref(), &[80, 75]);
+  }
+
+  #[test]
+  fn write_binary_export_rejects_invalid_json_bytes() {
+    let body = tauri::ipc::InvokeBody::Json(serde_json::json!({
+      "path": "/tmp/invalid.docx",
+      "bytes": [80, 256, -1, "75"]
+    }));
+    let err = decode_binary_export_request(&tauri::http::HeaderMap::new(), &body).unwrap_err();
+    assert!(err.contains("invalid export byte at index 1"), "{err}");
   }
 
   /// ISS-215 review MINOR-2：PRESENTATION_RESOURCE_EXTENSIONS 此前只经
