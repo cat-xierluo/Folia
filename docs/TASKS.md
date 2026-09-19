@@ -34,7 +34,7 @@
 
 ### 缺陷类
 
-#### 🟡 ISS-219 Word 导出 raw IPC 在真实 WKWebView 退化为 JSON 后失败（原 #167 登记 ISS-218，与 PR #169 的 iCloud ISS-218 撞号改号；fork 冲突由 maintainer 代为 rebase——ISS-218/DEC-143 归 iCloud，本条为 ISS-219/DEC-144）
+#### ✅ ISS-219 Word 导出 raw IPC 在真实 WKWebView 退化为 JSON 后失败（原 #167，因 fork 冲突由 maintainer 承接 PR #170，2026-09-19 squash merge 97e1080；改号说明：原登记 ISS-218/DEC-143 与 PR #169 撞号，归档为 ISS-219/DEC-144；承接 PR CI 三绿（typecheck/lint/test、cargo、e2e）+ maintainer 合并树本地 cargo 73/73；CHANGELOG 自动合并错入 [0.8.0] 段已纠正回 Unreleased；残余移交：裸 ArrayBuffer 真 WKWebView 是否仍走 InvokeBody::Raw（ETV 场景 D 待跑，最坏情形持续 JSON fallback——功能正常但 ISS-215 内存收益回归）+ macOS 真机 .docx 落盘复核）
 
 - **现象:** macOS Folia 导出 Word 弹窗报错：`write_binary_export expects a raw binary body (application/octet-stream), got JSON`，目标文件未生成。
 - **根因:** ISS-215 把导出请求改为 raw body 后，Rust 命令对所有 `InvokeBody::Json` 一律拒绝；但 Tauri 的二进制传输允许平台/WebView 降级为 JSON 数字数组，且已发布的 ISS-201 前端仍可能发送 `{ path, bytes }` JSON 对象。该路径此前明确标记 `NOT_VERIFIED`，单测只覆盖了下层 `write_export_bytes`，没有覆盖请求体分派。
