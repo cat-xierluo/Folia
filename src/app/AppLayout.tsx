@@ -30,6 +30,7 @@ import { translate } from '../services/i18n';
 import { revealPathInFileExplorer } from '../services/fileLocationService';
 import { isSuppressed } from '../services/dirtySuppression';
 import { onWatchChanged, watchFile, unwatchFile } from '../services/fileWatchService';
+import { isSuspiciousEmptyReload } from '../services/reloadGuard';
 import type { HtmlTableBlock } from '../services/htmlTableBlockService';
 import { ImageAssetStoreProvider } from '../context/ImageAssetStoreProvider';
 import { ImageAssetStore } from '../services/imageAssetService';
@@ -1064,14 +1065,23 @@ export function AppLayout() {
       const targetTabId = session.activeTabId;
       try {
         const { openPath } = await import('../services/fileService');
-        const targetPath = (() => {
-          const cur = session.tabs.find((t) => t.id === targetTabId);
-          return cur?.file.path ?? null;
-        })();
-        if (!targetPath) return;
+        const current = session.tabs.find((t) => t.id === targetTabId);
+        const targetPath = current?.file.path ?? null;
+        if (!current || !targetPath) return;
         const opened = await openPath(targetPath, settings.defaultEncoding);
         // await 期间用户切走了 tab → 丢弃这次 reload，避免把 tab-A 内容写到 tab-B。
         if (activeTabIdRef.current !== targetTabId) return;
+        // ISS-218：磁盘读回空文档而编辑器当前非空——iCloud「优化 Mac 存储」等
+        // 云同步卷占位态 / 同步中间态的典型症状，不静默覆盖（否则编辑器空白 →
+        // session 固化空草稿 → autosave 把空内容写回磁盘）。复用 dirty 安全门的
+        // 「外部修改」提示：内容原地保留，用户可显式「放弃本地并重载」。
+        if (isSuspiciousEmptyReload(opened, current.file)) {
+          if (!externalChangeBlockedRef.current) {
+            externalChangeBlockedRef.current = true;
+            setExternalChangeBlocked(true);
+          }
+          return;
+        }
         // updateActiveFile 走 reducer：dirty=false（磁盘内容与文件一致），lastSavedContent
         // 同步更新。后续 [source] effect → setValue 包在 ISS-189 抑制窗口内。
         updateActiveFile(() => opened);
@@ -1083,7 +1093,9 @@ export function AppLayout() {
     };
 
     const off = onWatchChanged((event) => {
-      if (event.kind !== 'modify') return; // create/remove 不自动 reload（用户需手动）
+      // create/remove 不自动 reload（用户需手动）；evicted（ISS-218：iCloud 卸载
+      // 本地副本）不是内容修改，重读只会把文件立刻拉回本地，同样忽略。
+      if (event.kind !== 'modify') return;
       // 通过 ref 读取最新 active tab；闭包值在 settings 改变后会 stale。
       const active = session.tabs.find((t) => t.id === session.activeTabId);
       if (!active || !active.file.path || active.file.path !== event.path) return;

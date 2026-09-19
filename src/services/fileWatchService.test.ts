@@ -87,11 +87,14 @@ describe('fileWatchService', () => {
     fireChanged({ path: '/Users/demo/a.md', kind: 'modify' });
     fireChanged({ path: '/Users/demo/a.md', kind: 'create' });
     fireChanged({ path: '/Users/demo/a.md', kind: 'remove' });
+    // ISS-218：后端对 iCloud 卸载本地副本的文件发出 evicted，须能穿过 payload 白名单。
+    fireChanged({ path: '/Users/demo/a.md', kind: 'evicted' });
 
     expect(received).toEqual([
       { path: '/Users/demo/a.md', kind: 'modify' },
       { path: '/Users/demo/a.md', kind: 'create' },
       { path: '/Users/demo/a.md', kind: 'remove' },
+      { path: '/Users/demo/a.md', kind: 'evicted' },
     ]);
 
     off();

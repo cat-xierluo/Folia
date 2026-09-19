@@ -1,7 +1,7 @@
 use std::{
   collections::HashMap,
   path::{Path, PathBuf},
-  sync::Mutex,
+  sync::{Arc, Mutex},
   time::Instant,
 };
 
@@ -185,7 +185,24 @@ fn read_opened_document_bytes(path: &Path) -> Result<Vec<u8>, String> {
     ));
   }
 
-  std::fs::read(path).map_err(|error| format!("failed to read document: {error}"))
+  std::fs::read(path)
+    .map_err(|error| format!("failed to read document: {error}"))
+    .and_then(|bytes| ensure_read_back_complete(bytes.len(), metadata.len()).map(|()| bytes))
+}
+
+/// ISS-218：iCloud「优化 Mac 存储」/ OneDrive 按需文件这类云同步卷上，已卸载本地
+/// 副本的占位文件 `stat` 仍报告原始长度，正常情况下 `read` 会阻塞等待按需下载后
+/// 返回完整内容；但下载失败 / 同步中间态下可能读回 0 字节。把「stat 非空、读回为空」
+/// 当作错误抛出，而不是把一份空文档交给前端——否则编辑器瞬间空白，session 持久化
+/// 固化空草稿，用户再敲一个字 autosave 就把空内容写回磁盘覆盖原文。
+/// 真实的空文件（stat 长度 0）不受影响。
+fn ensure_read_back_complete(read_len: usize, expected_len: u64) -> Result<(), String> {
+  if read_len == 0 && expected_len > 0 {
+    return Err(format!(
+      "document read back empty while metadata reports {expected_len} bytes (cloud placeholder not downloaded?)"
+    ));
+  }
+  Ok(())
 }
 
 #[tauri::command]
@@ -682,6 +699,24 @@ fn watch_path(path: String, app: tauri::AppHandle) -> Result<(), String> {
   let canonical_for_handler = canonical.clone();
   let last_event = Instant::now();
 
+  // ISS-218：按路径记录内容指纹（mtime + 字节长度）。iCloud「优化 Mac 存储」卸载 /
+  // 重新下载本地副本、xattr / ownership 变更等只动 ctime，notify 却同样上报
+  // Modify(Data(Content))；前端若照单重读，卸载的文件会被立刻拉回本地（与系统
+  // 优化存储对抗），弱网下重读失败或读空还会把编辑器打成空白。这里在 emit 前
+  // 用指纹把「内容真的变了」和「只是 metadata 动了」分开，见 classify_modify。
+  // 监听单文件时先记下当前指纹，否则卸载前的首个事件会因无历史指纹被保守放行。
+  let fingerprints: Arc<Mutex<HashMap<PathBuf, ContentFingerprint>>> =
+    Arc::new(Mutex::new(HashMap::new()));
+  if let Some(snapshot) = snapshot_file(&canonical) {
+    if !snapshot.is_dir {
+      fingerprints
+        .lock()
+        .unwrap()
+        .insert(canonical.clone(), snapshot.fingerprint);
+    }
+  }
+  let fingerprints_for_handler = Arc::clone(&fingerprints);
+
   let mut watcher = notify::recommended_watcher(move |res: notify::Result<Event>| {
     match res {
       Ok(event) => {
@@ -705,13 +740,28 @@ fn watch_path(path: String, app: tauri::AppHandle) -> Result<(), String> {
 
         let kind = map_event_kind(&event.kind);
         for event_path in &event.paths {
-          let _ = app_for_handler.emit(
-            "watch:changed",
-            serde_json::json!({
-              "path": event_path.to_string_lossy(),
-              "kind": kind,
-            }),
-          );
+          let emitted_kind = match kind {
+            "modify" => {
+              // 拿不到锁（回调线程曾 panic 毒化）时退回旧行为：照单转发。
+              let Ok(mut fingerprints) = fingerprints_for_handler.lock() else {
+                let _ = emit_watch_changed(&app_for_handler, event_path, "modify");
+                continue;
+              };
+              match classify_modify(event_path, snapshot_file(event_path), &mut fingerprints) {
+                ModifyVerdict::Content => "modify",
+                ModifyVerdict::Evicted => "evicted",
+                ModifyVerdict::MetadataOnly => continue,
+              }
+            }
+            "remove" => {
+              if let Ok(mut fingerprints) = fingerprints_for_handler.lock() {
+                fingerprints.remove(event_path);
+              }
+              "remove"
+            }
+            other => other,
+          };
+          let _ = emit_watch_changed(&app_for_handler, event_path, emitted_kind);
         }
       }
       Err(error) => {
@@ -771,6 +821,110 @@ fn map_event_kind(kind: &NotifyEventKind) -> &'static str {
     NotifyEventKind::Remove(_) => "remove",
     NotifyEventKind::Modify(_) => "modify",
     _ => "modify",
+  }
+}
+
+fn emit_watch_changed(app: &tauri::AppHandle, path: &Path, kind: &str) -> tauri::Result<()> {
+  app.emit(
+    "watch:changed",
+    serde_json::json!({
+      "path": path.to_string_lossy(),
+      "kind": kind,
+    }),
+  )
+}
+
+// ──────── ISS-218 iCloud 卸载 / metadata-only 事件分流 ────────
+
+/// 文件内容指纹：mtime + 字节长度。
+///
+/// 实测（macOS 15，iCloud Drive「优化 Mac 存储」）：卸载本地副本、按需下载回来、
+/// 上传完成后的 xattr 回写，都只改 ctime、不改 mtime 与长度；真实内容写入必然
+/// 改 mtime（APFS 纳秒精度）或长度。两者相等即视为「内容未变」。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ContentFingerprint {
+  modified: Option<std::time::SystemTime>,
+  len: u64,
+}
+
+impl ContentFingerprint {
+  fn of(metadata: &std::fs::Metadata) -> Self {
+    Self {
+      modified: metadata.modified().ok(),
+      len: metadata.len(),
+    }
+  }
+}
+
+/// `classify_modify` 需要的一次 stat 快照；`None` 表示 stat 失败（文件已不在 / 无权限）。
+#[derive(Clone, Copy, Debug)]
+struct FileSnapshot {
+  fingerprint: ContentFingerprint,
+  is_dir: bool,
+  /// macOS：iCloud 已卸载本地副本的占位文件（`SF_DATALESS`）。其它平台恒为 false。
+  dataless: bool,
+}
+
+fn snapshot_file(path: &Path) -> Option<FileSnapshot> {
+  let metadata = std::fs::metadata(path).ok()?;
+  Some(FileSnapshot {
+    fingerprint: ContentFingerprint::of(&metadata),
+    is_dir: metadata.is_dir(),
+    dataless: is_dataless(&metadata),
+  })
+}
+
+/// `SF_DATALESS`（`<sys/stat.h>`）：文件内容不在本地、访问时由 File Provider 按需
+/// 拉取。iCloud Drive 卸载本地副本后文件即带此标志（实测 `st_flags = 0x40000060`）。
+#[cfg(target_os = "macos")]
+fn is_dataless(metadata: &std::fs::Metadata) -> bool {
+  use std::os::macos::fs::MetadataExt;
+  const SF_DATALESS: u32 = 0x4000_0000;
+  metadata.st_flags() & SF_DATALESS != 0
+}
+
+#[cfg(not(target_os = "macos"))]
+fn is_dataless(_metadata: &std::fs::Metadata) -> bool {
+  false
+}
+
+/// watcher 对一条 Modify 事件的分流结论。
+#[derive(Debug, PartialEq, Eq)]
+enum ModifyVerdict {
+  /// 内容变了（或无法判断）→ 以 `modify` 转发，前端按 ISS-188 重读。
+  Content,
+  /// iCloud 卸载了本地副本：文件仍在、内容在逻辑上未变、下次读取按需下载。
+  /// 以 `evicted` 转发供前端感知，前端不重读——重读会把文件立刻拉回本地。
+  Evicted,
+  /// 只动了 metadata（按需下载完成 / xattr / ownership 等），指纹与上次一致 → 不转发。
+  MetadataOnly,
+}
+
+/// 用「stat 指纹是否变化」判断一条 Modify 事件是否值得前端重读。
+///
+/// - stat 失败：可能是 atomic-replace 的删旧瞬间，保守按内容变化处理（fail-open），
+///   并清掉过期指纹，后续新文件的首个事件会重新建档。
+/// - 目录：不做指纹，照旧转发。
+/// - dataless：不更新指纹——内容没变，之后按需下载回来时指纹仍与卸载前一致，
+///   整个「卸载 → 下载」往返对前端零打扰。
+fn classify_modify(
+  path: &Path,
+  snapshot: Option<FileSnapshot>,
+  fingerprints: &mut HashMap<PathBuf, ContentFingerprint>,
+) -> ModifyVerdict {
+  let Some(snapshot) = snapshot else {
+    fingerprints.remove(path);
+    return ModifyVerdict::Content;
+  };
+  if snapshot.is_dir {
+    return ModifyVerdict::Content;
+  }
+  if snapshot.dataless {
+    return ModifyVerdict::Evicted;
+  }
+  match fingerprints.insert(path.to_path_buf(), snapshot.fingerprint) {
+    Some(previous) if previous == snapshot.fingerprint => ModifyVerdict::MetadataOnly,
+    _ => ModifyVerdict::Content,
   }
 }
 
@@ -1282,6 +1436,174 @@ mod tests {
     let bytes = read_opened_document_bytes(&path).unwrap();
 
     assert_eq!(bytes.len(), MAX_OPENED_DOCUMENT_BYTES as usize);
+    let _ = std::fs::remove_file(path);
+  }
+
+  // ──────── ISS-218 云占位文件读空守卫 ────────
+
+  #[test]
+  fn read_back_empty_while_metadata_nonempty_is_rejected() {
+    // 前端不匹配该文案做特殊处理（走通用 IO 失败路径：自动重读 console.warn 保留
+    // 内容 / 手动打开 notifyIoError 提示），文案可自由调整，只锚定关键信息在场。
+    let error = ensure_read_back_complete(0, 782).unwrap_err();
+    assert!(
+      error.contains("read back empty") && error.contains("782"),
+      "expected placeholder-read error, got: {error}"
+    );
+  }
+
+  #[test]
+  fn read_back_complete_accepts_genuinely_empty_and_nonempty_files() {
+    // 真实空文件（stat 长度 0）不受影响；读到内容的一律放行——stat 与 read 之间
+    // 被外部改写导致长度不一致属常规竞态，由后续 watch 事件补重读，不在此拦截。
+    assert_eq!(ensure_read_back_complete(0, 0), Ok(()));
+    assert_eq!(ensure_read_back_complete(100, 100), Ok(()));
+    assert_eq!(ensure_read_back_complete(50, 100), Ok(()));
+  }
+
+  #[test]
+  fn read_opened_document_still_reads_genuinely_empty_markdown() {
+    let path = temp_path("empty.md");
+    std::fs::write(&path, b"").unwrap();
+
+    let bytes = read_opened_document_bytes(&path).unwrap();
+
+    assert!(bytes.is_empty());
+    let _ = std::fs::remove_file(path);
+  }
+
+  // ──────── ISS-218 watcher Modify 事件分流 ────────
+
+  fn fingerprint(secs: u64, len: u64) -> ContentFingerprint {
+    ContentFingerprint {
+      modified: Some(std::time::UNIX_EPOCH + Duration::from_secs(secs)),
+      len,
+    }
+  }
+
+  fn snapshot(fp: ContentFingerprint, dataless: bool) -> Option<FileSnapshot> {
+    Some(FileSnapshot {
+      fingerprint: fp,
+      is_dir: false,
+      dataless,
+    })
+  }
+
+  #[test]
+  fn classify_modify_first_sighting_is_content_and_records_fingerprint() {
+    let path = PathBuf::from("/docs/a.md");
+    let mut fingerprints = HashMap::new();
+
+    let verdict = classify_modify(&path, snapshot(fingerprint(100, 10), false), &mut fingerprints);
+
+    assert_eq!(verdict, ModifyVerdict::Content);
+    assert_eq!(fingerprints.get(&path), Some(&fingerprint(100, 10)));
+  }
+
+  #[test]
+  fn classify_modify_same_fingerprint_is_metadata_only() {
+    let path = PathBuf::from("/docs/a.md");
+    let mut fingerprints = HashMap::from([(path.clone(), fingerprint(100, 10))]);
+
+    let verdict = classify_modify(&path, snapshot(fingerprint(100, 10), false), &mut fingerprints);
+
+    assert_eq!(verdict, ModifyVerdict::MetadataOnly);
+  }
+
+  #[test]
+  fn classify_modify_mtime_or_len_change_is_content() {
+    let path = PathBuf::from("/docs/a.md");
+
+    let mut by_mtime = HashMap::from([(path.clone(), fingerprint(100, 10))]);
+    assert_eq!(
+      classify_modify(&path, snapshot(fingerprint(101, 10), false), &mut by_mtime),
+      ModifyVerdict::Content
+    );
+    assert_eq!(by_mtime.get(&path), Some(&fingerprint(101, 10)), "指纹应更新到最新");
+
+    let mut by_len = HashMap::from([(path.clone(), fingerprint(100, 10))]);
+    assert_eq!(
+      classify_modify(&path, snapshot(fingerprint(100, 11), false), &mut by_len),
+      ModifyVerdict::Content
+    );
+  }
+
+  #[test]
+  fn classify_modify_evict_then_materialize_round_trip_emits_no_content_change() {
+    // 核心场景：iCloud 卸载（dataless）→ 用户稍后访问 / 系统按需下载回来。
+    // 卸载不动指纹；下载回来 mtime / len 与卸载前一致 → MetadataOnly。
+    // 前端因此既不会在卸载瞬间重读（把文件又拉回本地），也不会在下载完成后重读。
+    let path = PathBuf::from("/docs/a.md");
+    let before = fingerprint(100, 782);
+    let mut fingerprints = HashMap::from([(path.clone(), before)]);
+
+    let evicted = classify_modify(&path, snapshot(before, true), &mut fingerprints);
+    assert_eq!(evicted, ModifyVerdict::Evicted);
+    assert_eq!(fingerprints.get(&path), Some(&before), "卸载不得改动指纹");
+
+    let materialized = classify_modify(&path, snapshot(before, false), &mut fingerprints);
+    assert_eq!(materialized, ModifyVerdict::MetadataOnly);
+  }
+
+  #[test]
+  fn classify_modify_dataless_without_history_is_still_evicted() {
+    // 监听目录时子文件可能没有历史指纹；只要 stat 显示 dataless 就按卸载处理，
+    // 不能因「无历史」退化成 Content 把占位文件拉回本地。
+    let path = PathBuf::from("/docs/never-seen.md");
+    let mut fingerprints = HashMap::new();
+
+    let verdict = classify_modify(&path, snapshot(fingerprint(100, 10), true), &mut fingerprints);
+
+    assert_eq!(verdict, ModifyVerdict::Evicted);
+    assert!(fingerprints.is_empty());
+  }
+
+  #[test]
+  fn classify_modify_stat_failure_is_content_and_forgets_fingerprint() {
+    // atomic-replace 删旧建新的瞬间 stat 可能失败：fail-open 转发，并清掉过期指纹。
+    let path = PathBuf::from("/docs/a.md");
+    let mut fingerprints = HashMap::from([(path.clone(), fingerprint(100, 10))]);
+
+    let verdict = classify_modify(&path, None, &mut fingerprints);
+
+    assert_eq!(verdict, ModifyVerdict::Content);
+    assert!(!fingerprints.contains_key(&path));
+  }
+
+  #[test]
+  fn classify_modify_directory_is_content_without_fingerprint() {
+    let path = PathBuf::from("/docs");
+    let mut fingerprints = HashMap::new();
+
+    let verdict = classify_modify(
+      &path,
+      Some(FileSnapshot {
+        fingerprint: fingerprint(100, 0),
+        is_dir: true,
+        dataless: false,
+      }),
+      &mut fingerprints,
+    );
+
+    assert_eq!(verdict, ModifyVerdict::Content);
+    assert!(fingerprints.is_empty());
+  }
+
+  #[test]
+  fn snapshot_file_tracks_real_content_writes() {
+    // 端到端：真实临时文件写入后指纹必变（长度不同即可，不依赖 mtime 精度）；
+    // 普通本地文件不得被判为 dataless。
+    let path = temp_path("fingerprint.md");
+    std::fs::write(&path, b"v1").unwrap();
+    let first = snapshot_file(&path).unwrap();
+    assert!(!first.dataless);
+    assert!(!first.is_dir);
+
+    std::fs::write(&path, b"v2 longer").unwrap();
+    let second = snapshot_file(&path).unwrap();
+
+    assert_ne!(first.fingerprint, second.fingerprint);
+    assert!(snapshot_file(&temp_path("missing.md")).is_none());
     let _ = std::fs::remove_file(path);
   }
 

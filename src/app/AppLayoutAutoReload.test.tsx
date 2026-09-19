@@ -736,3 +736,147 @@ describe('AppLayout ISS-210 autosave 接入图片落盘', () => {
     });
   });
 });
+
+// ISS-218:iCloud「优化 Mac 存储」卸载本地副本时 notify 上报 Modify(Data(Content)),
+// 旧实现照单重读——有网把文件立刻拉回本地(与系统优化存储对抗),弱网 / 中间态
+// 可能读回空文档并静默覆盖编辑器(→ session 固化空草稿 → autosave 写回磁盘覆盖原文)。
+// 修法:后端把 dataless 文件的事件降级为 `evicted`(前端忽略);前端对「磁盘读回空
+// 而编辑器非空」不再静默覆盖,改走 ISS-188 既有的「外部修改」确认提示。
+describe('AppLayout ISS-218 iCloud 卸载 / 云占位空读守卫', () => {
+  let host: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    Object.defineProperty(window, '__TAURI_INTERNALS__', {
+      configurable: true,
+      value: {},
+    });
+    __resetFileWatchServiceForTests();
+    sessionState.tabs = [];
+    sessionState.activeTabId = '';
+    sessionState.updateCount = 0;
+    host = document.createElement('div');
+    document.body.append(host);
+    root = createRoot(host);
+    tauriWindowMock.onDragDropEvent.mockResolvedValue(vi.fn());
+    tauriWindowMock.setTitle.mockResolvedValue(undefined);
+    tauriCoreMock.invoke.mockResolvedValue([]);
+    tauriEventMock.listen.mockResolvedValue(vi.fn());
+    fileServiceMock.openFile.mockResolvedValue(null);
+    // 默认模拟云占位态:磁盘读回空文档。
+    fileServiceMock.openPath.mockImplementation(async (path: string) => ({
+      path,
+      name: path.split('/').pop() ?? 'demo.md',
+      content: '',
+      dirty: false,
+      lastSavedContent: '',
+      fileType: 'markdown',
+    }));
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    host.remove();
+    delete (window as typeof window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+    vi.useRealTimers();
+    vi.clearAllMocks();
+    __resetFileWatchServiceForTests();
+  });
+
+  async function mountWith(path: string, content: string): Promise<(event: { payload: unknown }) => void> {
+    activateTab(path, false, content);
+    await act(async () => {
+      root.render(<AppLayout />);
+      await flushPromises();
+    });
+    await act(async () => {
+      await flushPromises();
+    });
+    return getWatchChangedHandler();
+  }
+
+  it('watch:changed.evicted 不触发 reload(卸载不是修改,重读只会把文件拉回本地)', async () => {
+    const handler = await mountWith('/Users/demo/cloud.md', '# 原文');
+
+    await act(async () => {
+      handler({ payload: { path: '/Users/demo/cloud.md', kind: 'evicted' } });
+      vi.advanceTimersByTime(300);
+      await flushPromises();
+    });
+
+    expect(fileServiceMock.openPath).not.toHaveBeenCalled();
+    expect(sessionState.updateCount).toBe(0);
+    expect(host.textContent).not.toContain('文件已在外部修改');
+  });
+
+  it('磁盘读回空而编辑器非空 → 不覆盖内容,改显示「外部修改」提示', async () => {
+    const handler = await mountWith('/Users/demo/cloud.md', '# 原文');
+
+    await act(async () => {
+      handler({ payload: { path: '/Users/demo/cloud.md', kind: 'modify' } });
+      vi.advanceTimersByTime(160);
+      await flushPromises();
+    });
+    await act(async () => {
+      await flushPromises();
+    });
+
+    // 重读确实发生了(守卫作用于结果,而非跳过读盘)
+    expect(fileServiceMock.openPath).toHaveBeenCalledWith('/Users/demo/cloud.md', expect.any(String));
+    // 修复前:updateActiveFile(() => opened) 把 content='' 写进 tab → 编辑器空白
+    expect(sessionState.updateCount).toBe(0);
+    expect(sessionState.tabs[0]?.file.content).toBe('# 原文');
+    expect(sessionState.tabs[0]?.file.dirty).toBe(false);
+    // 复用 ISS-188 的确认提示,用户可显式决定
+    expect(host.textContent).toContain('文件已在外部修改');
+    expect(host.textContent).toContain('放弃本地并重载');
+  });
+
+  it('提示后用户点「放弃本地并重载」→ 主动决定,磁盘内容(即使为空)照常写入', async () => {
+    const handler = await mountWith('/Users/demo/cloud.md', '# 原文');
+
+    await act(async () => {
+      handler({ payload: { path: '/Users/demo/cloud.md', kind: 'modify' } });
+      vi.advanceTimersByTime(160);
+      await flushPromises();
+    });
+    await act(async () => {
+      await flushPromises();
+    });
+    expect(host.textContent).toContain('文件已在外部修改');
+
+    const reloadButton = Array.from(host.querySelectorAll<HTMLButtonElement>('button.status-notice-action'))
+      .find((b) => b.textContent?.includes('放弃本地并重载'));
+    expect(reloadButton).toBeTruthy();
+    await act(async () => {
+      reloadButton!.click();
+      await flushPromises();
+    });
+    await act(async () => {
+      await flushPromises();
+    });
+
+    // 手动重载不经守卫:用户明确要磁盘内容
+    expect(sessionState.updateCount).toBe(1);
+    expect(sessionState.tabs[0]?.file.content).toBe('');
+    expect(host.textContent).not.toContain('文件已在外部修改');
+  });
+
+  it('编辑器本就为空时磁盘读回空 → 正常写入、不提示(真实空文件不误伤)', async () => {
+    const handler = await mountWith('/Users/demo/empty.md', '');
+
+    await act(async () => {
+      handler({ payload: { path: '/Users/demo/empty.md', kind: 'modify' } });
+      vi.advanceTimersByTime(160);
+      await flushPromises();
+    });
+    await act(async () => {
+      await flushPromises();
+    });
+
+    expect(fileServiceMock.openPath).toHaveBeenCalledWith('/Users/demo/empty.md', expect.any(String));
+    expect(sessionState.updateCount).toBe(1);
+    expect(host.textContent).not.toContain('文件已在外部修改');
+  });
+});

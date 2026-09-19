@@ -11,12 +11,15 @@
 
 import type { UnlistenFn } from '@tauri-apps/api/event';
 
-export type WatchEventKind = 'modify' | 'create' | 'remove';
+// ISS-218：`evicted` = iCloud「优化 Mac 存储」等按需下载卷卸载了本地副本。文件仍在、
+// 内容在逻辑上未变、下次读取会自动下载——**不是**外部修改，订阅方不应据此重读
+//（重读会把文件立刻拉回本地）。后端只在 macOS 的 SF_DATALESS 文件上发出该类型。
+export type WatchEventKind = 'modify' | 'create' | 'remove' | 'evicted';
 
 export interface WatchChangedEvent {
   /** 触发事件的文件 / 目录绝对路径。 */
   path: string;
-  /** 事件类型：modify / create / remove。 */
+  /** 事件类型：modify / create / remove / evicted。 */
   kind: WatchEventKind;
 }
 
@@ -73,7 +76,8 @@ function isWatchChangedEvent(payload: unknown): payload is WatchChangedEvent {
   if (typeof candidate.path !== 'string') return false;
   return candidate.kind === 'modify'
     || candidate.kind === 'create'
-    || candidate.kind === 'remove';
+    || candidate.kind === 'remove'
+    || candidate.kind === 'evicted';
 }
 
 function isWatchErrorEvent(payload: unknown): payload is WatchErrorEvent {

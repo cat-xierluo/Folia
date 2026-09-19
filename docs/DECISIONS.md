@@ -36,6 +36,27 @@
 
 > ⚠️ **2026-08-14 数据恢复说明**：本文件 DEC-065 ~ DEC-137 正文因一次 `git stash pop` 误操作覆盖丢失（local 文件，git 无历史备份）。以下已从 CHANGELOG.md（权威变更记录）重建决策骨架——编号/ISS/PR/版本/结论可追溯，但部分早期条目（v0.3.10~v0.4.3，CHANGELOG 未逐条标 DEC 号）按版本聚合；完整根因分析详见 CHANGELOG 对应版本段与 PR。代码无损失（全部已合并）。排列沿用本文件既有降序惯例（新决策在前），与 DEC-064→DEC-001 衔接。
 
+### [DEC-143] - 2026-09-17 - 文件 watcher 以 stat 指纹分流 Modify 事件：iCloud 卸载 / metadata-only 变化不触发自动重读；云占位空读不覆盖编辑器（ISS-218，PR #169）
+
+**背景**：用户报告在 iCloud 同步目录打开的 md 离开一段时间后 Folia 页面空白。取证发现根因不在渲染层：iCloud「优化 Mac 存储」把文件卸载为按需下载占位时，notify 上报的事件（`Modify(Metadata(Extended)) + Modify(Data(Content))`）与真实写入在事件层不可区分，ISS-188 自动重读照单执行——有网把文件强拉回本地并连锁多次重读；弱网 / 中间态读回空文档静默覆盖编辑器，再经 session 持久化固化、autosave 写回磁盘，形成数据丢失链。
+
+**决策一：分流依据用「stat 指纹」而非 notify EventKind 细分。**
+
+- 实测 FSEvents 对 dataless 转换同样报 `Data(Content)`，按 kind 细分不可靠；而卸载 / 按需下载 / 上传回写只改 ctime，**mtime 与字节长度不变**，真实写入必改其一（APFS 纳秒 mtime）。指纹 `(modified, len)` 相等 → 判为 metadata-only 不转发。
+- 已卸载文件带 `SF_DATALESS`（`std::os::macos::fs::MetadataExt::st_flags`），单独识别为 `evicted` 转发但前端不重读——留给后续 UI 呈现（「本地副本已由 iCloud 卸载」）的口子；`evicted` 不更新指纹，按需下载回来后指纹仍等于卸载前 → 整个往返对前端零打扰。
+- fail-open 边界：stat 失败（atomic-replace 删旧瞬间）按内容变化转发并清指纹；目录事件不做指纹；watch 单文件时初始化指纹（否则卸载前首个事件因无历史被放行）。指纹表随 watcher 闭包存活（`Arc<Mutex<HashMap>>`），不改 `WatchEntry` 结构、不动既有 last_event 语义。
+- 已知盲区（接受）：同 mtime 同长度的原地改写（`dd conv=notrunc` + `touch -r`）不会触发重读——常规编辑器 / git / rsync 均改 mtime，不在实际威胁面内。
+
+**决策二：读盘层拒绝「stat 非空、读回为空」；前端对「读回空且当前非空」不静默覆盖。**
+
+- `ensure_read_back_complete(read_len, expected_len)`：仅拦 `read_len == 0 && expected_len > 0`，不拦长度不一致的一般竞态（stat 与 read 之间被改写，由后续事件补重读），真实空文件不受影响。
+- 前端守卫独立成零依赖模块 `reloadGuard.ts`（AppLayout 静态导入）——三个 AppLayout 测试文件整体 mock 了 fileService，放进 fileService 会让守卫在测试里变成 undefined。命中即复用 ISS-188 的 `externalChangeBlocked` 提示（不新增 UI 文案），用户主动「放弃本地并重载」不经守卫。
+- 不做的：不在本 ISS 处理 150ms 防抖窗口内用户输入被重读覆盖的既有窄窗口（ISS-188 范围）；不新增设置项。
+
+**验证**：三组探针实验（`/tmp/icloud-probe`：Rust notify 监听 + Swift `evictUbiquitousItem` 主动卸载）实锤事件形态 / 时间戳判据 / 写入安全性；cargo test 70/70（+11）；前端新增 8 用例 + 1 白名单扩展；typecheck / lint / build 见 PR。无网络失败路径 NOT_VERIFIED（不改系统网络设置无法复现）。
+
+**附带发现（环境）**：本机磁盘余量 4.7GB（98%）、`optimize-storage=1`，iCloud 会整批卸载数日前用过的 `node_modules`（采样 72/72 dataless）——导致 iCloud 目录内 `git status` 卡死、vitest forks worker 60s 超时。验证链路已迁至 iCloud 范围外的 clone（`~/code/Folia`）。**建议开发者不要把 Folia 仓库放在「桌面与文稿」同步范围内**。
+
 ### [DEC-141] - 2026-08-28 - 编辑器 HTML 拆块重组机制 + 本地媒体受控 data URL 通路（ISS-205/206，PR #137~#145）
 
 **背景**：2026-08-27~28 连续修复两组用户报告缺陷，各引入一项影响后续同类问题的机制级决策，合并为一条 DEC 记录（增量修复 ISS-207/208/198 依惯例仅留 CHANGELOG）。

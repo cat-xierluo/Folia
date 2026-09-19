@@ -34,6 +34,21 @@
 
 ### 缺陷类
 
+#### ISS-218 iCloud「优化 Mac 存储」卸载本地副本被自动重读误判为外部修改——文件被强拉回本地 / 弱网读空致编辑器空白 + autosave 覆盖原文风险（PR #169 待合，2026-09-17）
+
+- **发现（用户报告 + 本机取证）**：在 iCloud 同步目录打开 md，离开一段时间后回到 Folia 页面空白。本机环境：`~/Documents` 开启「桌面与文稿」同步（`~/Library/Mobile Documents/com~apple~CloudDocs/Documents -> ~/Documents`）、`com.apple.bird optimize-storage = 1`、磁盘余量 4.7GB（98%）——iCloud 会积极卸载不常访问的文件（连数日前用过的 `node_modules` 也被整批卸载为占位）。
+- **根因（已实锤，三组探针实验：`FileManager.evictUbiquitousItem` 主动卸载 + notify 6.1.1 监听 + 模拟 150ms 防抖重读）**：
+  - 卸载瞬间 notify 上报 `Modify(Metadata(Extended))` + `Modify(Data(Content))`，`map_event_kind` 全部映射为 `modify` → 前端 ISS-188 自动重读。**事件层无法区分卸载与真实写入**（FSEvents 对 dataless 转换同样报 Data(Content)）。
+  - 有网络：`std::fs::read` 对占位文件阻塞按需下载（118KB 684ms / 782B 280ms）后返回完整内容——不空白，但**刚卸载的文件被 Folia 立刻拉回本地**，随后下载完成又连发 4 个 Modify 事件再次重读（与系统优化存储对抗）。
+  - 弱网 / 同步中间态：读回空文档 → `updateActiveFile(() => opened)` 静默覆盖 → 编辑器空白；≤256KB 的 tab 由 session 整体持久化，空草稿固化到 localStorage（重启依旧空白、`draftPersisted=true` 不再重读）；用户敲键 → dirty → autosave 800ms 以空内容覆盖磁盘原文（ISS-209 同类数据丢失链，触发条件不同）。
+  - 可靠判据（实测）：卸载 / 按需下载 / 上传回写只改 ctime，**mtime 与长度不变**；真实写入必改 mtime（APFS 纳秒）或长度；已卸载文件 `st_flags` 含 `SF_DATALESS (0x40000000)`（实测 `0x40000060`）。对已卸载文件直接 `write` 安全（先下载再覆盖）。
+- **实施（fix/icloud-evicted-file-blank）**：
+  - `src-tauri/src/lib.rs`：watcher 回调对 Modify 事件按路径 stat 分流（`classify_modify`）——dataless → emit `evicted`；(mtime, len) 指纹与上次一致 → 不转发；否则 `modify`。指纹表随 watcher 闭包存活（`Arc<Mutex<HashMap>>`），watch 单文件时初始化，Remove 事件清条目，stat 失败 fail-open。`read_opened_document_bytes` 新增 `ensure_read_back_complete`：stat 非空而读回 0 字节 → Err。
+  - `src/services/fileWatchService.ts`：`WatchEventKind` 增 `evicted`，payload 白名单同步。
+  - `src/services/reloadGuard.ts`（新，零依赖）：`isSuspiciousEmptyReload(opened, current)`——读回空且当前非空（docx 除外）。`AppLayout.performReload` 命中即走 `externalChangeBlocked` 提示不覆盖；`handleExternalChangeReload`（用户主动）不经守卫。
+- **验证**：cargo test 70/70（+11：读空守卫 3 / 分流 7 / 真实文件指纹 1）；前端 `reloadGuard.test.ts` 4、`fileWatchService.test.ts` evicted 白名单、`AppLayoutAutoReload.test.tsx` ISS-218 组 4（evicted 不重读 / 空读不覆盖出提示 / 手动重载放行 / 空对空不误伤）；typecheck / lint / build 见 PR。
+- **未覆盖 / 移交**：无网络下卸载后重读的失败路径（`read` 报错 → 前端 console.warn 保留内容）NOT_VERIFIED——不改系统网络设置无法复现，行为由 Rust Err 路径 + 前端 catch 既有逻辑保证。`evicted` 事件暂未在 UI 呈现（可观测性留口子：StatusBar 提示「本地副本已由 iCloud 卸载」可另立）。Windows/Linux：`is_dataless` 恒 false，指纹分流仍生效（OneDrive/Dropbox metadata-only 事件同样不再触发重读）。
+
 #### ✅ ISS-217 远程图片在弱网/系统代理黑洞下静默挂起——无反馈、不自愈、无重试（已 PR #168，2026-09-14 squash merge 93655a4；对抗式 review 一轮 REQUEST_CHANGES→修复 I1/I2→复核 APPROVE〔reviewer 独立 worktree 复跑 51/51 + 红绿判别验证〕；CI 三绿后合并；残余 Minor：R2 快速双击 30s 窗口内条目瞬时消失〔自愈〕可加前缀守卫、R4 服务层二报 src 断言——登记跟进不阻塞）
 
 - **发现（用户报告 + 真机取证）**：打开含 43 张腾讯云 COS webp 的 139KB 长文（养虾日记 Vol21）时图片全部不显示，IR 区呈现原始 markdown 语法。用户观察「超长文档易出现」。
