@@ -34,7 +34,7 @@
 
 ### 缺陷类
 
-#### ISS-218 iCloud「优化 Mac 存储」卸载本地副本被自动重读误判为外部修改——文件被强拉回本地 / 弱网读空致编辑器空白 + autosave 覆盖原文风险（PR #169 待合，2026-09-17）
+#### ✅ ISS-218 iCloud「优化 Mac 存储」卸载本地副本被自动重读误判为外部修改——文件被强拉回本地 / 弱网读空致编辑器空白 + autosave 覆盖原文风险（已 PR #169，2026-09-19 squash merge 2b685a8；fork 分支无 CI 记录，maintainer 本地独立复跑 cargo 70/70 + PR 新增前端 8 用例全绿、124 项本机既有基线失败与 pristine main 逐条一致后合并；残余移交见下方「未覆盖」）
 
 - **发现（用户报告 + 本机取证）**：在 iCloud 同步目录打开 md，离开一段时间后回到 Folia 页面空白。本机环境：`~/Documents` 开启「桌面与文稿」同步（`~/Library/Mobile Documents/com~apple~CloudDocs/Documents -> ~/Documents`）、`com.apple.bird optimize-storage = 1`、磁盘余量 4.7GB（98%）——iCloud 会积极卸载不常访问的文件（连数日前用过的 `node_modules` 也被整批卸载为占位）。
 - **根因（已实锤，三组探针实验：`FileManager.evictUbiquitousItem` 主动卸载 + notify 6.1.1 监听 + 模拟 150ms 防抖重读）**：
