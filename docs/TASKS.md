@@ -94,6 +94,12 @@
 
 ### 收口 / 演进类
 
+#### 🟡 ISS-220 固定大纲宽度可调节 + 「总是固定大纲」双入口（原 #166 登记 ISS-217/「收敛到设置页」，与已归档 ISS-217 撞号改号；maintainer review 拍板双入口后承接整合，详见 DEC-145）
+
+- **需求:** 用户反馈①固定态大纲左栏固定 260px 不可调；②希望「总是固定大纲」有设置页入口。maintainer 拍板：面板内开关保留，与设置页开关双入口并存（撤回原 PR 的「面板内开关移除」，理由见 DEC-145）。
+- **实现（maint/166 承接）:** 固定态右缘新增 `.toc-resizer` 拖拽手柄（复用右侧预览 resizer 模式，`--toc-width` 变量驱动，200px~min(480px, 40%)，双击复位 260px，`resizingPanel` 判别联合独立高亮）；「设置 → 外观」新增同名 toggle（三语言 label/desc）；面板内 `floating-toc-preference` 按钮保留，两处读写同一 `tocAlwaysPinned`，schema 零改动。关闭语义调整：设置页关闭只解除偏好驱动固定、手工固定不受影响（否决原 PR 的「设置页关闭→强制清除会话固定」effect——与面板入口关闭路径语义/时序冲突，见 DEC-145）。原 PR 的 v0.8.1 版本号切版提交拆出，0.8.1 由维护者统一切版。
+- **验证:** 承接 PR 实跑（typecheck / lint / vitest / CI 三绿）；e2e 调整三用例（面板内按钮断言恢复、设置页开关流程 + 拖拽/双击复位、「设置页关闭保留手工固定」语义锁定）。桌面端真机（WKWebView）拖拽手感 NOT_VERIFIED，移交用户。
+
 #### ✅ ISS-201 fs 插件彻底收口：持久 IO 全部走自定义命令（已 PR #159,2026-08-29 squash merge 980993f;真机回归 NOT_VERIFIED 移交用户）
 
 - **背景:** ISS-197（PR #135）以 deny-only scope 补位，但插件面仍保留 `fs:allow-read/write-*`。「allow 空 = 放行一切」的根因在 ACL 模型本身，敏感目录之外的任意路径读写依旧不受约束。

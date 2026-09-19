@@ -1,8 +1,10 @@
-# Changelog
-
-All notable changes of this project will be documented in this file.
-
 ## [Unreleased]
+
+### Changed
+
+- **固定大纲宽度可调节（ISS-220）**：固定态大纲左栏右缘新增拖拽手柄（样式与右侧 Word 预览 resizer 同构），可拖动调整大纲宽度（200px ~ 容器 40%，上限 480px），双击恢复默认 260px。两个 resizer 的 `dragging` 高亮相互独立（共用 `is-resizing` 仅控制拖拽期间的文本选中抑制）。未固定时轻量横线轨道与展开面板行为不变。
+
+- **「总是固定大纲」新增设置页入口，面板内开关保留为双入口（ISS-220，调整 DESIGN.md「Floating TOC」段口径）**：「设置 → 外观」分区新增「总是固定大纲」开关（新增说明文案，三语言同步），与固定态大纲面板头部下方的既有开关双入口并存，读写同一 `tocAlwaysPinned` 偏好。关闭语义：偏好驱动的固定随之解除；**手工固定的文档不受影响**（在设置页关闭默认固定不会强行取消手工固定，解除手工固定仍走面板「取消固定大纲」按钮——该按钮顺带关闭偏好，否则偏好会把大纲立即钉回）。面板内开关关闭时当前文档转为会话固定、视图不打扰（既有行为）。
 
 ### Fixed
 
@@ -11,7 +13,6 @@ All notable changes of this project will be documented in this file.
 - **iCloud「优化 Mac 存储」卸载本地副本后编辑器不再空白、也不再把文件强拉回本地（ISS-218）**：macOS 上 iCloud Drive（含「桌面与文稿」同步的 `~/Documents`）在磁盘紧张时会把不常访问的文件卸载为按需下载的占位文件；卸载瞬间系统发出的文件事件（实测 `Modify(Metadata(Extended)) + Modify(Data(Content))`）与真实内容写入在事件层无法区分，Folia 的自动重读（ISS-188）把它当作「文件已在外部修改」立刻重读——有网络时刚卸载的文件被立即拉回本地（与系统优化存储对抗，每次卸载/下载往返触发多次重读）；弱网 / 同步中间态下读回空文档并静默写入编辑器：页面瞬间空白，session 随即把空草稿固化到本地存储（重启依旧空白、不再从磁盘重读），用户一敲键盘 autosave 就把空内容写回磁盘覆盖原文。三层修复：(1) **watcher 分流**——Rust 端对每条 Modify 事件先 stat：带 `SF_DATALESS` 标志（已卸载）的文件改发 `evicted`（前端忽略、不重读）；mtime 与字节长度都未变的事件（按需下载完成、xattr / ownership 回写等只动 ctime）直接不转发。真实内容写入必改 mtime 或长度，照常触发重读；stat 失败（atomic-replace 删旧瞬间）保守放行。(2) **读盘守卫**——`read_opened_document` 对「stat 报告非空、读回却为 0 字节」的占位态返回错误而不是空内容（真实空文件不受影响）。(3) **前端兜底**——自动重读若读回空而编辑器当前非空，不再静默覆盖，改走既有的「文件已在外部修改 / 放弃本地并重载」提示，由用户显式决定；手动重载不经守卫。实测（macOS 15，`FileManager.evictUbiquitousItem` 主动卸载 + notify 探针）：卸载 / 下载 / 上传回写均只改 ctime、mtime 与长度不变；对已卸载文件直接写入安全（先下载再覆盖，516ms）。验证：cargo test 70/70（+11）、前端单测新增 8（空读守卫纯函数 4 / AppLayout 集成 4，另有 watch 事件白名单既有用例扩展；全量 825/825）、typecheck / lint / build 零错误。**真机（NOT_VERIFIED，移交）**：无网络状态下卸载后重读的失败路径无法在不改系统网络设置的前提下复现，逻辑由单测锁定。
 
 - **远程图片弱网/代理黑洞下不再静默挂起（ISS-217）**：系统代理（如 PacketTun）对某些域名黑洞时，远程 https 图片请求挂起 60s+ 且无 error 事件——既有 ISS-208 诊断 banner 不触发，编辑器裸显示原始 `![](https://…)` 语法，代理恢复后也永不自愈（必须整页 reload）。三件套：(1) **懒加载**——远程 http(s) 图片自动加 `loading="lazy"`，长文档首开不再 43 张图并发全量拉取把弱网/代理打死（视口外图片滚动到才加载）；(2) **挂起看门狗**——进入视口的远程图片 30s 未加载完成（`complete` 且无 error）即出现「图片加载超时」占位条目，聚合进既有诊断 banner（上限 3 条明细 + 「还有 N 张」汇总行，批量重试按钮）；(3) **单图重试**——诊断条目新增「重试」按钮（首次接线 `MediaPlaceholder.onRetry`），同元素改写为 `?folioRetry=N` 唯一 URL 强制重新请求（实证：同 URL 的任何重启方式都会被浏览器按 URL 去重到挂起中的在途请求上；带 query 的预签名 URL 走 remove/restore 尽力而为路径）。后续真实 load/error 到达时条目自动升级或清除（与 ISS-208 同一条共享记账路径）。验证：815/815 单测（T1-T11 全 TDD 先红后绿）、typecheck/lint 零错误、新增 e2e 全链路（挂起→占位→重试→放行→清除→源码零污染 round-trip）、真机 WKWebView 截图验证（30s 内占位出现、挂起中重试不崩溃不 reload、Cmd+S 落盘字节零污染——无 `loading=`/`folioRetry=` 泄漏）。
-
 ## [0.8.0] - 2026-09-04
 
 ### Changed
