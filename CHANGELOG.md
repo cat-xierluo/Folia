@@ -1,4 +1,8 @@
-## [Unreleased]
+# Changelog
+
+All notable changes of this project will be documented in this file.
+
+## [0.8.1] - 2026-09-19
 
 ### Changed
 
