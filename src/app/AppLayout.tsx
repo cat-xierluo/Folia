@@ -320,7 +320,12 @@ export function AppLayout() {
   const [sourceHeadingScrollRequest, setSourceHeadingScrollRequest] = useState<SourceHeadingScrollRequest>();
   const rightPanelMode = session.rightPanelMode;
   const [rightPanelWidth, setRightPanelWidth] = useState(460);
-  const [resizing, setResizing] = useState(false);
+  // 固定大纲左侧栏宽度（默认与 CSS .floating-toc.pinned 的 260px 一致）。
+  const [tocWidth, setTocWidth] = useState(260);
+  // 正在拖拽的面板：'toc' 固定大纲 / 'right' 右侧预览 / null 未拖拽。
+  // main-content 的 is-resizing 统一管 user-select，两个手柄的 dragging 高亮各自判定，
+  // 不能共用布尔——否则右侧预览与固定大纲同时存在时，拖一个另一个也进高亮态。
+  const [resizingPanel, setResizingPanel] = useState<'toc' | 'right' | null>(null);
   const [htmlPresentationVisible, setHtmlPresentationVisible] = useState(false);
   const [htmlTableViewer, setHtmlTableViewer] = useState<{ block: HtmlTableBlock } | null>(null);
   const [systemOpenChecked, setSystemOpenChecked] = useState(!isTauriRuntime);
@@ -696,7 +701,7 @@ export function AppLayout() {
     if (!container) return;
 
     event.preventDefault();
-    setResizing(true);
+    setResizingPanel('right');
 
     const updateWidth = (clientX: number) => {
       const rect = container.getBoundingClientRect();
@@ -712,7 +717,39 @@ export function AppLayout() {
     };
 
     const handlePointerUp = () => {
-      setResizing(false);
+      setResizingPanel(null);
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+  }, []);
+
+  // 固定大纲左栏宽度拖拽：大纲贴 main-content 左缘，向右拖增宽。
+  // 上下限与 .floating-toc.pinned 的 min-width/max-width 对齐（200px / 40%）。
+  const handleTocResizerPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const container = mainContentRef.current;
+    if (!container) return;
+
+    event.preventDefault();
+    setResizingPanel('toc');
+
+    const updateWidth = (clientX: number) => {
+      const rect = container.getBoundingClientRect();
+      const maxWidth = Math.min(480, Math.round(rect.width * 0.4));
+      const nextWidth = clientX - rect.left;
+      setTocWidth(Math.min(maxWidth, Math.max(200, nextWidth)));
+    };
+
+    updateWidth(event.clientX);
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      updateWidth(moveEvent.clientX);
+    };
+
+    const handlePointerUp = () => {
+      setResizingPanel(null);
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', handlePointerUp);
     };
@@ -1306,7 +1343,7 @@ export function AppLayout() {
     rightPanelMode === 'word' && !isDocx ? 'word-preview-open' : '',
     rightPanelMode === 'wechat' && !isDocx ? 'wechat-preview-open' : '',
     shouldShowHtmlPresentation ? 'html-presentation-layout' : '',
-    resizing ? 'is-resizing' : '',
+    resizingPanel ? 'is-resizing' : '',
   ].filter(Boolean).join(' ');
 
   const resolveTocHeadings = useCallback((): HTMLElement[] => {
@@ -1337,6 +1374,11 @@ export function AppLayout() {
     }
   }, [settings.tocAlwaysPinned]);
 
+  // ISS-220：「总是固定大纲」双入口（面板内按钮 + 设置页开关）读写同一 tocAlwaysPinned。
+  // 面板内关闭时当前文档转为会话固定、视图不打扰（既有行为）；设置页关闭只解除偏好驱动
+  // 的固定，手工固定（会话固定）不受影响——解除手工固定走面板「取消固定大纲」按钮。
+  // 刻意不再监听 SETTINGS_CHANGED_EVENT 强制清除会话固定：同一开关两处入口若行为相反
+  // （面板关=保留当前固定，设置关=连手工固定一起清）会让用户无法建立稳定预期。
   const handleTocAlwaysPinnedChange = useCallback((nextAlwaysPinned: boolean) => {
     if (!nextAlwaysPinned) {
       setTocSessionPinned(true);
@@ -1514,7 +1556,12 @@ export function AppLayout() {
       <div
         ref={mainContentRef}
         className={mainContentClassName}
-        style={{ '--right-panel-width': `${rightPanelWidth}px` } as React.CSSProperties}
+        style={
+          {
+            '--right-panel-width': `${rightPanelWidth}px`,
+            '--toc-width': `${tocWidth}px`,
+          } as React.CSSProperties
+        }
       >
         {session.showHomePage ? (
           <RecentFilesPage
@@ -1536,12 +1583,26 @@ export function AppLayout() {
               onAlwaysPinnedChange={handleTocAlwaysPinnedChange}
               onNavigate={handleTocNavigate}
             />
+            {tocPinned && (
+              <div
+                className={`toc-resizer ${resizingPanel === 'toc' ? 'dragging' : ''}`}
+                role="separator"
+                aria-label={t('tocResizeLabel')}
+                aria-orientation="vertical"
+                aria-valuemin={200}
+                aria-valuemax={480}
+                aria-valuenow={Math.round(tocWidth)}
+                title={t('tocResizeTitle')}
+                onPointerDown={handleTocResizerPointerDown}
+                onDoubleClick={() => setTocWidth(260)}
+              />
+            )}
             {editorPane}
           </>
         )}
         {rightPanelMode !== 'none' && !isDocx && (
           <div
-            className={`word-preview-resizer ${resizing ? 'dragging' : ''}`}
+            className={`word-preview-resizer ${resizingPanel === 'right' ? 'dragging' : ''}`}
             role="separator"
             aria-label={t('rightPanelResizeLabel')}
             aria-orientation="vertical"

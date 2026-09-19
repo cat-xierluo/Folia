@@ -732,7 +732,7 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   position: relative;
   top: 0;
   left: 0;
-  width: 260px;
+  width: var(--toc-width, 260px);
   min-width: 200px;
   max-width: 40vw;
   max-height: 100%;
@@ -741,6 +741,37 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   border-right: 1px solid var(--border-soft);
   background: var(--toc-panel-bg);
   overflow-y: auto;
+}
+
+/* 固定大纲左栏右缘的宽度拖拽手柄（样式与 .word-preview-resizer 同构）。 */
+.toc-resizer {
+  width: 9px;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.15s;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.toc-resizer::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 3px;
+  width: 3px;
+  height: 44px;
+  border-radius: 999px;
+  background: var(--border);
+  opacity: 0.32;
+  transform: translateY(-50%);
+  transition: background 0.15s, opacity 0.15s, height 0.15s;
+}
+
+.toc-resizer:hover::before,
+.toc-resizer.dragging::before {
+  height: 58px;
+  background: var(--accent);
+  opacity: 0.75;
 }
 
 .right-panel-open .floating-toc {
@@ -944,6 +975,7 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   white-space: nowrap;
 }
 
+/* ISS-220 双入口：面板内「总是固定大纲」开关保留（与设置页开关读写同一偏好）。 */
 .floating-toc-preference {
   display: flex;
   align-items: center;
