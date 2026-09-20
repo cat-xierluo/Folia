@@ -34,7 +34,7 @@
 
 ### 缺陷类
 
-#### 🟡 ISS-221 重读失败路径（pathInvalid）解除 ISS-209 autosave 守卫——残留空写窗口（Issue #151，fix/iss-221-pathinvalid-autosave-guard PR 中）
+#### ✅ ISS-221 重读失败路径（pathInvalid）解除 ISS-209 autosave 守卫——残留空写窗口（Issue #151 随关，2026-09-19 squash merge 9d5645d / PR #172；TDD 红→绿 + 变异验证拆守卫即红；CI 三绿）
 
 - **发现（PR #150 review MINOR-2，登记 Issue #151）**：降级恢复 tab（content=''、dirty=true、draftPersisted=false）重读失败（文件被删 / 暂时性 IO 错误）→ `markPathInvalid` 置 `pathInvalid=true` → `reloading` 派生式含 `!pathInvalid` 而翻 false → ISS-209 守卫解除；此时 800ms autosave tick 仍满足 dirty+path 条件 → `saveFile('')`——已删文件被 `std::fs::write` 重建为空文件，暂时性 IO/锁错误则盘上原文件被空内容覆盖。
 - **修法（Issue #151 候选 B，guard 与 reloading 同源收口）**：`AppLayout` autosave effect 守卫由 `if (reloading) return;` 扩为 `if (reloading || activePathInvalid) return;`，`activePathInvalid` 入 deps。pathInvalid tab 路径已不可信，静默写盘比不写更糟——用户内容由 session 草稿兜底，显式落盘走「另存为」（ISS-42）。候选 A（reducer 顺带清 dirty）语义也成立但会连带改变 close-dirty 确认等行为，超出本窗口修复范围，未取。
