@@ -34,6 +34,12 @@
 
 ### 缺陷类
 
+#### 🟡 ISS-221 重读失败路径（pathInvalid）解除 ISS-209 autosave 守卫——残留空写窗口（Issue #151，fix/iss-221-pathinvalid-autosave-guard PR 中）
+
+- **发现（PR #150 review MINOR-2，登记 Issue #151）**：降级恢复 tab（content=''、dirty=true、draftPersisted=false）重读失败（文件被删 / 暂时性 IO 错误）→ `markPathInvalid` 置 `pathInvalid=true` → `reloading` 派生式含 `!pathInvalid` 而翻 false → ISS-209 守卫解除；此时 800ms autosave tick 仍满足 dirty+path 条件 → `saveFile('')`——已删文件被 `std::fs::write` 重建为空文件，暂时性 IO/锁错误则盘上原文件被空内容覆盖。
+- **修法（Issue #151 候选 B，guard 与 reloading 同源收口）**：`AppLayout` autosave effect 守卫由 `if (reloading) return;` 扩为 `if (reloading || activePathInvalid) return;`，`activePathInvalid` 入 deps。pathInvalid tab 路径已不可信，静默写盘比不写更糟——用户内容由 session 草稿兜底，显式落盘走「另存为」（ISS-42）。候选 A（reducer 顺带清 dirty）语义也成立但会连带改变 close-dirty 确认等行为，超出本窗口修复范围，未取。
+- **验证**：新增 `AppLayoutAutoReload.test.tsx` ISS-221 组 2 用例（重读失败转 pathInvalid 后 800ms 不 saveFile / pathInvalid 期间用户输入同样不 autosave）；变异验证：临时拆掉新守卫 → 恰好 2 用例变红，恢复后全绿（防空转）；typecheck / lint 零错误；全量 vitest 失败集合与 pristine main 逐条一致（本机 124 项既有基线）。
+
 #### ✅ ISS-219 Word 导出 raw IPC 在真实 WKWebView 退化为 JSON 后失败（原 #167，因 fork 冲突由 maintainer 承接 PR #170，2026-09-19 squash merge 97e1080；改号说明：原登记 ISS-218/DEC-143 与 PR #169 撞号，归档为 ISS-219/DEC-144；承接 PR CI 三绿（typecheck/lint/test、cargo、e2e）+ maintainer 合并树本地 cargo 73/73；CHANGELOG 自动合并错入 [0.8.0] 段已纠正回 Unreleased；残余移交：裸 ArrayBuffer 真 WKWebView 是否仍走 InvokeBody::Raw（ETV 场景 D 待跑，最坏情形持续 JSON fallback——功能正常但 ISS-215 内存收益回归）+ macOS 真机 .docx 落盘复核）
 
 - **现象:** macOS Folia 导出 Word 弹窗报错：`write_binary_export expects a raw binary body (application/octet-stream), got JSON`，目标文件未生成。

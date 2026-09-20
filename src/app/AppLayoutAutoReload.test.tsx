@@ -119,7 +119,11 @@ function buildSessionApi(): SessionApi {
     closeOthers: () => undefined,
     closeToRight: () => undefined,
     closeAll: () => undefined,
-    markPathInvalid: () => undefined,
+    // ISS-221：桩同步 reducer 语义（置 pathInvalid），否则守卫测试空转。
+    markPathInvalid: (id: string) => {
+      const idx = sessionState.tabs.findIndex((t) => t.id === id);
+      if (idx >= 0) sessionState.tabs[idx] = { ...sessionState.tabs[idx], pathInvalid: true };
+    },
     updateActiveFile,
     updateActiveTabMeta: vi.fn(),
     recordRecentFile: () => undefined,
@@ -645,6 +649,125 @@ describe('AppLayout ISS-209 降级恢复 autosave 竞态', () => {
     });
 
     // 修复前:dirty=true → saveFile(file) 以 content='' 落盘 → 清空磁盘
+    expect(fileServiceMock.saveFile).not.toHaveBeenCalled();
+
+    await act(async () => {
+      root?.unmount();
+    });
+  });
+});
+
+// ISS-221 / Issue #151:降级 tab 重读失败(openPath reject → markPathInvalid)后,
+// ISS-209 守卫因 reloading 派生式含 !pathInvalid 而解除——此时 content=''、dirty=true
+// 依旧成立,800ms tick 会 saveFile(''):文件已删则被 fs::write 重建为空文件,暂时性
+// IO/锁错误则盘上原文件被空内容覆盖。修法:autosave 守卫追加 pathInvalid 条件,
+// 与 reloading 同源收口——pathInvalid tab 路径已不可信,本就不该再对它自动写盘。
+describe('AppLayout ISS-221 pathInvalid 期间 autosave 抑制', () => {
+  let host: HTMLDivElement;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    // 同 ISS-209 组:必须显式开启 autosave,否则守卫测试空转。
+    localStorage.setItem('folia-settings', JSON.stringify({ autoSave: true }));
+    host = document.createElement('div');
+    document.body.append(host);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.clearAllMocks();
+    localStorage.removeItem('folia-settings');
+    host.remove();
+  });
+
+  function activateDegradedTab(path: string): void {
+    sessionState.tabs = [{
+      id: 'tab-1',
+      editorMode: 'wysiwyg',
+      rightPanelMode: 'none',
+      draftPersisted: false,
+      isPlaceholder: false,
+      file: {
+        path,
+        name: path.split('/').pop() ?? 'degraded.md',
+        content: '',
+        dirty: true,
+        lastSavedContent: '',
+        fileType: 'markdown',
+      },
+    }];
+    sessionState.activeTabId = 'tab-1';
+    sessionState.updateCount = 0;
+  }
+
+  it('重读失败转 pathInvalid 后,800ms tick 不得 saveFile(防空内容覆盖/重建空文件)', async () => {
+    activateDegradedTab('/Users/demo/missing.md');
+    fileServiceMock.openPath.mockRejectedValue(new Error('no such file'));
+    persistMock.persistPendingImageAssets.mockResolvedValue({ replacements: [], failures: [] });
+    fileServiceMock.saveFile.mockClear();
+    let root: Root | null = null;
+
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AppLayout />);
+      await flushPromises();
+    });
+    // openPath 已 reject → markPathInvalid 已把 sessionState 置 pathInvalid=true。
+    expect(sessionState.tabs[0]?.pathInvalid).toBe(true);
+
+    // 真实链路里 reducer 触发重渲染;测试替身手动重渲染模拟这一拍。
+    await act(async () => {
+      root?.render(<AppLayout />);
+      await flushPromises();
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(900);
+      await flushPromises();
+    });
+
+    // 修复前:reloading 因 pathInvalid 解除 → dirty=true 的空 content 走 saveFile。
+    expect(fileServiceMock.saveFile).not.toHaveBeenCalled();
+
+    await act(async () => {
+      root?.unmount();
+    });
+  });
+
+  it('pathInvalid 期间用户输入(dirty 保持)同样不触发 autosave;path 无效 tab 的写盘只能走显式另存为', async () => {
+    activateDegradedTab('/Users/demo/missing.md');
+    fileServiceMock.openPath.mockRejectedValue(new Error('no such file'));
+    persistMock.persistPendingImageAssets.mockResolvedValue({ replacements: [], failures: [] });
+    fileServiceMock.saveFile.mockClear();
+    let root: Root | null = null;
+
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AppLayout />);
+      await flushPromises();
+    });
+    await act(async () => {
+      root?.render(<AppLayout />);
+      await flushPromises();
+    });
+
+    // 模拟用户在 pathInvalid tab 敲键:content 变非空、dirty=true。
+    const idx = sessionState.tabs.findIndex((t) => t.id === sessionState.activeTabId);
+    sessionState.tabs[idx] = {
+      ...sessionState.tabs[idx],
+      file: { ...sessionState.tabs[idx].file, content: '# 手动输入', dirty: true },
+    };
+    await act(async () => {
+      root?.render(<AppLayout />);
+      await flushPromises();
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(900);
+      await flushPromises();
+    });
+
+    // pathInvalid tab 的自动写盘持续抑制——静默写到已删路径比不写更糟,
+    // 用户内容由 session 草稿兜底,显式落盘走 StatusBar「另存为」(ISS-42)。
     expect(fileServiceMock.saveFile).not.toHaveBeenCalled();
 
     await act(async () => {
