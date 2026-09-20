@@ -2,6 +2,12 @@
 
 All notable changes of this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- **降级 tab 重读失败后不再残留 autosave 空写窗口（ISS-221，Issue #151）**：大文件降级恢复的 tab 在重读失败（文件被删 / 暂时性 IO 错误）转 `pathInvalid` 后，ISS-209 的 autosave 守卫会随 reloading 派生式解除，而此时编辑器 content 为空、dirty 为真——800ms 自动保存会把空内容写盘：已删文件被重建为空文件、暂时性 IO 错误的盘上原文件被空覆盖。现 pathInvalid 期间持续抑制 autosave（与 reloading 守卫同源收口），路径失效的 tab 只能经「另存为」显式落盘，用户内容由会话草稿兜底。验证：新增 2 个集成用例 + 变异验证（拆守卫即红）；typecheck / lint 零错误。
+
 ## [0.8.1] - 2026-09-19
 
 ### Changed

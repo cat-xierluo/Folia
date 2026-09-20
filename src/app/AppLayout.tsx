@@ -1251,12 +1251,19 @@ export function AppLayout() {
     && !activeTab.file.content
     && !(activeTab.file.fileType === 'docx' && activeTab.file.docxHtml);
 
+  // ISS-221 / Issue #151:pathInvalid 期间持续抑制 autosave——重读失败(文件被删 /
+  // 暂时性 IO 错误)后 reloading 因派生式含 !pathInvalid 而解除,但 content=''、
+  // dirty=true 依旧成立,800ms tick 会 saveFile('') 把已删文件重建为空文件、或把
+  // 盘上原文件覆盖为空。pathInvalid tab 的路径已不可信,静默写盘比不写更糟:
+  // 用户内容由 session 草稿兜底,显式落盘走「另存为」(ISS-42)。
+  const activePathInvalid = !!activeTab?.pathInvalid;
+
   // ISS-209 / Issue #149:重读窗口(reloading)内禁止 autosave——降级恢复 tab
   // 持久化时带 dirty=true 且 content='',若 800ms tick 在磁盘内容回填前触发,
   // saveFile(file) 会以空 content 覆盖磁盘文件。reloading 由 activeTab 派生,
   // 重读完成自然解除。本 effect 须位于 reloading 定义之后(const 无前向引用)。
   useEffect(() => {
-    if (reloading) return;
+    if (reloading || activePathInvalid) return;
     if (!settings.autoSave || !file.path || !file.dirty || file.fileType === 'docx') return;
     const timeout = window.setTimeout(() => {
       // ISS-210：autosave 与 handleSave 对齐——先落盘 pending 图片并替换
@@ -1278,7 +1285,7 @@ export function AppLayout() {
         .catch((e) => console.error('Auto-save failed:', e));
     }, 800);
     return () => window.clearTimeout(timeout);
-  }, [file, settings.autoSave, updateActiveFile, reloading, imageAssetStore]);
+  }, [file, settings.autoSave, updateActiveFile, reloading, activePathInvalid, imageAssetStore]);
 
   useEffect(() => {
     if (!isTauriRuntime) return;
