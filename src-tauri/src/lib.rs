@@ -1150,10 +1150,20 @@ const MARKDOWN_UTI: &str = "net.daringfireball.markdown";
 
 /// 构造用于注册默认 Markdown handler 的 JXA（JavaScript for Automation）脚本。
 ///
-/// 脚本通过 `ObjC.import('CoreServices')` 引入 LaunchServices，调用 C 函数
-/// `LSSetDefaultRoleHandlerForContentType`，把 [`MARKDOWN_UTI`] 的默认 handler
-/// 指向传入的 `bundle_id`。`0xFFFFFFFF` 即 `kLSRolesAll`（同时覆盖 viewer /
-/// editor / shell 角色），保证 Folia 既是默认编辑器也是默认查看器。
+/// 两个必须遵守的 macOS / JXA 约束（都踩过坑，见测试断言）：
+///
+/// 1. **参数顺序**：`LSSetDefaultRoleHandlerForContentType` 的签名是
+///    `(contentType, role, handlerBundleID)`——role 是第 2 参、bundle ID 是
+///    第 3 参。同家族的 `LSSetDefaultHandlerForURLScheme` 却是
+///    `(scheme, bundleID, role)` 顺序，极易混淆；传反后 LaunchServices 返回
+///    `-50`（paramErr），因为 role 槽位收到了 CFStringRef 指针、bundle ID
+///    槽位收到了整数 `0xFFFFFFFF`。
+/// 2. **CFStringRef 桥接**：JXA 调 C 函数时不会把 JS 字符串自动桥接为
+///    `CFStringRef` 参数，必须用 `$.CFStringCreateWithCString` 显式构造；
+///    直接传 JS 字符串同样得到 `-50`。
+///
+/// `0xFFFFFFFF` 即 `kLSRolesAll`（同时覆盖 viewer / editor / shell 角色），
+/// 保证 Folia 既是默认编辑器也是默认查看器。
 ///
 /// 最后一条表达式（函数返回值）作为 osascript 的结果输出：返回 0 表示成功
 /// （OSStatus noErr），非 0 则是 LaunchServices 错误码。
@@ -1168,7 +1178,9 @@ fn build_set_default_markdown_jxa(bundle_id: &str) -> String {
   let escaped_bundle = bundle_id.replace('\'', "\\'");
   format!(
     "ObjC.import('CoreServices');\n\
-     $.LSSetDefaultRoleHandlerForContentType('{uti}', '{escaped_bundle}', 0xFFFFFFFF)",
+     const uti = $.CFStringCreateWithCString($.NULL, '{uti}', $.kCFStringEncodingUTF8);\n\
+     const bundle = $.CFStringCreateWithCString($.NULL, '{escaped_bundle}', $.kCFStringEncodingUTF8);\n\
+     $.LSSetDefaultRoleHandlerForContentType(uti, 0xFFFFFFFF, bundle)",
     uti = MARKDOWN_UTI
   )
 }
@@ -2636,6 +2648,12 @@ mod tests {
       script.contains("LSSetDefaultRoleHandlerForContentType"),
       "script must call LSSetDefaultRoleHandlerForContentType, got: {script}"
     );
+    // JXA 不会把 JS 字符串自动桥接为 C 函数的 CFStringRef 参数，必须显式构造，
+    // 否则 LaunchServices 返回 -50（paramErr）。
+    assert!(
+      script.contains("CFStringCreateWithCString"),
+      "script must build CFStringRef explicitly, got: {script}"
+    );
     // bundle id 被注入（前端取自 tauri.conf.json identifier）。
     assert!(
       script.contains("'com.folia.reader'"),
@@ -2646,9 +2664,16 @@ mod tests {
       script.contains("net.daringfireball.markdown"),
       "script must embed Markdown UTI, got: {script}"
     );
+    // 参数顺序回归断言：真实签名是 (contentType, role, handlerBundleID)——
+    // role 第 2 参、bundle ID 第 3 参（与 LSSetDefaultHandlerForURLScheme 相反）。
+    // 初版曾因传反 + 未构造 CFStringRef 导致 -50（paramErr），此处锁定正确形态。
+    assert!(
+      script.contains("LSSetDefaultRoleHandlerForContentType(uti, 0xFFFFFFFF, bundle)"),
+      "script must pass (uti, role, bundle) in SDK order, got: {script}"
+    );
     // 以函数调用作为最后表达式（无尾随分号），其返回值作为 osascript 结果。
     assert!(
-      script.ends_with("0xFFFFFFFF)"),
+      script.ends_with("bundle)"),
       "script must end with the LSSet call result, got: {script}"
     );
   }

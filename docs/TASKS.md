@@ -34,6 +34,16 @@
 
 ### 缺陷类
 
+#### ✅ ISS-222 「设为默认 Markdown 应用」osascript JXA 调用必败 -50（L1 直接修复，2026-09-22 用户会话报告；根因两层叠加：SDK 参数顺序 + JXA CFStringRef 桥接，C 探针实证）
+
+- **发现（用户报告）**：设置页「设为默认 Markdown 应用」点击报 `LSSetDefaultRoleHandlerForContentType returned status -50`，从未成功过。
+- **根因（本机实证，两层叠加，各自单独修都不够）**：
+  1. **参数顺序**：macOS SDK（LSInfo.h）真实签名是 `LSSetDefaultRoleHandlerForContentType(contentType, role, handlerBundleID)`——role 第 2 参、bundle ID 第 3 参；初版按同家族 `LSSetDefaultHandlerForURLScheme(scheme, bundleID, role)` 的直觉写成 `(uti, bundle, 0xFFFFFFFF)`，role 槽位收到 CFStringRef、bundleID 槽位收到整数 → `paramErr(-50)`。
+  2. **JXA 桥接**：JXA 调 C 函数不会把 JS 字符串自动桥接为 `CFStringRef` 参数，必须 `$.CFStringCreateWithCString` 显式构造；直接传字面量同样 -50。
+  - 排查路径：JXA 原样复现 -50 → 仅修参数顺序仍 -50 → 读 SDK 头文件（LSInfo.h 签名）定位顺序 → C 原生（clang 直调 CoreServices）正确顺序即成功（status 0，handler 回读 com.folia.reader）→ JXA「显式 CFString + 正确顺序」返回 0，两层修全才通。
+- **修法**：`build_set_default_markdown_jxa` 重写——显式构造 UTI / bundle 两个 CFStringRef，按 SDK 顺序传参；单测新增参数顺序回归断言（字面锁定 `(uti, 0xFFFFFFFF, bundle)`）与 `CFStringCreateWithCString` 存在性断言。
+- **验证**：cargo test --lib 73/73；修正版 JXA 本机实跑返回 0，`LSCopyDefaultRoleHandlerForContentType` 回读 handler = com.folia.reader（排查中已用修正调用把用户机器的默认 handler 注册成功）；`.md` / `.markdown` 两扩展名 mdls 均映射 `net.daringfireball.markdown`，UTI 覆盖确认。设置页按钮真机复验待下一版本发布。
+
 #### ✅ ISS-221 重读失败路径（pathInvalid）解除 ISS-209 autosave 守卫——残留空写窗口（Issue #151 随关，2026-09-19 squash merge 9d5645d / PR #172；TDD 红→绿 + 变异验证拆守卫即红；CI 三绿）
 
 - **发现（PR #150 review MINOR-2，登记 Issue #151）**：降级恢复 tab（content=''、dirty=true、draftPersisted=false）重读失败（文件被删 / 暂时性 IO 错误）→ `markPathInvalid` 置 `pathInvalid=true` → `reloading` 派生式含 `!pathInvalid` 而翻 false → ISS-209 守卫解除；此时 800ms autosave tick 仍满足 dirty+path 条件 → `saveFile('')`——已删文件被 `std::fs::write` 重建为空文件，暂时性 IO/锁错误则盘上原文件被空内容覆盖。
