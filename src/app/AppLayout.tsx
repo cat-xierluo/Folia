@@ -58,6 +58,13 @@ import type { SourceHeadingScrollRequest } from '../components/EditorPane';
 import { useSession } from '../hooks/useSession';
 import { detectCurrentWindowLabel } from '../services/tabWindowService';
 
+const MAIN_PANE_MIN_WIDTH = 480;
+const RIGHT_PANEL_MIN_WIDTH = 360;
+const RIGHT_PANEL_MAX_WIDTH = 760;
+const PANEL_RESIZER_WIDTH = 9;
+const TOC_MIN_WIDTH = 200;
+const TOC_MAX_WIDTH = 480;
+
 const EditorPane = lazy(() =>
   import('../components/EditorPane').then((module) => ({ default: module.EditorPane })),
 );
@@ -322,6 +329,7 @@ export function AppLayout() {
   const [rightPanelWidth, setRightPanelWidth] = useState(460);
   // 固定大纲左侧栏宽度（默认与 CSS .floating-toc.pinned 的 260px 一致）。
   const [tocWidth, setTocWidth] = useState(260);
+  const tocPinned = tocSessionPinned || settings.tocAlwaysPinned;
   // 正在拖拽的面板：'toc' 固定大纲 / 'right' 右侧预览 / null 未拖拽。
   // main-content 的 is-resizing 统一管 user-select，两个手柄的 dragging 高亮各自判定，
   // 不能共用布尔——否则右侧预览与固定大纲同时存在时，拖一个另一个也进高亮态。
@@ -705,9 +713,19 @@ export function AppLayout() {
 
     const updateWidth = (clientX: number) => {
       const rect = container.getBoundingClientRect();
-      const maxWidth = Math.min(760, Math.round(rect.width * 0.62));
+      const tocOccupiedWidth = tocPinned
+        ? Math.min(tocWidth, Math.round(rect.width * 0.4)) + PANEL_RESIZER_WIDTH
+        : 0;
+      const readableMaxWidth = rect.width
+        - tocOccupiedWidth
+        - MAIN_PANE_MIN_WIDTH
+        - PANEL_RESIZER_WIDTH;
+      const maxWidth = Math.max(
+        RIGHT_PANEL_MIN_WIDTH,
+        Math.min(RIGHT_PANEL_MAX_WIDTH, Math.round(rect.width * 0.62), readableMaxWidth),
+      );
       const nextWidth = rect.right - clientX;
-      setRightPanelWidth(Math.min(maxWidth, Math.max(360, nextWidth)));
+      setRightPanelWidth(Math.min(maxWidth, Math.max(RIGHT_PANEL_MIN_WIDTH, nextWidth)));
     };
 
     updateWidth(event.clientX);
@@ -724,7 +742,7 @@ export function AppLayout() {
 
     window.addEventListener('pointermove', handlePointerMove);
     window.addEventListener('pointerup', handlePointerUp);
-  }, []);
+  }, [tocPinned, tocWidth]);
 
   // 固定大纲左栏宽度拖拽：大纲贴 main-content 左缘，向右拖增宽。
   // 上下限与 .floating-toc.pinned 的 min-width/max-width 对齐（200px / 40%）。
@@ -737,9 +755,22 @@ export function AppLayout() {
 
     const updateWidth = (clientX: number) => {
       const rect = container.getBoundingClientRect();
-      const maxWidth = Math.min(480, Math.round(rect.width * 0.4));
+      const rightPanel = container.querySelector<HTMLElement>(
+        ':scope > .word-preview-panel, :scope > .wechat-preview-panel',
+      );
+      const rightOccupiedWidth = rightPanelMode !== 'none'
+        ? (rightPanel?.getBoundingClientRect().width ?? rightPanelWidth) + PANEL_RESIZER_WIDTH
+        : 0;
+      const readableMaxWidth = rect.width
+        - rightOccupiedWidth
+        - MAIN_PANE_MIN_WIDTH
+        - PANEL_RESIZER_WIDTH;
+      const maxWidth = Math.max(
+        TOC_MIN_WIDTH,
+        Math.min(TOC_MAX_WIDTH, Math.round(rect.width * 0.4), readableMaxWidth),
+      );
       const nextWidth = clientX - rect.left;
-      setTocWidth(Math.min(maxWidth, Math.max(200, nextWidth)));
+      setTocWidth(Math.min(maxWidth, Math.max(TOC_MIN_WIDTH, nextWidth)));
     };
 
     updateWidth(event.clientX);
@@ -756,7 +787,7 @@ export function AppLayout() {
 
     window.addEventListener('pointermove', handlePointerMove);
     window.addEventListener('pointerup', handlePointerUp);
-  }, []);
+  }, [rightPanelMode, rightPanelWidth]);
 
   // ISS-72：核心修复
   //   1. 必须传 onProgress，让 Tauri Channel 的 Started/Progress/Finished 事件进入状态机
@@ -1342,10 +1373,10 @@ export function AppLayout() {
     startBackgroundUpdateDownload(updateState.source, updateState.update);
   }, [updateState, startBackgroundUpdateDownload]);
   const shouldShowHtmlPresentation = htmlPresentationVisible && file.fileType === 'html' && !isDocx;
-  const tocPinned = tocSessionPinned || settings.tocAlwaysPinned;
   const mainContentClassName = [
     'main-content',
     isDocx ? 'docx-layout' : 'writing-layout',
+    tocPinned && !isDocx ? 'toc-pinned' : '',
     rightPanelMode !== 'none' && !isDocx ? 'right-panel-open' : '',
     rightPanelMode === 'word' && !isDocx ? 'word-preview-open' : '',
     rightPanelMode === 'wechat' && !isDocx ? 'wechat-preview-open' : '',

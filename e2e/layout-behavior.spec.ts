@@ -1,17 +1,24 @@
 import { expect, type Page, test } from '@playwright/test';
 
-async function openEditor(page: Page): Promise<void> {
+async function openWysiwygEditor(page: Page): Promise<void> {
+  await expect(page.locator('.recent-page, .cm-editor, .wysiwyg-editor-pane').first()).toBeVisible();
   if (await page.locator('.recent-page').isVisible()) {
     // ISS-88：TabBar「+」（aria-label「新建文件」）改为新增占位标签，仍停留在欢迎页；
     // 从欢迎页进入编辑器改点欢迎页内的「新建」按钮（.recent-page-secondary）。
     await page.locator('.recent-page-secondary').click();
   }
-  const sourceEditor = page.locator('.cm-editor');
   await expect(page.locator('.cm-editor, .wysiwyg-editor-pane').first()).toBeVisible();
-  if (!(await sourceEditor.isVisible())) {
+  if (await page.locator('.cm-editor').isVisible()) {
     await page.getByRole('button', { name: '源码模式' }).click();
-    await expect(sourceEditor).toBeVisible();
   }
+  await expect(page.locator('.wysiwyg-editor-pane')).toBeVisible();
+}
+
+async function openEditor(page: Page): Promise<void> {
+  await openWysiwygEditor(page);
+  const sourceEditor = page.locator('.cm-editor');
+  await page.getByRole('button', { name: '源码模式' }).click();
+  await expect(sourceEditor).toBeVisible();
   await page.locator('.cm-content').click();
 }
 
@@ -185,6 +192,7 @@ test('Word preview button opens and closes the right paper preview panel', async
 
 test('HTML preview uses the shared right panel and is mutually exclusive with Word preview', async ({ page }) => {
   await page.goto('/');
+  await openWysiwygEditor(page);
 
   const editor = page.locator('.wysiwyg-editor-pane');
   const wordButton = page.getByRole('button', { name: 'Word 预览', exact: true });
@@ -1527,6 +1535,7 @@ test('status bar path style setting falls back to middle when the stored value i
 test('Word preview keeps the main editor at least 480px wide on a standard 1280px viewport', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto('/');
+  await openWysiwygEditor(page);
 
   await page.getByRole('button', { name: 'Word 预览' }).click();
   await expect(page.locator('.word-preview-panel')).toBeVisible();
@@ -1537,9 +1546,76 @@ test('Word preview keeps the main editor at least 480px wide on a standard 1280p
   expect(editorBox!.width).toBeGreaterThanOrEqual(480);
 });
 
+test('pinned outline and a wide Word preview keep the actual Markdown content readable', async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await page.goto('/');
+  await openEditor(page);
+  await page.keyboard.insertText([
+    '# 转录内容',
+    '',
+    '这是一段用于检查三栏布局的长文本。固定大纲与 Word 预览同时打开时，正文仍应保持正常行宽。',
+    '',
+    '## 第二部分',
+    '',
+    '继续添加一些文字，以便测量真正承载 Markdown 正文的编辑表面，而不只是外层容器。',
+  ].join('\n'));
+  await page.getByRole('button', { name: '源码模式' }).click();
+  await expect(liveEditorSurface(page)).toBeVisible();
+
+  await page.getByRole('button', { name: '查看大纲' }).click();
+  await page.getByRole('button', { name: '固定大纲' }).click();
+  await expect(page.locator('.floating-toc.pinned')).toBeVisible();
+
+  const tocHandle = await page.getByRole('separator', { name: '调整大纲宽度' }).boundingBox();
+  expect(tocHandle).not.toBeNull();
+  await page.mouse.move(tocHandle!.x + tocHandle!.width / 2, tocHandle!.y + tocHandle!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(480, tocHandle!.y + tocHandle!.height / 2);
+  await page.mouse.up();
+
+  await page.getByRole('button', { name: 'Word 预览' }).click();
+  await expect(page.locator('.word-preview-panel')).toBeVisible();
+
+  const rightHandle = await page.getByRole('separator', { name: '调整右侧预览宽度' }).boundingBox();
+  expect(rightHandle).not.toBeNull();
+  await page.mouse.move(rightHandle!.x + rightHandle!.width / 2, rightHandle!.y + rightHandle!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(800, rightHandle!.y + rightHandle!.height / 2);
+  await page.mouse.up();
+
+  const metrics = await page.evaluate(() => {
+    const editor = document.querySelector<HTMLElement>('.wysiwyg-editor-pane');
+    const surface = Array.from(document.querySelectorAll<HTMLElement>('.vditor-ir, .vditor-wysiwyg'))
+      .find((element) => getComputedStyle(element).display !== 'none');
+    const panel = document.querySelector<HTMLElement>('.word-preview-panel');
+    const main = document.querySelector<HTMLElement>('.main-content');
+    if (!editor || !surface || !panel || !main) return null;
+
+    const editorRect = editor.getBoundingClientRect();
+    const surfaceRect = surface.getBoundingClientRect();
+    const panelRect = panel.getBoundingClientRect();
+    const mainRect = main.getBoundingClientRect();
+    const surfaceStyle = getComputedStyle(surface);
+    return {
+      editorWidth: editorRect.width,
+      contentWidth: surfaceRect.width
+        - parseFloat(surfaceStyle.paddingLeft)
+        - parseFloat(surfaceStyle.paddingRight),
+      panelRight: panelRect.right,
+      mainRight: mainRect.right,
+    };
+  });
+
+  expect(metrics).not.toBeNull();
+  expect(metrics!.editorWidth).toBeGreaterThanOrEqual(480);
+  expect(metrics!.contentWidth).toBeGreaterThanOrEqual(400);
+  expect(metrics!.panelRight).toBeLessThanOrEqual(metrics!.mainRight + 1);
+});
+
 test('Word preview auto-collapses on a narrow 800x600 viewport so the editor stays readable', async ({ page }) => {
   await page.setViewportSize({ width: 800, height: 600 });
   await page.goto('/');
+  await openWysiwygEditor(page);
 
   const editor = page.locator('.wysiwyg-editor-pane');
 
@@ -1563,6 +1639,7 @@ test('Word preview auto-collapses on a narrow 800x600 viewport so the editor sta
 test('Word preview auto-collapses when the viewport shrinks below 850px while open', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto('/');
+  await openWysiwygEditor(page);
 
   await page.getByRole('button', { name: 'Word 预览' }).click();
   await expect(page.locator('.word-preview-panel')).toBeVisible();
