@@ -34,6 +34,13 @@
 
 ### 缺陷类
 
+#### ✅ ISS-223 固定大纲与导出栏同时打开时 Markdown 正文被挤成窄条（L1 直接修复，2026-09-22 用户截图复现）
+
+- **现象:** 固定大纲与 Word/HTML 导出栏同时打开、任一侧栏调宽后，中间 Markdown 外壳仍占有空间，但真正正文区域会被压成每行数个字的窄条。
+- **根因:** ISS-150 的最小宽度规则写成 `.right-panel-open .writing-layout > ...`，但两个 class 实际同挂在 `.main-content`，规则从未命中；右侧面板 `clamp()` 与拖拽上限也只按整个容器计算，没有扣除固定大纲及其 resizer。旧回归只断言未固定大纲时的外层 `.wysiwyg-editor-pane` 宽度，未测三栏和 Vditor 实际内容宽度。
+- **修复:** 最小宽度选择器改为同元素组合 `.main-content.right-panel-open.writing-layout > ...`；主容器新增 `toc-pinned` 布局态，右栏 CSS clamp 与两侧拖拽上限统一扣除固定大纲、两个 resizer 和 480px 主区保护线。Word / HTML 继续共用同一右栏规则。
+- **验证:** 新增 Playwright 三栏回归先红后绿：修复前主编辑器实测 342px，修复后 480px、Vditor 净正文 412.8px、右栏未越界；浏览器手工拖至大纲 480px + 右栏约 600px 得到同样 DOM 测量。相关 E2E 6/6、AppLayout 单测 16/16、typecheck、lint、build、diff check 通过。
+
 #### ✅ ISS-222 「设为默认 Markdown 应用」osascript JXA 调用必败 -50（L1 直接修复，2026-09-22 用户会话报告；根因两层叠加：SDK 参数顺序 + JXA CFStringRef 桥接，C 探针实证）
 
 - **发现（用户报告）**：设置页「设为默认 Markdown 应用」点击报 `LSSetDefaultRoleHandlerForContentType returned status -50`，从未成功过。

@@ -582,6 +582,13 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
      sure the panel never claims more width than the viewport allows. */
   --main-min-width: 480px;
   --main-resizer-gap: 9px;
+  --toc-occupied-width: 0px;
+}
+
+/* 固定大纲与右侧导出栏会同时参与横向分配。这里使用与大纲自身相同的
+   40vw 上限，确保右栏 clamp 计算扣掉的是大纲真实占用宽度。 */
+.main-content.toc-pinned {
+  --toc-occupied-width: calc(min(var(--toc-width, 260px), 40vw) + var(--main-resizer-gap));
 }
 
 .writing-layout .editor-pane,
@@ -597,11 +604,11 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
    presentation pane that replaces the editor in `html-presentation-layout`)
    must refuse to shrink below the readable threshold. The right panel
    instead takes the flex-shrink burden — see the clamp below. */
-.right-panel-open .writing-layout > .editor-pane,
-.right-panel-open .writing-layout > .wysiwyg-editor-pane,
-.right-panel-open .writing-layout > .markdown-editing-pane,
-.right-panel-open .writing-layout > .html-presentation-pane,
-.right-panel-open .writing-layout > .html-reading-pane {
+.main-content.right-panel-open.writing-layout > .editor-pane,
+.main-content.right-panel-open.writing-layout > .wysiwyg-editor-pane,
+.main-content.right-panel-open.writing-layout > .markdown-editing-pane,
+.main-content.right-panel-open.writing-layout > .html-presentation-pane,
+.main-content.right-panel-open.writing-layout > .html-reading-pane {
   min-width: var(--main-min-width);
 }
 
@@ -613,8 +620,8 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 
 /* Right panel width: keep the user-resized `right-panel-width` when the
    viewport is wide, but clamp it to never squeeze the main editor below
-   `--main-min-width`. We also bound it between the resizer's 360px floor and
-   the user-resized cap so the panel doesn't disappear at narrow viewports. */
+   `--main-min-width`. A pinned outline and its resizer are deducted as well;
+   otherwise widening both side panels can collapse the real editor surface. */
 .right-panel-open .word-preview-panel,
 .right-panel-open .wechat-preview-panel,
 .word-preview-open .word-preview-panel,
@@ -622,7 +629,7 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   flex: 0 0 clamp(
     360px,
     var(--right-panel-width, 460px),
-    calc(100% - var(--main-min-width) - var(--main-resizer-gap))
+    calc(100% - var(--toc-occupied-width) - var(--main-min-width) - var(--main-resizer-gap))
   );
   min-width: 360px;
 }
@@ -4080,5 +4087,4 @@ html[data-theme='dark'] .word-paper-content td {
 .settings-theme-example {
   margin-top: 2px;
 }
-
 
