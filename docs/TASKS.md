@@ -34,12 +34,13 @@
 
 ### 缺陷类
 
-#### ✅ ISS-223 固定大纲与导出栏同时打开时 Markdown 正文被挤成窄条（2026-09-27 本地补修及原生验收通过；待 PR 合并，尚未发布/替换已安装版）
+#### ✅ ISS-223 固定大纲与导出栏同时打开时 Markdown 正文被挤成窄条（PR #175 已合并；尚未发布/替换已安装版）
 
 - **现象:** 固定大纲与 Word/HTML 导出栏同时打开、任一侧栏调宽后，中间 Markdown 外壳仍占有空间，但真正正文区域会被压成每行数个字的窄条。
 - **2026-09-27 实机补查:** Computer Use 启动 09-26 构建的 `.app`（进程路径确认来自仓库 bundle），真实 WKWebView 三栏布局仍有额外正文留白。定位 Vditor `setPadding()` 在内层 `.vditor-reset` 写入固定像素 padding；侧栏开合没有重新计算，外层百分比 padding 与其叠加。旧测试仍只量 `.vditor-ir` 外层净宽，补测真实段落后失败：默认 980px 下中间栏 400px，段落仅 196px。补修为打开导出栏时清除内层横向 padding，统一由外层自适应留白控制。
 - **2026-09-27 验收:** 加强后的 E2E 2/2 通过：默认 980px 真实段落 ≥360px、1600px 三栏拖拽后真实段落 ≥400px；另覆盖 1280→980 缩放及 HTML 切换后段落宽度。typecheck、lint、前端生产构建、macOS `.app` bundle 构建、diff check 通过。Computer Use 重启补修后的 bundle（可执行文件时间 2026-09-27 00:32:29；PID 72195，路径 `src-tauri/target/release/bundle/macos/Folia.app/Contents/MacOS/folia`），打开《260920 从能用到可交付…_corrected.md》长文，在默认 980×680 窗口（Retina 截图 1960×1360）核对：固定大纲和 Word 预览同时可见、正文额外留白消失、纸张完整适配右栏；关闭并重开 Word、原生窗口放大再还原、滚动长段落后布局仍正常。截图保留在本次会话。此次原生布局复验 `PASS`；`/Applications/Folia.app` 尚未替换，正式发布不在本次范围。
 - **2026-09-27 PR 前复核:** `cargo check` 通过（仅既有 dead_code warning）；`npm test -- --run` 76 文件、828 测试通过。布局 E2E 全量运行 57 项，其中 43 通过、14 失败；本次新增的三栏、真实正文宽度、980px 窗口和缩放断言均通过。失败集中在旧用例的欢迎页即有编辑器、旧设置项/文本等预期，以及复杂表格、旧右栏拖拽用例；全量 E2E 未达到绿色，需在 PR 审查中保留此事实，不能以新增用例通过代替全量通过。
+- **2026-09-27 合并记录:** [PR #175](https://github.com/cat-xierluo/Folia/pull/175) 经范围与代码审查后 squash 合入 `main`，合并提交 `55f6d775898c16257270526ca96c922ec55c669f`；GitHub 的 typecheck/lint/test、富媒体 Playwright、cargo test 三项检查全部通过。完整布局 E2E 的本地 14 项失败已在 PR 中披露，尚未由这三项 CI 覆盖。
 - **根因:** ISS-150 的最小宽度规则写成 `.right-panel-open .writing-layout > ...`，但两个 class 实际同挂在 `.main-content`，规则从未命中；右侧面板 `clamp()` 与拖拽上限也只按整个容器计算，没有扣除固定大纲及其 resizer。旧回归只断言未固定大纲时的外层 `.wysiwyg-editor-pane` 宽度，未测三栏和 Vditor 实际内容宽度。
 - **修复:** 最小宽度选择器改为同元素组合 `.main-content.right-panel-open.writing-layout > ...`；主容器新增 `toc-pinned` 布局态，右栏 CSS clamp 与两侧拖拽上限统一扣除固定大纲、两个 resizer 和 480px 主区保护线。Word / HTML 继续共用同一右栏规则。
 - **验证:** 新增 Playwright 三栏回归先红后绿：修复前主编辑器实测 342px，修复后 480px、Vditor 净正文 412.8px、右栏未越界；浏览器手工拖至大纲 480px + 右栏约 600px 得到同样 DOM 测量。相关 E2E 6/6、AppLayout 单测 16/16、typecheck、lint、build、diff check 通过。
