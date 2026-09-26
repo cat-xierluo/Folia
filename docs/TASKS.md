@@ -34,12 +34,17 @@
 
 ### 缺陷类
 
-#### ✅ ISS-223 固定大纲与导出栏同时打开时 Markdown 正文被挤成窄条（L1 直接修复，2026-09-22 用户截图复现）
+#### ✅ ISS-223 固定大纲与导出栏同时打开时 Markdown 正文被挤成窄条（2026-09-27 本地补修及原生验收通过；待 PR 合并，尚未发布/替换已安装版）
 
 - **现象:** 固定大纲与 Word/HTML 导出栏同时打开、任一侧栏调宽后，中间 Markdown 外壳仍占有空间，但真正正文区域会被压成每行数个字的窄条。
+- **2026-09-27 实机补查:** Computer Use 启动 09-26 构建的 `.app`（进程路径确认来自仓库 bundle），真实 WKWebView 三栏布局仍有额外正文留白。定位 Vditor `setPadding()` 在内层 `.vditor-reset` 写入固定像素 padding；侧栏开合没有重新计算，外层百分比 padding 与其叠加。旧测试仍只量 `.vditor-ir` 外层净宽，补测真实段落后失败：默认 980px 下中间栏 400px，段落仅 196px。补修为打开导出栏时清除内层横向 padding，统一由外层自适应留白控制。
+- **2026-09-27 验收:** 加强后的 E2E 2/2 通过：默认 980px 真实段落 ≥360px、1600px 三栏拖拽后真实段落 ≥400px；另覆盖 1280→980 缩放及 HTML 切换后段落宽度。typecheck、lint、前端生产构建、macOS `.app` bundle 构建、diff check 通过。Computer Use 重启补修后的 bundle（可执行文件时间 2026-09-27 00:32:29；PID 72195，路径 `src-tauri/target/release/bundle/macos/Folia.app/Contents/MacOS/folia`），打开《260920 从能用到可交付…_corrected.md》长文，在默认 980×680 窗口（Retina 截图 1960×1360）核对：固定大纲和 Word 预览同时可见、正文额外留白消失、纸张完整适配右栏；关闭并重开 Word、原生窗口放大再还原、滚动长段落后布局仍正常。截图保留在本次会话。此次原生布局复验 `PASS`；`/Applications/Folia.app` 尚未替换，正式发布不在本次范围。
+- **2026-09-27 PR 前复核:** `cargo check` 通过（仅既有 dead_code warning）；`npm test -- --run` 76 文件、828 测试通过。布局 E2E 全量运行 57 项，其中 43 通过、14 失败；本次新增的三栏、真实正文宽度、980px 窗口和缩放断言均通过。失败集中在旧用例的欢迎页即有编辑器、旧设置项/文本等预期，以及复杂表格、旧右栏拖拽用例；全量 E2E 未达到绿色，需在 PR 审查中保留此事实，不能以新增用例通过代替全量通过。
 - **根因:** ISS-150 的最小宽度规则写成 `.right-panel-open .writing-layout > ...`，但两个 class 实际同挂在 `.main-content`，规则从未命中；右侧面板 `clamp()` 与拖拽上限也只按整个容器计算，没有扣除固定大纲及其 resizer。旧回归只断言未固定大纲时的外层 `.wysiwyg-editor-pane` 宽度，未测三栏和 Vditor 实际内容宽度。
 - **修复:** 最小宽度选择器改为同元素组合 `.main-content.right-panel-open.writing-layout > ...`；主容器新增 `toc-pinned` 布局态，右栏 CSS clamp 与两侧拖拽上限统一扣除固定大纲、两个 resizer 和 480px 主区保护线。Word / HTML 继续共用同一右栏规则。
 - **验证:** 新增 Playwright 三栏回归先红后绿：修复前主编辑器实测 342px，修复后 480px、Vditor 净正文 412.8px、右栏未越界；浏览器手工拖至大纲 480px + 右栏约 600px 得到同样 DOM 测量。相关 E2E 6/6、AppLayout 单测 16/16、typecheck、lint、build、diff check 通过。
+- **2026-09-24 首次补修（已被 09-26 方案取代）:** 上轮回归只用 1600px；默认 980px 放不下 260px 大纲 + 480px 正文 + 360px 导出栏 + 18px 手柄。首次尝试在空间不足时把大纲退回浮动轨道，开发版与生产预览 E2E 通过，但用户明确要求固定大纲保持可见，故未采用该布局行为。首次 `.app` bundle 构建成功，DMG 打包脚本失败；安装包未替换。
+- **2026-09-26 用户反馈后调整:** 固定大纲与右栏始终并排。默认 980px 时大纲显示宽度从偏好值 260px 临时压到约 202px，正文约 400px，Vditor 左右内边距各约 12px；关闭右栏恢复大纲偏好宽度。另发现 Word 纸张仍按旧 `rightPanelWidth=460px` 缩放，实际右栏仅 360px，测试实测纸张约 444px 被裁切；现将右栏实际布局宽度传入 Word 预览缩放。新增 980px 回归先红后绿，断言固定大纲、正文净宽、内边距、右栏边界和纸张宽度；开发版 E2E 2/2、生产构建预览 E2E 1/1、AppLayout 单测 16/16、typecheck、lint、build、macOS `.app` bundle 构建通过。已安装应用尚未替换，WKWebView 安装包交互复验仍为 `NOT_VERIFIED`。
 
 #### ✅ ISS-222 「设为默认 Markdown 应用」osascript JXA 调用必败 -50（L1 直接修复，2026-09-22 用户会话报告；根因两层叠加：SDK 参数顺序 + JXA CFStringRef 桥接，C 探针实证）
 
