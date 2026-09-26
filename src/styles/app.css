@@ -577,18 +577,16 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   flex: 1;
   display: flex;
   overflow: hidden;
-  /* Main content must keep a readable line length even when a right panel
-     is open. The variable is reused by the right-panel clamp below to make
-     sure the panel never claims more width than the viewport allows. */
+  /* 两栏优先保留 480px；固定大纲也打开时由 AppLayout 按实际窗口宽度
+     计算可用正文宽度，右栏 clamp 复用同一值。 */
   --main-min-width: 480px;
   --main-resizer-gap: 9px;
   --toc-occupied-width: 0px;
 }
 
-/* 固定大纲与右侧导出栏会同时参与横向分配。这里使用与大纲自身相同的
-   40vw 上限，确保右栏 clamp 计算扣掉的是大纲真实占用宽度。 */
+/* 固定大纲与右侧导出栏共同参与横向分配；扣除的是大纲实际显示宽度。 */
 .main-content.toc-pinned {
-  --toc-occupied-width: calc(min(var(--toc-width, 260px), 40vw) + var(--main-resizer-gap));
+  --toc-occupied-width: calc(var(--toc-layout-width, min(var(--toc-width, 260px), 40vw)) + var(--main-resizer-gap));
 }
 
 .writing-layout .editor-pane,
@@ -643,11 +641,7 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   min-width: 0;
 }
 
-/* Explicit layout class for the HTML presentation view. The presentation
-   iframe needs at least the readable line length; if the FloatingToc is
-   pinned it claims 260px so we set a 480px floor that competes with it via
-   `min-width` — the parent flex container will scroll horizontally if the
-   viewport cannot satisfy both. */
+/* HTML presentation iframe 与其他主区共享可用宽度下限。 */
 .html-presentation-layout .html-presentation-pane {
   min-width: var(--main-min-width);
   flex-shrink: 1;
@@ -739,7 +733,7 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   position: relative;
   top: 0;
   left: 0;
-  width: var(--toc-width, 260px);
+  width: var(--toc-layout-width, var(--toc-width, 260px));
   min-width: 200px;
   max-width: 40vw;
   max-height: 100%;
@@ -1244,6 +1238,24 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   font-family: var(--reading-font-family, var(--font-reading));
   font-size: 15px;
   line-height: 1.72;
+}
+
+/* 三栏并排时把正文两侧留白随中间栏一起收紧。 */
+.main-content.right-panel-open.toc-pinned .wysiwyg-editor-pane .vditor-ir,
+.main-content.right-panel-open.toc-pinned .wysiwyg-editor-pane .vditor-wysiwyg {
+  padding-inline: clamp(10px, 3%, 24px);
+}
+
+.main-content.right-panel-open.toc-pinned .preview-content {
+  padding-inline: clamp(10px, 3%, 24px);
+}
+
+/* Vditor setPadding() 在内层写入像素 padding，侧栏开合并不触发重算。
+   导出栏打开时由外层百分比留白统一控制，避免两层叠加挤压真实正文。
+   !important 用于覆盖 Vditor 初始化及窗口 resize 时写入的 inline style。 */
+.main-content.right-panel-open .wysiwyg-editor-pane .vditor-ir > .vditor-reset,
+.main-content.right-panel-open .wysiwyg-editor-pane .vditor-wysiwyg > .vditor-reset {
+  padding-inline: 0 !important;
 }
 
 .wysiwyg-editor-pane .vditor-reset {
@@ -4087,4 +4099,3 @@ html[data-theme='dark'] .word-paper-content td {
 .settings-theme-example {
   margin-top: 2px;
 }
-

@@ -1589,7 +1589,8 @@ test('pinned outline and a wide Word preview keep the actual Markdown content re
       .find((element) => getComputedStyle(element).display !== 'none');
     const panel = document.querySelector<HTMLElement>('.word-preview-panel');
     const main = document.querySelector<HTMLElement>('.main-content');
-    if (!editor || !surface || !panel || !main) return null;
+    const paragraph = surface?.querySelector<HTMLElement>('.vditor-reset > p');
+    if (!editor || !surface || !panel || !main || !paragraph) return null;
 
     const editorRect = editor.getBoundingClientRect();
     const surfaceRect = surface.getBoundingClientRect();
@@ -1598,6 +1599,7 @@ test('pinned outline and a wide Word preview keep the actual Markdown content re
     const surfaceStyle = getComputedStyle(surface);
     return {
       editorWidth: editorRect.width,
+      paragraphWidth: paragraph.getBoundingClientRect().width,
       contentWidth: surfaceRect.width
         - parseFloat(surfaceStyle.paddingLeft)
         - parseFloat(surfaceStyle.paddingRight),
@@ -1609,7 +1611,80 @@ test('pinned outline and a wide Word preview keep the actual Markdown content re
   expect(metrics).not.toBeNull();
   expect(metrics!.editorWidth).toBeGreaterThanOrEqual(480);
   expect(metrics!.contentWidth).toBeGreaterThanOrEqual(400);
+  expect(metrics!.paragraphWidth).toBeGreaterThanOrEqual(400);
   expect(metrics!.panelRight).toBeLessThanOrEqual(metrics!.mainRight + 1);
+});
+
+test('default 980px window keeps both side panels and compresses Markdown gutters', async ({ page }) => {
+  await page.setViewportSize({ width: 980, height: 680 });
+  await page.goto('/');
+  await openEditor(page);
+  await page.keyboard.insertText('# 转录内容\n\n这是一段用于检查默认窗口下三栏排版的正文。');
+  await page.getByRole('button', { name: '源码模式' }).click();
+  await expect(liveEditorSurface(page)).toBeVisible();
+
+  await page.getByRole('button', { name: '查看大纲' }).click();
+  await page.getByRole('button', { name: '固定大纲' }).click();
+  await expect(page.locator('.floating-toc.pinned')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Word 预览' }).click();
+  await expect(page.locator('.word-preview-panel')).toBeVisible();
+  await expect(page.locator('.floating-toc.pinned')).toBeVisible();
+  await expect(page.locator('.word-rendered-paper').first()).toBeVisible();
+
+  const metrics = await page.evaluate(() => {
+    const main = document.querySelector<HTMLElement>('.main-content');
+    const editor = document.querySelector<HTMLElement>('.wysiwyg-editor-pane');
+    const toc = document.querySelector<HTMLElement>('.floating-toc.pinned');
+    const surface = document.querySelector<HTMLElement>('.vditor-ir');
+    const panel = document.querySelector<HTMLElement>('.word-preview-panel');
+    const paper = document.querySelector<HTMLElement>('.word-rendered-paper');
+    const paragraph = surface?.querySelector<HTMLElement>('.vditor-reset > p');
+    if (!main || !editor || !toc || !surface || !panel || !paper || !paragraph) return null;
+    const style = getComputedStyle(surface);
+    return {
+      editorWidth: editor.getBoundingClientRect().width,
+      tocWidth: toc.getBoundingClientRect().width,
+      paddingLeft: parseFloat(style.paddingLeft),
+      paddingRight: parseFloat(style.paddingRight),
+      contentWidth: surface.getBoundingClientRect().width
+        - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
+      paragraphWidth: paragraph.getBoundingClientRect().width,
+      panelRight: panel.getBoundingClientRect().right,
+      panelWidth: panel.getBoundingClientRect().width,
+      paperWidth: paper.getBoundingClientRect().width,
+      mainRight: main.getBoundingClientRect().right,
+    };
+  });
+  expect(metrics).not.toBeNull();
+  expect(metrics!.tocWidth).toBeGreaterThanOrEqual(200);
+  expect(metrics!.editorWidth).toBeGreaterThanOrEqual(400);
+  expect(metrics!.paddingLeft).toBeLessThanOrEqual(16);
+  expect(metrics!.paddingRight).toBeLessThanOrEqual(16);
+  expect(metrics!.contentWidth).toBeGreaterThanOrEqual(360);
+  expect(metrics!.paragraphWidth).toBeGreaterThanOrEqual(360);
+  expect(metrics!.panelRight).toBeLessThanOrEqual(metrics!.mainRight + 1);
+  expect(metrics!.paperWidth).toBeLessThanOrEqual(metrics!.panelWidth - 16 + 1);
+
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect(page.locator('.floating-toc.pinned')).toBeVisible();
+  await expect(page.locator('.word-preview-panel')).toBeVisible();
+  await page.setViewportSize({ width: 980, height: 680 });
+  await expect(page.locator('.floating-toc.pinned')).toBeVisible();
+  const paragraph = page.locator('.vditor-ir .vditor-reset > p').first();
+  await expect.poll(async () => (await paragraph.boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(360);
+
+  await page.getByRole('button', { name: 'Word 预览' }).click();
+  await expect(page.locator('.word-preview-panel')).toHaveCount(0);
+  await expect(page.locator('.floating-toc.pinned')).toBeVisible();
+
+  await page.getByRole('button', { name: 'HTML 预览' }).click();
+  await expect(page.locator('.wechat-preview-panel')).toBeVisible();
+  await expect(page.locator('.floating-toc.pinned')).toBeVisible();
+  await expect.poll(async () => (await paragraph.boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(360);
+  await page.getByRole('button', { name: 'HTML 预览' }).click();
+  await expect(page.locator('.wechat-preview-panel')).toHaveCount(0);
+  await expect(page.locator('.floating-toc.pinned')).toBeVisible();
 });
 
 test('Word preview auto-collapses on a narrow 800x600 viewport so the editor stays readable', async ({ page }) => {

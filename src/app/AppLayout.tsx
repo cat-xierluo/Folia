@@ -64,6 +64,7 @@ const RIGHT_PANEL_MAX_WIDTH = 760;
 const PANEL_RESIZER_WIDTH = 9;
 const TOC_MIN_WIDTH = 200;
 const TOC_MAX_WIDTH = 480;
+const COMPACT_MAIN_MIN_WIDTH = 400;
 
 const EditorPane = lazy(() =>
   import('../components/EditorPane').then((module) => ({ default: module.EditorPane })),
@@ -330,6 +331,35 @@ export function AppLayout() {
   // 固定大纲左侧栏宽度（默认与 CSS .floating-toc.pinned 的 260px 一致）。
   const [tocWidth, setTocWidth] = useState(260);
   const tocPinned = tocSessionPinned || settings.tocAlwaysPinned;
+  const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
+  useEffect(() => {
+    const handleResize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+  // 固定大纲和导出栏在默认 980px 窗口内仍保持并排。先压缩大纲显示宽度
+  // （不改用户拖拽记忆值），再按剩余空间收紧正文宽度和内边距。
+  const tocLayoutPinned = tocPinned && toc.length > 0;
+  const preferredTocWidth = Math.min(tocWidth, viewportWidth * 0.4);
+  const tocLayoutWidth = tocLayoutPinned && rightPanelMode !== 'none'
+    ? Math.max(TOC_MIN_WIDTH, Math.min(
+      preferredTocWidth,
+      viewportWidth - COMPACT_MAIN_MIN_WIDTH - RIGHT_PANEL_MIN_WIDTH - 2 * PANEL_RESIZER_WIDTH,
+    ))
+    : preferredTocWidth;
+  const mainPaneMinWidth = tocLayoutPinned && rightPanelMode !== 'none'
+    ? Math.min(
+      MAIN_PANE_MIN_WIDTH,
+      viewportWidth - tocLayoutWidth - RIGHT_PANEL_MIN_WIDTH - 2 * PANEL_RESIZER_WIDTH,
+    )
+    : MAIN_PANE_MIN_WIDTH;
+  const rightPanelLayoutWidth = rightPanelMode === 'none'
+    ? rightPanelWidth
+    : Math.max(RIGHT_PANEL_MIN_WIDTH, Math.min(
+      rightPanelWidth,
+      viewportWidth - (tocLayoutPinned ? tocLayoutWidth + PANEL_RESIZER_WIDTH : 0)
+        - mainPaneMinWidth - PANEL_RESIZER_WIDTH,
+    ));
   // 正在拖拽的面板：'toc' 固定大纲 / 'right' 右侧预览 / null 未拖拽。
   // main-content 的 is-resizing 统一管 user-select，两个手柄的 dragging 高亮各自判定，
   // 不能共用布尔——否则右侧预览与固定大纲同时存在时，拖一个另一个也进高亮态。
@@ -713,12 +743,12 @@ export function AppLayout() {
 
     const updateWidth = (clientX: number) => {
       const rect = container.getBoundingClientRect();
-      const tocOccupiedWidth = tocPinned
-        ? Math.min(tocWidth, Math.round(rect.width * 0.4)) + PANEL_RESIZER_WIDTH
+      const tocOccupiedWidth = tocLayoutPinned
+        ? tocLayoutWidth + PANEL_RESIZER_WIDTH
         : 0;
       const readableMaxWidth = rect.width
         - tocOccupiedWidth
-        - MAIN_PANE_MIN_WIDTH
+        - mainPaneMinWidth
         - PANEL_RESIZER_WIDTH;
       const maxWidth = Math.max(
         RIGHT_PANEL_MIN_WIDTH,
@@ -742,7 +772,7 @@ export function AppLayout() {
 
     window.addEventListener('pointermove', handlePointerMove);
     window.addEventListener('pointerup', handlePointerUp);
-  }, [tocPinned, tocWidth]);
+  }, [tocLayoutPinned, tocLayoutWidth, mainPaneMinWidth]);
 
   // 固定大纲左栏宽度拖拽：大纲贴 main-content 左缘，向右拖增宽。
   // 上下限与 .floating-toc.pinned 的 min-width/max-width 对齐（200px / 40%）。
@@ -763,7 +793,7 @@ export function AppLayout() {
         : 0;
       const readableMaxWidth = rect.width
         - rightOccupiedWidth
-        - MAIN_PANE_MIN_WIDTH
+        - mainPaneMinWidth
         - PANEL_RESIZER_WIDTH;
       const maxWidth = Math.max(
         TOC_MIN_WIDTH,
@@ -787,7 +817,7 @@ export function AppLayout() {
 
     window.addEventListener('pointermove', handlePointerMove);
     window.addEventListener('pointerup', handlePointerUp);
-  }, [rightPanelMode, rightPanelWidth]);
+  }, [rightPanelMode, rightPanelWidth, mainPaneMinWidth]);
 
   // ISS-72：核心修复
   //   1. 必须传 onProgress，让 Tauri Channel 的 Started/Progress/Finished 事件进入状态机
@@ -1376,7 +1406,7 @@ export function AppLayout() {
   const mainContentClassName = [
     'main-content',
     isDocx ? 'docx-layout' : 'writing-layout',
-    tocPinned && !isDocx ? 'toc-pinned' : '',
+    tocLayoutPinned && !isDocx ? 'toc-pinned' : '',
     rightPanelMode !== 'none' && !isDocx ? 'right-panel-open' : '',
     rightPanelMode === 'word' && !isDocx ? 'word-preview-open' : '',
     rightPanelMode === 'wechat' && !isDocx ? 'wechat-preview-open' : '',
@@ -1512,7 +1542,7 @@ export function AppLayout() {
     <Suspense fallback={<aside className="word-preview-panel" aria-label={t('wordPreviewAria')} />}>
       <WordPaperPreviewPane
         source={file.content}
-        previewWidth={rightPanelWidth}
+        previewWidth={rightPanelLayoutWidth}
         canExport={Boolean(file.path)}
         onExportWord={handleExportWord}
         onClose={() => updateActiveTabMeta({ rightPanelMode: 'none' })}
@@ -1596,8 +1626,10 @@ export function AppLayout() {
         className={mainContentClassName}
         style={
           {
-            '--right-panel-width': `${rightPanelWidth}px`,
+            '--right-panel-width': `${rightPanelLayoutWidth}px`,
             '--toc-width': `${tocWidth}px`,
+            '--toc-layout-width': `${tocLayoutWidth}px`,
+            '--main-min-width': `${mainPaneMinWidth}px`,
           } as React.CSSProperties
         }
       >
@@ -1615,13 +1647,13 @@ export function AppLayout() {
             <FloatingToc
               items={toc}
               activeIndex={activeTocIndex}
-              pinned={tocPinned}
+              pinned={tocLayoutPinned}
               alwaysPinned={settings.tocAlwaysPinned}
               onPinnedChange={handleTocPinnedChange}
               onAlwaysPinnedChange={handleTocAlwaysPinnedChange}
               onNavigate={handleTocNavigate}
             />
-            {tocPinned && (
+            {tocLayoutPinned && (
               <div
                 className={`toc-resizer ${resizingPanel === 'toc' ? 'dragging' : ''}`}
                 role="separator"
@@ -1629,7 +1661,7 @@ export function AppLayout() {
                 aria-orientation="vertical"
                 aria-valuemin={200}
                 aria-valuemax={480}
-                aria-valuenow={Math.round(tocWidth)}
+                aria-valuenow={Math.round(tocLayoutWidth)}
                 title={t('tocResizeTitle')}
                 onPointerDown={handleTocResizerPointerDown}
                 onDoubleClick={() => setTocWidth(260)}
@@ -1646,7 +1678,7 @@ export function AppLayout() {
             aria-orientation="vertical"
             aria-valuemin={360}
             aria-valuemax={760}
-            aria-valuenow={Math.round(rightPanelWidth)}
+            aria-valuenow={Math.round(rightPanelLayoutWidth)}
             title={t('rightPanelResizeTitle')}
             onPointerDown={handleRightPanelResizerPointerDown}
             onDoubleClick={() => setRightPanelWidth(460)}

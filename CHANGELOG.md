@@ -6,7 +6,7 @@ All notable changes of this project will be documented in this file.
 
 ### Fixed
 
-- **固定大纲与 Word/HTML 导出栏同时打开时，Markdown 正文不再被挤成窄条（ISS-223）**：旧 ISS-150 的 480px 主编辑区保护规则因 CSS 选择器把同一元素上的两个 class 写成父子关系而从未命中；右栏宽度上限也没有扣除固定大纲。现在三栏统一参与宽度分配，左右拖拽都会为主编辑器保留至少 480px，Vditor 的百分比留白继续按剩余编辑区计算。新增真实拖拽回归，覆盖大纲 480px、导出栏调宽后的编辑器外宽、净正文宽度和右栏边界。
+- **修复固定大纲与 Word/HTML 导出栏同开时的窄列排版（ISS-223）**：修正未命中的主区宽度选择器，三栏按实际窗口分配宽度。默认 980px 窗口仍保留固定大纲和右栏，必要时缩窄大纲显示宽度与 Markdown 正文两侧留白，并清除编辑器内层未随侧栏缩小的重复留白；Word 纸张按右栏实际宽度缩放，避免被裁切。窗口变宽或关闭右栏后，大纲恢复用户设置的宽度。
 
 - **修复「设为默认 Markdown 应用」点击必报 `status -50`（ISS-222）**：`LSSetDefaultRoleHandlerForContentType` 的真实参数顺序是 `(contentType, role, bundleID)`——role 第 2 参、bundle ID 第 3 参（与 `LSSetDefaultHandlerForURLScheme` 恰好相反），且 JXA 调 C 函数时不会把 JS 字符串自动桥接为 `CFStringRef` 参数；此前两处皆错，LaunchServices 始终返回 -50（paramErr）。现按 SDK 顺序传参并用 `CFStringCreateWithCString` 显式构造 CFStringRef，本机实测返回 0、默认 handler 成功注册为 Folia（`.md` / `.markdown` 均覆盖）。新增参数顺序回归断言，cargo test 73/73。
 
