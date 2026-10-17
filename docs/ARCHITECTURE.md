@@ -460,6 +460,10 @@ failure 时自动上传 `test-results/` 与 `playwright-report/` 为 7 天 artif
 3. **数学公式**：DOCX 文本 fallback；预览 KaTeX 矢量。
 4. **超长段落 / 超高表格行**：预览可能被纸张 `overflow:hidden` 截断（分页只拆顶层节点）；DOCX 不受影响。**ISS-182 后续**会加告警。
 
+### 主窗口边界持久化（Issue #178）
+
+`src-tauri/src/window_state.rs` 在 setup 恢复主窗口，Moved/Resized/ScaleFactorChanged 维护内存中的普通边界，关闭请求与退出事件保存到应用配置目录的 `window-state.json`。只记录位置和尺寸，不包含文档信息；tear-off 窗口不写入。恢复时验证版本、有限数值和尺寸范围；按保存原点所在（或最近）工作区的缩放构造统一物理矩形，再比较各屏重叠、限制窗口及最小尺寸。保存使用 PID/进程内序号与 create_new 独占创建同目录临时文件，完整写入并关闭句柄后 rename，避免并发进程共享临时文件。异常记录回退默认边界，I/O 失败仅记录日志。
+
 ## 本地诊断与异步回填（Issue #179）
 
 `diagnosticLog` 在单窗口内存中保存最多 500 条白名单事件及 128 项匿名标签映射。读取/保存请求采用递增编号，通过 WeakMap 关联文件对象与完成事件；不读取正文或路径作为日志字段。`useSession` 记录标签激活、回填候选和实际文件对象变化，编辑器记录 source/ready/input 事件。清除只影响诊断，窗口退出即释放；`diagnosticExportService` 仅按用户操作导出 Markdown 内 JSON，桌面端复用 `write_opened_document`，浏览器端下载 Blob。
