@@ -30,7 +30,7 @@
 
 ## 待处理
 
-### 窗口状态记忆（Issue #178，待 draft PR 审查）
+### ✅ ISS-225 窗口状态记忆（Issue #178 / PR #181 已合并 8af3709；尚未发布/替换已安装版）
 
 - **需求与范围：** 由 dot 代用户整理；主窗口正常模式的大小和位置退出后持久化，下次启动恢复。仅改 Tauri 窗口层，tear-off 窗口不覆盖主窗口记录，不改文档会话或设置系统。
 - **方案：** 内容尺寸使用逻辑像素、屏幕位置使用原生物理坐标；恢复时选择当前工作区并钳制全部边界。遵循 DESIGN 的 800×600 最小尺寸，工作区不足时临时降低；首次启动或无效记录回退 980×680 并适配工作区。全屏、最大化和最小化保留最近普通边界，下次以普通窗口启动。
@@ -40,13 +40,14 @@
 - **本轮验证：** Rust 全量 90/90（新增 5 项几何、2 项并发回归及 1 个子进程测试入口），cargo check 通过，既有窗口单测继续通过。本轮未启动任何 Folia GUI；下述 GUI 矩阵绑定初版 head `0d5dec6`，不能视作返修 head 的实机证明。Chromium CI 不含 layout-behavior，上一轮 43 通过、14 既有失败的限制继续保留。
 - **macOS 真机（初版 head `0d5dec6`）：** 独立标识 `com.folia.window-state-test` 的 `Folia Window Test.app`（本地 debug bundle，嵌入生产前端）通过 Computer Use 验证。首次 980×680（Retina 截图 1960×1360），拖动/缩放至 870×620，退出保存物理位置 `(460,320)`；重启截图 1740×1240，后续普通关闭再次回读位置不变。原生最大化及全屏退出保留这组普通边界，重启恢复普通窗口；继续拖小被限制在 800×600（截图 1600×1200），红色关闭按钮和最小化后 Cmd+Q 均正常保存。注入 `(99999,99999)` 离屏 fixture，启动回到 `(588,340)`、980×680；损坏 JSON 启动回退 980×680。同步最新 main 后重建测试包并再次验证启动、默认边界恢复与正常退出。测试未打开文档、未替换已安装版、未修改安全设置。
 - **未验边界：** 物理拔插显示器、系统分辨率/DPI 实时调整、小于 800×600 的物理工作区、Windows/Linux 原生窗口、tear-off 窗口交互；前三者的恢复几何由单测覆盖。debug bundle 并非正式发布包。测试日志保留在本地，截图在验收会话；不将私有桌面元数据上传公开仓库。
-- **状态：** 代码与本地验证已完成，保持 draft 评审阶段，CI 状态以关联 PR 的最终 head checks 为准；未合并、未部署、未发布。
+- **状态：** 2026-10-17 [PR #181](https://github.com/cat-xierluo/Folia/pull/181) 经 maintainer 独立验收后 squash 合入 `main`，合并提交 `8af3709efd9ec2aace5948b00632884def011897`，Issue #178 随合并关闭；决策记录 DEC-146。尚未发布/替换已安装版。
+- **2026-10-17 合并记录（maintainer 独立复核）：** head `c4817b96`（merge-base 即当时 main tip `c8b7a5c`，零漂移）；代码审查无阻塞缺陷；CI 三项全绿；cargo test 90/90 独立复跑。**真机补验关闭作者的 NOT_VERIFIED「移动后位置恢复」**：隔离 worktree 以独立 identifier `com.folia.window-state-accept` 构建（`cargo build --features tauri/custom-protocol`，嵌入复制的 dist），System Events 按 pid 锚定设 position `{340,260}` / size `{900,650}`，Cmd+Q 后 `window-state.json` 为 `{x:680,y:520,width:900,height:650}`（x/y 物理 = 2× 逻辑，符合设计），重启读回 `340,260,900,650` 逐项一致；「仅移动」至 `{120,180}` 同样持久化（JSON `x:240,y:360`）并恢复；三次 Cmd+Q 均正常保存，配置目录无残留 `.tmp`。作者初版拖动不生效系 GUI 输入问题而非功能缺陷。物理多屏/混合 DPI、拔插显示器、Windows/Linux 仍为 NOT_VERIFIED。
 
 > **2026-08-27 代码审计新增**：全仓排查（Rust 命令 / capabilities / CSP / 服务层 / React hooks / 构建配置 / 依赖版本）产出以下条目。两个高危缺陷的修复 PR（ISS-196 #133、ISS-197 #135）曾悬置两日未合并（TASKS 此前「已直接 PR 修复」表述误导，2026-08-29 已补流程：分支追平 main + 对抗式 review 后合并）。
 
 ### 缺陷类
 
-#### ⏳ Issue #179 新打开 Markdown 偶发显示前一标签内容及本地诊断日志（独立候选，未合并/发布）
+#### ✅ ISS-226 Issue #179 新打开 Markdown 偶发显示前一标签内容及本地诊断日志（PR #182 已合并 77b2b07；尚未发布；Issue #179 保持开放待日志取证）
 
 - **用户现象:** 新打开 Markdown 偶发显示前一个标签内容，关闭该标签重开恢复；稳定复现方式、当时版本与文件环境未知，不能将下列合成回归认定为该次报告的唯一根因。
 - **范围:** 基于 main `e8f99e6da304f56bd032237085f36484a551b82c`，仅合成文档；不读取用户真实文档、不改窗口记忆（Issue #178）、不动现有应用进程。
@@ -58,6 +59,7 @@
 - **浏览器验证:** 受审查执行可在专用端口运行隔离 Chromium。最终复验曾在 Lute 未就绪切到 B 时显示 A，核依赖源码确认旧实例销毁后仍可能晚初始化写宿主；现按标签身份隔离 React 挂载节点。延迟 Lute、快速切换、完整会话提交后的输入归属、日志下载脱敏与清除已连续 6/6 通过；即时切走尚未提交的输入不在该输入验收范围。最终布局与滚动恢复共 60 项：46 通过、14 失败，其中滚动恢复 3/3；14 个布局失败逐项与 main 独立基线（43 通过、14 失败）完全相同，未扩大范围修改旧布局用例。
 - **CI 接续:** PR #182 独立复审核可既有 P2/RAF 修复后，将 `e2e/tab-content-diagnostics.spec.ts` 纳入现有 Chromium job；保留全部原测试选择、依赖、runner 和权限。新提交的服务端 CI 结果以 PR checks 为准，不以本地 6/6 替代。
 - **NOT_VERIFIED:** 原生保存对话框、WKWebView/ETV 未运行；未操作现有应用进程或读取真实用户文档。原用户偶发环境仍待诊断日志取证，Issue #179 保持开放。
+- **2026-10-17 合并记录（maintainer 独立复核）：** [PR #182](https://github.com/cat-xierluo/Folia/pull/182) 经独立验收后 squash 合入 `main`，合并提交 `77b2b07ceb707e832f617c740557cc6bafe6bc47`。合并前由 maintainer 在候选分支上合入 #181 后的 main 并解决 CHANGELOG / ARCHITECTURE 冲突（merge 提交 `fbece25`：`### Added` 保留 #178/#179 两条，ARCHITECTURE 两节共存并保持层级），独立决策文件 `docs/diagnostics-decision.md` 迁入 DECISIONS.md 作 **DEC-147** 并删除（`b9ba894`）；最终 head `b9ba894` CI 三项全绿（含新 e2e 纳入 Chromium job）。复核要点：文件对象快照 CAS / 回调绑标签 / RAF 写入代次 / `key={activeTabId}` 按标签隔离宿主针对真实竞态类别，且原 init effect 本就按 filePath 重建、key 重挂代价仅限同路径标签；导出复用 `write_opened_document` 已核 Rust 校验（绝对路径 + 扩展白名单 + denied roots）允许新路径 `.md`。
 
 #### ✅ ISS-224 「设为默认 Markdown 应用」JXA bundle id 转义漏掉反斜杠——含 `\` 的 identifier 会让脚本抛 SyntaxError 整体失效（外部贡献 PR #177 已合并；尚未发布；2026-10-13 贡献者复核 ISS-222 时发现）
 
