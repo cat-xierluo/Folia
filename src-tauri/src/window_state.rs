@@ -1,5 +1,13 @@
 //! 主窗口边界记忆；不持久化全屏/最大化/最小化及文档信息。
-use std::{fs, path::Path, sync::Mutex};
+use std::{
+  fs,
+  io::Write,
+  path::Path,
+  sync::{
+    atomic::{AtomicU64, Ordering},
+    Mutex,
+  },
+};
 use tauri::{LogicalSize, Manager, PhysicalPosition, Window};
 
 const MIN_WIDTH: f64 = 800.0;
@@ -54,12 +62,31 @@ fn fit(
     })
     .collect();
   let mut area = *areas.first()?;
+  // 保存格式只有逻辑尺寸和物理位置；按原点确定参考缩放，构造唯一
+  // 物理矩形。不能为每个候选显示器重算不同的旧窗口占地面积。
+  let distance = |a: &WorkArea| {
+    let dx = bounds.x - bounds.x.clamp(a.x, a.x + a.width);
+    let dy = bounds.y - bounds.y.clamp(a.y, a.y + a.height);
+    dx * dx + dy * dy
+  };
+  let reference = areas
+    .iter()
+    .copied()
+    .find(|a| {
+      bounds.x >= a.x && bounds.x < a.x + a.width && bounds.y >= a.y && bounds.y < a.y + a.height
+    })
+    .or_else(|| {
+      areas
+        .iter()
+        .copied()
+        .min_by(|a, b| distance(a).total_cmp(&distance(b)))
+    })?;
+  let right = bounds.x + (bounds.width + chrome.0) * reference.scale;
+  let bottom = bounds.y + (bounds.height + chrome.1) * reference.scale;
   let mut best_overlap = 0.0;
   for candidate in &areas {
-    let w = (bounds.x + bounds.width * candidate.scale).min(candidate.x + candidate.width)
-      - bounds.x.max(candidate.x);
-    let h = (bounds.y + bounds.height * candidate.scale).min(candidate.y + candidate.height)
-      - bounds.y.max(candidate.y);
+    let w = right.min(candidate.x + candidate.width) - bounds.x.max(candidate.x);
+    let h = bottom.min(candidate.y + candidate.height) - bounds.y.max(candidate.y);
     let overlap = w.max(0.0) * h.max(0.0);
     if overlap > best_overlap {
       area = candidate;
@@ -125,10 +152,35 @@ fn store(path: &Path, bounds: Bounds) -> std::io::Result<()> {
   let bytes = serde_json::to_vec(&serde_json::json!({
     "version": 1, "x": bounds.x, "y": bounds.y, "width": bounds.width, "height": bounds.height,
   }))?;
-  // 同目录原子替换；失败时保留上次有效记录。
-  let temporary = path.with_extension("json.tmp");
-  fs::write(&temporary, bytes)?;
-  fs::rename(temporary, path)
+  // 每次保存独占创建同目录临时文件，避免其他进程截断或通过旧句柄
+  // 修改已 rename 的正式文件。create_new 也防止 PID 复用时覆盖残留文件。
+  static NEXT_TEMPORARY: AtomicU64 = AtomicU64::new(0);
+  let (temporary, mut file) = loop {
+    let mut name = path.file_name().unwrap_or_default().to_os_string();
+    name.push(format!(
+      ".{}.{}.tmp",
+      std::process::id(),
+      NEXT_TEMPORARY.fetch_add(1, Ordering::Relaxed)
+    ));
+    let temporary = path.with_file_name(name);
+    match fs::OpenOptions::new()
+      .write(true)
+      .create_new(true)
+      .open(&temporary)
+    {
+      Ok(file) => break (temporary, file),
+      Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+      Err(error) => return Err(error),
+    }
+  };
+  let written = file.write_all(&bytes);
+  drop(file);
+  let result = written.and_then(|_| fs::rename(&temporary, path));
+  if result.is_err() {
+    // 只清理本次独占创建的临时文件；保留上次有效状态。
+    let _ = fs::remove_file(&temporary);
+  }
+  result
 }
 
 #[derive(Default)]
@@ -265,6 +317,122 @@ mod tests {
       bounds()
     );
   }
+  fn mixed_dpi_screens(offset: f64) -> [WorkArea; 2] {
+    [
+      WorkArea {
+        x: offset,
+        y: 0.0,
+        width: 1920.0,
+        height: 1080.0,
+        scale: 1.0,
+      },
+      WorkArea {
+        x: offset + 1920.0,
+        y: 0.0,
+        width: 3840.0,
+        height: 2160.0,
+        scale: 2.0,
+      },
+    ]
+  }
+
+  #[test]
+  fn mixed_dpi_preserves_window_wholly_on_one_x_screen() {
+    let saved = Bounds {
+      x: 1100.0,
+      y: 100.0,
+      width: 800.0,
+      height: 600.0,
+    };
+    let screens = mixed_dpi_screens(0.0);
+    assert_eq!(fit(saved, &screens, (0.0, 0.0)).unwrap().0, saved);
+    assert_eq!(
+      fit(saved, &[screens[1], screens[0]], (0.0, 0.0)).unwrap().0,
+      saved
+    );
+  }
+
+  #[test]
+  fn mixed_dpi_preserves_negative_coordinate_screen() {
+    let saved = Bounds {
+      x: -820.0,
+      y: 100.0,
+      width: 800.0,
+      height: 600.0,
+    };
+    assert_eq!(
+      fit(saved, &mixed_dpi_screens(-1920.0), (0.0, 0.0))
+        .unwrap()
+        .0,
+      saved
+    );
+  }
+
+  #[test]
+  fn mixed_dpi_straddling_window_keeps_majority_on_one_x_screen() {
+    // 统一物理矩形：左侧 520px，右侧 280px。
+    let saved = Bounds {
+      x: 1400.0,
+      y: 100.0,
+      width: 800.0,
+      height: 600.0,
+    };
+    let expected = Bounds { x: 1120.0, ..saved };
+    assert_eq!(
+      fit(saved, &mixed_dpi_screens(0.0), (0.0, 0.0)).unwrap().0,
+      expected
+    );
+  }
+
+  #[test]
+  fn mixed_dpi_straddling_window_moves_to_majority_on_two_x_screen() {
+    // 统一物理矩形：左侧 220px，右侧 580px。
+    let saved = Bounds {
+      x: -220.0,
+      y: 100.0,
+      width: 800.0,
+      height: 600.0,
+    };
+    let expected = Bounds { x: 0.0, ..saved };
+    let screens = mixed_dpi_screens(-1920.0);
+    assert_eq!(fit(saved, &screens, (0.0, 0.0)).unwrap().0, expected);
+    assert_eq!(
+      fit(saved, &[screens[1], screens[0]], (0.0, 0.0)).unwrap().0,
+      expected
+    );
+  }
+
+  #[test]
+  fn mixed_dpi_straddling_two_x_origin_moves_to_one_x_majority() {
+    // 左屏按 2× 构造统一矩形：左侧 600px，右侧 1000px。
+    let screens = [
+      WorkArea {
+        x: -3840.0,
+        y: 0.0,
+        width: 3840.0,
+        height: 2160.0,
+        scale: 2.0,
+      },
+      WorkArea {
+        x: 0.0,
+        y: 0.0,
+        width: 1920.0,
+        height: 1080.0,
+        scale: 1.0,
+      },
+    ];
+    let saved = Bounds {
+      x: -600.0,
+      y: 100.0,
+      width: 800.0,
+      height: 600.0,
+    };
+    assert_eq!(
+      fit(saved, &screens, (0.0, 0.0)).unwrap().0,
+      Bounds { x: 0.0, ..saved }
+    );
+  }
+
   #[test]
   fn disconnected_monitor_recenters_on_primary() {
     let restored = fit(
@@ -346,6 +514,123 @@ mod tests {
   fn no_monitor_is_nonfatal() {
     assert!(fit(bounds(), &[], (0.0, 0.0)).is_none());
   }
+  fn wait_for_marker(path: &Path) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while !path.exists() {
+      assert!(
+        std::time::Instant::now() < deadline,
+        "child process barrier timed out"
+      );
+      std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+  }
+
+  fn store_child(directory: &Path, mode: &str) -> std::process::Child {
+    std::process::Command::new(std::env::current_exe().unwrap())
+      .args([
+        "--exact",
+        "window_state::tests::concurrent_store_child",
+        "--nocapture",
+      ])
+      .env("FOLIA_WINDOW_STATE_TEST_DIRECTORY", directory)
+      .env("FOLIA_WINDOW_STATE_TEST_MODE", mode)
+      .stdout(std::process::Stdio::piped())
+      .stderr(std::process::Stdio::piped())
+      .spawn()
+      .unwrap()
+  }
+
+  // 由父测试启动的真实子进程；不使用全局 set_var，避免污染并行测试。
+  #[test]
+  fn concurrent_store_child() {
+    let Some(directory) = std::env::var_os("FOLIA_WINDOW_STATE_TEST_DIRECTORY") else {
+      return;
+    };
+    let directory = std::path::PathBuf::from(directory);
+    let path = directory.join("window-state.json");
+    let mode = std::env::var("FOLIA_WINDOW_STATE_TEST_MODE").unwrap();
+    if mode == "paused-legacy-writer" {
+      use std::io::Write;
+      // 旧 store 的 fs::write = 打开/截断 → write_all → close。
+      // 在打开后暂停，保证父进程的真实 store 已 rename 后才继续写。
+      let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(path.with_extension("json.tmp"))
+        .unwrap();
+      fs::write(directory.join("opened"), b"ready").unwrap();
+      wait_for_marker(&directory.join("continue"));
+      file.write_all(b"{synthetic-write-after-rename}").unwrap();
+    } else {
+      let x = mode.parse::<f64>().unwrap();
+      wait_for_marker(&directory.join("start"));
+      for _ in 0..40 {
+        store(&path, Bounds { x, ..bounds() }).unwrap();
+      }
+    }
+  }
+
+  #[test]
+  fn concurrent_store_does_not_share_an_open_temporary_inode() {
+    let directory =
+      std::env::temp_dir().join(format!("folia-window-legacy-race-{}", std::process::id()));
+    fs::create_dir_all(&directory).unwrap();
+    let path = directory.join("window-state.json");
+    let child = store_child(&directory, "paused-legacy-writer");
+    wait_for_marker(&directory.join("opened"));
+    let written = store(&path, bounds());
+    fs::write(directory.join("continue"), b"continue").unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(
+      output.status.success(),
+      "child failed: {}",
+      String::from_utf8_lossy(&output.stderr)
+    );
+    written.unwrap();
+    let actual = load(&path);
+    fs::remove_dir_all(&directory).unwrap();
+    assert_eq!(
+      actual,
+      Some(bounds()),
+      "a competing pre-opened temporary file must not modify the renamed state"
+    );
+  }
+
+  #[test]
+  fn concurrent_store_processes_publish_complete_records() {
+    let directory =
+      std::env::temp_dir().join(format!("folia-window-store-race-{}", std::process::id()));
+    fs::create_dir_all(&directory).unwrap();
+    let children = [
+      store_child(&directory, "200"),
+      store_child(&directory, "400"),
+    ];
+    fs::write(directory.join("start"), b"start").unwrap();
+    let outputs: Vec<_> = children
+      .into_iter()
+      .map(|child| child.wait_with_output().unwrap())
+      .collect();
+    let actual = load(&directory.join("window-state.json"));
+    fs::remove_dir_all(&directory).unwrap();
+    for output in outputs {
+      assert!(
+        output.status.success(),
+        "concurrent store failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+      );
+    }
+    let actual = actual.expect("one complete record must survive concurrent saves");
+    assert!(
+      actual == bounds()
+        || actual
+          == Bounds {
+            x: 400.0,
+            ..bounds()
+          }
+    );
+  }
+
   #[test]
   fn invalid_and_corrupted_state_fall_back() {
     let dir = std::env::temp_dir().join(format!("folia-window-state-{}", std::process::id()));

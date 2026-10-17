@@ -462,4 +462,4 @@ failure 时自动上传 `test-results/` 与 `playwright-report/` 为 7 天 artif
 
 ### 主窗口边界持久化（Issue #178）
 
-`src-tauri/src/window_state.rs` 在 setup 恢复主窗口，Moved/Resized/ScaleFactorChanged 维护内存中的普通边界，关闭请求与退出事件保存到应用配置目录的 `window-state.json`。只记录位置和尺寸，不包含文档信息；tear-off 窗口不写入。恢复时验证版本、有限数值和尺寸范围，按当前显示器工作区限制窗口及最小尺寸；异常记录回退默认边界，I/O 失败仅记录日志。
+`src-tauri/src/window_state.rs` 在 setup 恢复主窗口，Moved/Resized/ScaleFactorChanged 维护内存中的普通边界，关闭请求与退出事件保存到应用配置目录的 `window-state.json`。只记录位置和尺寸，不包含文档信息；tear-off 窗口不写入。恢复时验证版本、有限数值和尺寸范围；按保存原点所在（或最近）工作区的缩放构造统一物理矩形，再比较各屏重叠、限制窗口及最小尺寸。保存使用 PID/进程内序号与 create_new 独占创建同目录临时文件，完整写入并关闭句柄后 rename，避免并发进程共享临时文件。异常记录回退默认边界，I/O 失败仅记录日志。
