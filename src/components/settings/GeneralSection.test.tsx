@@ -6,6 +6,9 @@ import { GeneralSection } from './GeneralSection';
 
 // 只 mock defaultAppService（invoke 已在 service 层测过）；保留真实 i18n /
 // settingsService 以验证按钮文案与结果消息的真实集成。
+const exportMock = vi.hoisted(() => ({ exportDiagnosticLog: vi.fn() }));
+vi.mock('../../services/diagnosticExportService', () => exportMock);
+
 const defaultAppMock = vi.hoisted(() => ({
   setAsDefaultMarkdownApp: vi.fn(),
 }));
@@ -29,11 +32,25 @@ describe('GeneralSection set-as-default-Markdown-app (ISS-192)', () => {
     document.body.append(host);
     root = createRoot(host);
     defaultAppMock.setAsDefaultMarkdownApp.mockReset();
+    exportMock.exportDiagnosticLog.mockReset();
   });
 
   afterEach(() => {
     act(() => root.unmount());
     host.remove();
+  });
+
+  it('exports diagnostics on explicit click and shows a redacted failure message', async () => {
+    exportMock.exportDiagnosticLog.mockResolvedValue('error');
+    await act(async () => { root.render(<GeneralSection />); });
+    expect(exportMock.exportDiagnosticLog).not.toHaveBeenCalled();
+    const button = Array.from(host.querySelectorAll('button')).find((node) => node.textContent === '导出诊断日志')!;
+    await act(async () => { button.click(); });
+    expect(exportMock.exportDiagnosticLog).toHaveBeenCalledTimes(1);
+    expect(host.textContent).toContain('诊断日志导出失败，请重试');
+    const clear = Array.from(host.querySelectorAll('button')).find((node) => node.textContent === '清除日志')!;
+    await act(async () => { clear.click(); });
+    expect(host.textContent).toContain('诊断日志已清除');
   });
 
   it('renders the set-as-default button', async () => {

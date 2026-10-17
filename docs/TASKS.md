@@ -34,6 +34,16 @@
 
 ### 缺陷类
 
+#### ⏳ Issue #179 新打开 Markdown 偶发显示前一标签内容及本地诊断日志（独立候选，未合并/发布）
+
+- **用户现象:** 新打开 Markdown 偶发显示前一个标签内容，关闭该标签重开恢复；稳定复现方式、当时版本与文件环境未知，不能将下列合成回归认定为该次报告的唯一根因。
+- **范围:** 基于 main `e8f99e6da304f56bd032237085f36484a551b82c`，仅合成文档；不读取用户真实文档、不改窗口记忆（Issue #178）、不动现有应用进程。
+- **可验证问题:** 保存 A（手动/自动/另存为）期间打开 B，旧代码用 `updateActiveFile` 将 A 的晚返回写入 B；真实 session/reducer 集成回归 3/3 先红后绿。回填现在绑定原 tab ID 和原 file 对象快照，拒绝覆盖后续编辑或复活已关闭标签。编辑器回调绑定 tab，Vditor 按文档身份隔离初始化，旧实例 input 和过期 source RAF 取消回填。
+- **诊断:** 设置 → 通用可导出/清除；窗口内存最近 500 条、匿名映射最多 128 项；仅事件枚举、相对时间、递增序号和匿名编号。记录读取请求/完成/失败、标签激活、候选回填/实际文件更新及编辑器更新。手动导出 `.md` 内 JSON，复用已有受控文本写入；无远程上传、新权限或持久化日志。导出取消不写入、失败不收录原始错误；有白名单脱敏/容量/受控乱序读取测试。
+- **验收状态:** 全量 Vitest 79 文件、842/842 通过（新增 14 项）；typecheck、lint、生产构建及 diff check 通过。旧 Vditor input 取消守卫移除后回归变红，恢复后通过；离线 `RUSTC_WRAPPER= cargo check --offline` 通过（1 项既有 dead_code warning）。默认 sccache 受沙箱拒绝，停用该构建缓存后检查成功。
+- **2026-10-17 恢复检查点:** 原候选 `b5c5294837d2d8a92ef5e8aae4574498b32ee361` 与干净工作树完整保留；连接器只读确认此前没有远端分支/PR。同步 main `c8b7a5c0a34c8aff7c5275e43c9953148f2e7bef`，只对账 CHANGELOG/TASKS 的相邻新增条目；上游 JXA 修复保持原样，未混入窗口记忆。同步后全量单测仍 842/842，lint、生产构建（含 typecheck）、离线 cargo check 通过。
+- **NOT_VERIFIED:** `npm run test:e2e -- e2e/layout-behavior.spec.ts` 与新增受控 Lute 延迟/快速切换/手动下载 E2E 均被沙箱本地监听 `EPERM` 拦在启动前，未执行交互断言。未提升权限；未运行 `tauri dev`/ETV、原生保存对话框与真实 WKWebView。原用户偶发环境仍待诊断日志取证，Issue 保持开放。
+
 #### ✅ ISS-224 「设为默认 Markdown 应用」JXA bundle id 转义漏掉反斜杠——含 `\` 的 identifier 会让脚本抛 SyntaxError 整体失效（外部贡献 PR #177 已合并；尚未发布；2026-10-13 贡献者复核 ISS-222 时发现）
 
 - **发现（ISS-222 修复的遗留缺陷）**：用户报告 0.8.1 安装版点击「设为默认 Markdown 应用」报 `LSSetDefaultRoleHandlerForContentType returned status -50`，排查确认根因即 ISS-222（该修复 commit 891255b 于 2026-09-22 合入 main，0.8.1 发布于 09-19，不含修复，属预期）。复核该修复时发现新缺陷：`build_set_default_markdown_jxa` 的转义 `bundle_id.replace('\'', "\\'")` 只替换单引号、不转义反斜杠，且函数注释声称「不含单引号 / 反斜杠等会破坏 JXA 字面量的字符」与实现不符。

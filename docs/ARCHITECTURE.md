@@ -459,3 +459,9 @@ failure 时自动上传 `test-results/` 与 `playwright-report/` 为 7 天 artif
 2. **Mermaid / SVG / 图片**：DOCX 用文本/栅格 fallback；预览用浏览器原生渲染 + 诊断占位。两者形态不同是有意的。
 3. **数学公式**：DOCX 文本 fallback；预览 KaTeX 矢量。
 4. **超长段落 / 超高表格行**：预览可能被纸张 `overflow:hidden` 截断（分页只拆顶层节点）；DOCX 不受影响。**ISS-182 后续**会加告警。
+
+## 本地诊断与异步回填（Issue #179）
+
+`diagnosticLog` 在单窗口内存中保存最多 500 条白名单事件及 128 项匿名标签映射。读取/保存请求采用递增编号，通过 WeakMap 关联文件对象与完成事件；不读取正文或路径作为日志字段。`useSession` 记录标签激活、回填候选和实际文件对象变化，编辑器记录 source/ready/input 事件。清除只影响诊断，窗口退出即释放；`diagnosticExportService` 仅按用户操作导出 Markdown 内 JSON，桌面端复用 `write_opened_document`，浏览器端下载 Blob。
+
+保存/重读回填 action `replaceFileIfUnchanged` 同时匹配原标签 ID 与原 `OpenedFile` 对象，晚返回不能更新当前其他标签，也不能覆盖已编辑、已关闭或被后续完成替换的快照。Vditor 初始化按文档 ID 隔离；旧实例输入和旧 source 帧回调被丢弃。此机制保护会话回填，不保证已经发出的并发磁盘写入顺序。

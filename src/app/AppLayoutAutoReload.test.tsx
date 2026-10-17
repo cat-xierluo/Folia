@@ -67,6 +67,8 @@ type SessionApi = {
   closeToRight: (id: string) => void;
   closeAll: () => void;
   markPathInvalid: (id: string) => void;
+  updateFile: (id: string, updater: (file: OpenedFile) => OpenedFile) => void;
+  replaceFileIfUnchanged: (id: string, expected: OpenedFile, file: OpenedFile) => void;
   updateActiveFile: ReturnType<typeof vi.fn>;
   updateActiveTabMeta: ReturnType<typeof vi.fn>;
   recordRecentFile: (file: OpenedFile) => void;
@@ -123,6 +125,13 @@ function buildSessionApi(): SessionApi {
     markPathInvalid: (id: string) => {
       const idx = sessionState.tabs.findIndex((t) => t.id === id);
       if (idx >= 0) sessionState.tabs[idx] = { ...sessionState.tabs[idx], pathInvalid: true };
+    },
+    updateFile: (id, updater) => { if (sessionState.activeTabId === id) updateActiveFile(updater); },
+    replaceFileIfUnchanged: (id, expected, file) => {
+      const idx = sessionState.tabs.findIndex((tab) => tab.id === id);
+      if (idx < 0 || sessionState.tabs[idx].file !== expected) return;
+      sessionState.updateCount++;
+      sessionState.tabs[idx] = { ...sessionState.tabs[idx], file };
     },
     updateActiveFile,
     updateActiveTabMeta: vi.fn(),

@@ -175,6 +175,27 @@ describe('WysiwygEditorPane 内联 SVG 显示 + sanitize (ISS-168 编辑器部�
     vi.clearAllMocks();
   });
 
+  it('#179: same-path tabs rebuild by document identity and cancelled editor callbacks cannot emit', async () => {
+    const root = createRoot(host);
+    const onChange = vi.fn();
+    const render = (documentId: string) => renderWithProvider(<WysiwygEditorPane source="# Same synthetic source" filePath="" documentId={documentId} onChange={onChange} />);
+    await act(async () => { root.render(render('A')); await flushMicrotasks(); });
+    const old = vditorCalls[0];
+    await act(async () => { old.options.after?.(); await flushMicrotasks(); });
+    await act(async () => { root.render(render('B')); await flushMicrotasks(); });
+    expect(vditorCalls).toHaveLength(2);
+    await act(async () => { vditorCalls[1].options.after?.(); await new Promise((resolve) => window.setTimeout(resolve, 40)); });
+    // 保持旧 mock DOM 聚焦且新实例已交互，确保只有 cancelled 守卫能拒绝旧 input。
+    const pre = old.host.querySelector<HTMLElement>('.vditor-ir pre')!;
+    pre.setAttribute('tabindex', '0');
+    pre.focus();
+    old.host.dispatchEvent(new Event('beforeinput', { bubbles: true }));
+    onChange.mockClear();
+    await act(async () => { old.options.input?.('# Late A'); old.options.after?.(); });
+    expect(onChange).not.toHaveBeenCalled();
+    act(() => root.unmount());
+  });
+
   describe('WysiwygEditorPane 集成', () => {
     it('初始化带 svg 的 source 后，after() 回调让 IR DOM 含 svg（保存 round-trip svg 不丢）', async () => {
       let root: Root | null = null;

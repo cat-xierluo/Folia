@@ -3,6 +3,9 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppLayout } from './AppLayout';
+import { loadSession, saveSession } from '../services/sessionStore';
+import { updateSettings } from '../services/settingsService';
+import type { OpenedFile } from '../types/document';
 import type { Update } from '@tauri-apps/plugin-updater';
 import type { UpdateCheckResult, UpdateProgress } from '../services/updateService';
 
@@ -135,6 +138,36 @@ describe('AppLayout update flow', () => {
     vi.useRealTimers();
     vi.clearAllMocks();
   });
+
+  // #179：真实 useSession/reducer；只延迟 IO，验证晚返回不会替换新打开的标签。
+  for (const mode of ['manual', 'autosave', 'saveAs'] as const) {
+    it(`#179 ${mode}: saving A then opening B keeps both documents bound to their tabs`, async () => {
+      localStorage.clear();
+      updateSettings({ autoSave: mode === 'autosave', reopenLastFile: false });
+      const a: OpenedFile = { path: '/synthetic/a.md', name: 'a.md', content: '# A draft', lastSavedContent: '# A', dirty: true, fileType: 'markdown' };
+      const b: OpenedFile = { path: '/synthetic/b.md', name: 'b.md', content: '# B', lastSavedContent: '# B', dirty: false, fileType: 'markdown' };
+      saveSession({ tabs: [{ id: 'A', file: a, editorMode: 'source', rightPanelMode: 'none', draftPersisted: true, isPlaceholder: false }], activeTabId: 'A', recentFiles: [] });
+      let finishSave!: (file: OpenedFile) => void;
+      const delayedSave = vi.fn(() => new Promise<OpenedFile>((resolve) => { finishSave = resolve; }));
+      fileServiceMock.saveFile.mockImplementation(delayedSave);
+      fileServiceMock.saveFileAs.mockImplementation(delayedSave);
+      fileServiceMock.openFile.mockResolvedValue(b);
+      await act(async () => { root.render(<AppLayout />); });
+      await act(async () => {
+        if (mode === 'autosave') vi.advanceTimersByTime(800);
+        else window.dispatchEvent(new KeyboardEvent('keydown', { key: 's', metaKey: true, shiftKey: mode === 'saveAs', bubbles: true }));
+      });
+      expect(delayedSave).toHaveBeenCalledTimes(1);
+      await act(async () => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', metaKey: true, bubbles: true })); });
+      await act(async () => { finishSave({ ...a, path: mode === 'saveAs' ? '/synthetic/a-copy.md' : a.path, dirty: false, lastSavedContent: a.content }); });
+      await act(async () => { vi.advanceTimersByTime(801); });
+      const persisted = loadSession();
+      const active = persisted.tabs.find((tab) => tab.id === persisted.activeTabId)!;
+      expect(active.file.path).toBe(b.path);
+      expect(active.file.content).toBe('# B');
+      expect(persisted.tabs.find((tab) => tab.id === 'A')!.file.dirty).toBe(false);
+    });
+  }
 
   it('downloads detected updates silently before showing the restart button', async () => {
     let resolveDownload: () => void = () => {};

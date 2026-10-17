@@ -54,6 +54,8 @@ export type SessionAction =
   | { type: 'closeOthers'; id: string }
   | { type: 'closeToRight'; id: string }
   | { type: 'closeAll' }
+  | { type: 'updateFile'; id: string; updater: (f: OpenedFile) => OpenedFile }
+  | { type: 'replaceFileIfUnchanged'; id: string; expected: OpenedFile; file: OpenedFile }
   | { type: 'updateActiveFile'; updater: (f: OpenedFile) => OpenedFile }
   | { type: 'updateActiveTabMeta'; meta: Partial<Pick<Tab, 'editorMode' | 'rightPanelMode'>> }
   | { type: 'recordRecentFile'; file: OpenedFile }
@@ -139,6 +141,16 @@ export function sessionReducer(state: SessionState, action: SessionAction): Sess
       }
       const placeholder = makeTabFromFile(createEmptyFile(), true);
       return { ...state, tabs: [placeholder], activeTabId: placeholder.id };
+    }
+    case 'updateFile': {
+      if (state.activeTabId !== action.id) return state;
+      return { ...state, tabs: state.tabs.map((tab) => tab.id === action.id ? { ...tab, file: action.updater(tab.file) } : tab) };
+    }
+    case 'replaceFileIfUnchanged': {
+      // IO 结果只能回填启动时的标签/快照；关闭、编辑或更早的完成已改变快照时丢弃。
+      const target = state.tabs.find((tab) => tab.id === action.id);
+      if (!target || target.file !== action.expected) return state;
+      return { ...state, tabs: state.tabs.map((tab) => tab.id === action.id ? { ...tab, file: action.file } : tab) };
     }
     case 'updateActiveFile':
       return {

@@ -1,3 +1,4 @@
+import { diagnosticLog } from '../services/diagnosticLog';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MediaPlaceholder } from './MediaPlaceholder';
 import { attachCodeBlockCopy, type CodeCopyLabels } from '../services/codeBlockCopyService';
@@ -27,6 +28,7 @@ import { applyWithSuppression } from '../services/dirtySuppression';
 
 type WysiwygEditorPaneProps = {
   source: string;
+  documentId?: string;
   onChange: (value: string) => void;
   onViewComplexTable?: (block: HtmlTableBlock, anchor: HTMLElement) => void;
   filePath?: string;
@@ -654,7 +656,7 @@ function rerenderAsyncCodeBlocks(editor: import('vditor').default): void {
   }
 }
 
-export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePath }: WysiwygEditorPaneProps) {
+export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePath, documentId }: WysiwygEditorPaneProps) {
   const settings = useSettings();
   const t = useCallback(
     (key: Parameters<typeof translate>[1]) => translate(settings.locale, key),
@@ -1196,6 +1198,7 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
             }
           });
 
+          diagnosticLog.record('editor-ready', { tabId: documentId, mode: 'wysiwyg' });
           setPhase('ready');
 
           // 如果在 editor 就绪前有 [source] effect 尝试更新内容但被跳过，
@@ -1255,7 +1258,7 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
           }
         },
         input(value) {
-          if (initializingRef.current || applyingExternalValue.current || sanitizingRef.current) return;
+          if (cancelled || initializingRef.current || applyingExternalValue.current || sanitizingRef.current) return;
           if (!editorHasFocus(editor)) return;
           if (!userInteractedRef.current) return;
 
@@ -1407,6 +1410,7 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
       const irEl = getIrElement(editor);
       disconnectHeadingGuardRef.current = irEl ? setupHeadingExpandGuard(irEl) : null;
     }).catch((error) => {
+      diagnosticLog.record('editor-error', { tabId: documentId, mode: 'wysiwyg' });
       console.error('[Folia] Vditor 初始化失败:', error);
       initializingRef.current = false;
       if (!cancelled) {
@@ -1437,13 +1441,16 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
       lastComplexBlocksRef.current = [];
       pendingSourceRef.current = null;
       initializingRef.current = false;
+      applyingExternalValue.current = false;
+      sanitizingRef.current = false;
       userInteractedRef.current = false;
       // ISS-94：Vditor 按 filePath 变化销毁重建，重置 focus 标记让新空白文件可再次 auto-focus
       focusedOnceRef.current = false;
     };
-  }, [filePath, lockComplexTables, emitEditorValueIfChanged, onChange, retryKey, handleImageFiles, handleTextPaste]);
+  }, [documentId, filePath, lockComplexTables, emitEditorValueIfChanged, onChange, retryKey, handleImageFiles, handleTextPaste]);
 
   useEffect(() => {
+    diagnosticLog.record('editor-source', { tabId: documentId, mode: 'wysiwyg' });
     const editor = editorRef.current;
     if (!editor) {
       // Editor 尚未就绪，缓存内容等 after() 回调中补偿应用
@@ -1467,7 +1474,7 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
       // 注意：本 effect 不持有 Vditor init effect 的 `cancelled` 闭包，改用
       // editorRef.current === editor 判定——Vditor init effect cleanup 会把
       // editorRef.current 置 null，相当于跨 effect 的 cancelled 信号。
-      if (editorRef.current !== editor) return;
+      if (editorRef.current !== editor || latestSource.current !== source) return;
       applyingExternalValue.current = false;
       // ISS-168 编辑器部分：外部 setValue 完成后 sanitize IR DOM。
       sanitizingRef.current = true;
@@ -1490,7 +1497,7 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
         console.error('[Folia] [source] useEffect sanitize 失败:', error);
       }
     });
-  }, [source, filePath, lockComplexTables, emitEditorValueIfChanged]);
+  }, [source, documentId, filePath, lockComplexTables, emitEditorValueIfChanged]);
 
   /* Hover layer: when the user hovers a complex table, inject a small "view
      original" button at the top-right corner. The button is removed on
