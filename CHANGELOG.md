@@ -10,6 +10,8 @@ All notable changes of this project will be documented in this file.
 
 ### Fixed
 
+- **修复「设为默认 Markdown 应用」JXA 脚本对含反斜杠 bundle id 的转义缺陷（ISS-224）**：ISS-222 修复时对 bundle id 的转义只替换单引号、不转义反斜杠——若 identifier（取自 tauri.conf.json）含反斜杠（如 `com.folia\`），末尾反斜杠会把 JXA 字符串字面量的收尾引号转义掉，生成的脚本直接抛 SyntaxError，「设为默认」整体失效。现按「先反斜杠、后单引号」的顺序转义（顺序反了会把 `\'` 二次转义成语义错误的形态）。防御性修复：当前 identifier `com.folia.reader` 不含特殊字符，实际不触发；真机 osascript 实证旧转义在含 `\` 的 id 下必抛 SyntaxError、新转义全部通过。新增 2 个回归测试（反斜杠单独出现 / 反斜杠+单引号组合），变异验证：回退转义后恰好这 2 个测试变红。cargo test 75/75。
+
 - **修复固定大纲与 Word/HTML 导出栏同开时的窄列排版（ISS-223）**：修正未命中的主区宽度选择器，三栏按实际窗口分配宽度。默认 980px 窗口仍保留固定大纲和右栏，必要时缩窄大纲显示宽度与 Markdown 正文两侧留白，并清除编辑器内层未随侧栏缩小的重复留白；Word 纸张按右栏实际宽度缩放，避免被裁切。窗口变宽或关闭右栏后，大纲恢复用户设置的宽度。
 
 - **修复「设为默认 Markdown 应用」点击必报 `status -50`（ISS-222）**：`LSSetDefaultRoleHandlerForContentType` 的真实参数顺序是 `(contentType, role, bundleID)`——role 第 2 参、bundle ID 第 3 参（与 `LSSetDefaultHandlerForURLScheme` 恰好相反），且 JXA 调 C 函数时不会把 JS 字符串自动桥接为 `CFStringRef` 参数；此前两处皆错，LaunchServices 始终返回 -50（paramErr）。现按 SDK 顺序传参并用 `CFStringCreateWithCString` 显式构造 CFStringRef，本机实测返回 0、默认 handler 成功注册为 Folia（`.md` / `.markdown` 均覆盖）。新增参数顺序回归断言，cargo test 73/73。

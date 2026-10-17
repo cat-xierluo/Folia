@@ -1175,9 +1175,13 @@ const MARKDOWN_UTI: &str = "net.daringfireball.markdown";
 #[cfg(target_os = "macos")]
 fn build_set_default_markdown_jxa(bundle_id: &str) -> String {
   // bundle_id 来自 tauri.conf.json 的 identifier，是受控字符串（反向域名格式
-  // com.folia.reader），不含单引号 / 反斜杠等会破坏 JXA 字面量的字符。
+  // com.folia.reader），正常不含会破坏 JXA 字面量的字符。
   // 仍做一次转义以防 identifier 被改成含特殊字符的值。
-  let escaped_bundle = bundle_id.replace('\'', "\\'");
+  //
+  // 顺序要紧：必须先转义反斜杠、再转义单引号。若反过来（只替单引号），
+  // 反斜杠会原样进入 JXA 源码，形如 `'com.folia\'`——末尾反斜杠把收尾引号
+  // 转义掉，字符串字面量不再闭合，JXA 直接抛 SyntaxError，脚本整体失效。
+  let escaped_bundle = bundle_id.replace('\\', "\\\\").replace('\'', "\\'");
   format!(
     "ObjC.import('CoreServices');\n\
      const uti = $.CFStringCreateWithCString($.NULL, '{uti}', $.kCFStringEncodingUTF8);\n\
@@ -2706,6 +2710,38 @@ mod tests {
     assert!(
       script.contains("'com.example\\'app'"),
       "single quote in bundle id must be escaped, got: {script}"
+    );
+  }
+
+  /// bundle id 含反斜杠时同样必须被转义——且要先于单引号转义。
+  ///
+  /// 若只转义单引号，形如 `com.folia\` 的 id 会让末尾反斜杠吃掉收尾引号，
+  /// 生成的 JXA 字符串字面量不再闭合，osascript 抛 SyntaxError（真机实证），
+  /// 「设为默认」按钮整体失效。本测试锁定反斜杠也被转义。
+  #[cfg(target_os = "macos")]
+  #[test]
+  fn build_set_default_markdown_jxa_escapes_backslash_in_bundle_id() {
+    let script = build_set_default_markdown_jxa("com.folia\\");
+    assert!(
+      script.contains("'com.folia\\\\'"),
+      "backslash in bundle id must be escaped, got: {script}"
+    );
+    // 未转义的反斜杠会紧跟收尾引号，破坏字面量闭合——确保这种形态不存在。
+    assert!(
+      !script.contains("com.folia\\'"),
+      "unescaped backslash before closing quote must not appear, got: {script}"
+    );
+  }
+
+  /// 反斜杠 + 单引号组合：转义顺序错误会把 `\'` 二次转义成语义错误的形态。
+  /// 正确顺序（先反斜杠后单引号）下 `\'` 应产出 `\\\'`。
+  #[cfg(target_os = "macos")]
+  #[test]
+  fn build_set_default_markdown_jxa_escapes_backslash_then_quote() {
+    let script = build_set_default_markdown_jxa("com.fol\\'ia");
+    assert!(
+      script.contains("'com.fol\\\\\\'ia'"),
+      "backslash+quote must both be escaped in order, got: {script}"
     );
   }
 
