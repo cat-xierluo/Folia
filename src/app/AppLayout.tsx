@@ -2,7 +2,7 @@ import { diagnosticLog } from '../services/diagnosticLog';
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { createEmptyFile, type TocItem } from '../types/document';
+import { createEmptyFile, type TocItem, type OpenedFile } from '../types/document';
 import {
   bindRenderedTocHeadings,
   extractMarkdownToc,
@@ -1146,6 +1146,7 @@ export function AppLayout() {
   // 串行：reload 进行中（pendingReloadRef）忽略新事件，避免并发读盘。
   const [externalChangeBlocked, setExternalChangeBlocked] = useState(false);
   const externalChangeBlockedRef = useRef(false);
+  const [manualReloadResult, setManualReloadResult] = useState<{ tabId: string; file: OpenedFile } | null>(null);
   const debounceRef = useRef<number | null>(null);
   const pendingReloadRef = useRef(false);
 
@@ -1281,12 +1282,24 @@ export function AppLayout() {
       // MAJOR-2：await 期间用户切走了 tab → 丢弃，避免写错 tab。
       if (activeTabIdRef.current !== targetTabId) return;
       replaceFileIfUnchanged(targetTabId, cur.file, opened);
-      externalChangeBlockedRef.current = false;
-      setExternalChangeBlocked(false);
+      // reducer 可能因读取期间的新编辑拒绝回填；提交后再确认，不在 IO 返回时清提示。
+      setManualReloadResult({ tabId: targetTabId, file: opened });
     } catch (error) {
       console.warn('[Folia] 外部修改重载失败:', error);
     }
   }, [activeTabId, session.tabs, settings.defaultEncoding, replaceFileIfUnchanged]);
+
+  useEffect(() => {
+    if (!manualReloadResult) return;
+    if (activeTabId === manualReloadResult.tabId && activeTab?.file === manualReloadResult.file) {
+      externalChangeBlockedRef.current = false;
+      // 仅确认已经提交的 reducer 回填，沿既有提示状态同步模式。
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setExternalChangeBlocked(false);
+    }
+    // 本次确认结束后释放结果，不保留已被拒绝的文档快照。
+    setManualReloadResult(null);
+  }, [manualReloadResult, activeTabId, activeTab?.file]);
 
   const handleExternalChangeDismiss = useCallback(() => {
     externalChangeBlockedRef.current = false;
@@ -1539,7 +1552,7 @@ export function AppLayout() {
     </Suspense>
   ) : (
     <Suspense fallback={<div className="wysiwyg-editor-pane lazy-pane"><span>所见即所得编辑器加载中</span></div>}>
-      <WysiwygEditorPane documentId={activeTabId} source={file.content} onChange={handleContentChange} onViewComplexTable={handleHtmlTableView} filePath={file.path} />
+      <WysiwygEditorPane key={activeTabId} documentId={activeTabId} source={file.content} onChange={handleContentChange} onViewComplexTable={handleHtmlTableView} filePath={file.path} />
     </Suspense>
   );
 

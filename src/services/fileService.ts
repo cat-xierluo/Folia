@@ -181,16 +181,20 @@ async function readPath(path: string, encoding: DefaultEncoding): Promise<Opened
 }
 
 export async function saveFile(file: OpenedFile): Promise<OpenedFile> {
-  return traceSave(() => saveExistingFile(file));
+  return traceSave(file, () => saveExistingFile(file));
 }
 
-async function traceSave(save: () => Promise<OpenedFile>): Promise<OpenedFile> {
+async function traceSave(original: OpenedFile, save: () => Promise<OpenedFile>): Promise<OpenedFile> {
   const request = diagnosticLog.nextRequest();
   diagnosticLog.record('save-start', { request });
   try {
     const file = await save();
-    bindDiagnosticRequest(file, request);
-    diagnosticLog.record('save-complete', { request });
+    // saveFileAs 取消时按既有契约返回原对象；取消不冒充完成，也不改写原读取关联。
+    if (file === original) diagnosticLog.record('save-cancelled', { request });
+    else {
+      bindDiagnosticRequest(file, request);
+      diagnosticLog.record('save-complete', { request });
+    }
     return file;
   } catch (error) {
     diagnosticLog.record('save-error', { request });
@@ -199,7 +203,7 @@ async function traceSave(save: () => Promise<OpenedFile>): Promise<OpenedFile> {
 }
 
 async function saveExistingFile(file: OpenedFile): Promise<OpenedFile> {
-  if (!file.path) return saveFileAs(file);
+  if (!file.path) return saveFileAsImpl(file);
 
   try {
     if (isTauriRuntime()) {
@@ -218,7 +222,7 @@ async function saveExistingFile(file: OpenedFile): Promise<OpenedFile> {
 }
 
 export async function saveFileAs(file: OpenedFile): Promise<OpenedFile> {
-  return traceSave(() => saveFileAsImpl(file));
+  return traceSave(file, () => saveFileAsImpl(file));
 }
 
 async function saveFileAsImpl(file: OpenedFile): Promise<OpenedFile> {

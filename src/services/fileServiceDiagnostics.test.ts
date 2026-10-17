@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { openPath } from './fileService';
+import { createEmptyFile } from '../types/document';
+import { openPath, saveFile, saveFileAs } from './fileService';
 import { diagnosticLog, diagnosticRequestFor } from './diagnosticLog';
-const mocks = vi.hoisted(() => ({ readTextFile: vi.fn() }));
-vi.mock('@tauri-apps/plugin-fs', () => ({ readFile: vi.fn(), readTextFile: mocks.readTextFile, writeTextFile: vi.fn() }));
-vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn(), save: vi.fn(), message: vi.fn() }));
-afterEach(() => { diagnosticLog.clear(); mocks.readTextFile.mockReset(); });
+const mocks = vi.hoisted(() => ({ readTextFile: vi.fn(), save: vi.fn(), writeTextFile: vi.fn() }));
+vi.mock('@tauri-apps/plugin-fs', () => ({ readFile: vi.fn(), readTextFile: mocks.readTextFile, writeTextFile: mocks.writeTextFile }));
+vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn(), save: mocks.save, message: vi.fn() }));
+afterEach(() => { diagnosticLog.clear(); mocks.readTextFile.mockReset(); mocks.save.mockReset(); mocks.writeTextFile.mockReset(); });
 
 describe('#179 controlled read diagnostics', () => {
   it('correlates late A / fast B completions without storing names, paths, content or raw errors', async () => {
@@ -23,4 +24,28 @@ describe('#179 controlled read diagnostics', () => {
     expect(diagnosticLog.snapshot().events.at(-1)?.event).toBe('read-error');
     expect(JSON.stringify(diagnosticLog.snapshot())).not.toMatch(/synthetic|private-|Confidential|credentials|SECRET/);
   });
+});
+
+for (const save of [saveFileAs, saveFile]) {
+  it(`#179 review: ${save.name} cancellation has one cancelled request and no completed write`, async () => {
+    const file = createEmptyFile();
+    mocks.save.mockResolvedValue(null);
+    expect(await save(file)).toBe(file);
+    expect(mocks.writeTextFile).not.toHaveBeenCalled();
+    const events = diagnosticLog.snapshot().events;
+    expect(events.map((entry) => entry.event)).toEqual(['save-start', 'save-cancelled']);
+    expect(events[0].request).toBe(events[1].request);
+  });
+}
+
+it('#179 review: first save records one request for the chosen path and completed write', async () => {
+  mocks.save.mockResolvedValue('/synthetic/new.md');
+  mocks.writeTextFile.mockResolvedValue(undefined);
+  const saved = await saveFile({ ...createEmptyFile(), content: '# Synthetic' });
+  expect(saved.path).toBe('/synthetic/new.md');
+  expect(mocks.writeTextFile).toHaveBeenCalledTimes(1);
+  const events = diagnosticLog.snapshot().events;
+  expect(events.map((entry) => entry.event)).toEqual(['save-start', 'save-complete']);
+  expect(events[0].request).toBe(events[1].request);
+  expect(diagnosticRequestFor(saved)).toBe(events[1].request);
 });

@@ -965,6 +965,40 @@ describe('AppLayout ISS-218 iCloud 卸载 / 云占位空读守卫', () => {
     expect(host.textContent).toContain('放弃本地并重载');
   });
 
+  it('#179 review: edits during manual reload retain the external-change notice and allow retry', async () => {
+    const path = '/synthetic/manual-reload.md';
+    const handler = await mountWith(path, '# Original');
+    await act(async () => {
+      handler({ payload: { path, kind: 'modify' } });
+      vi.advanceTimersByTime(160);
+      await flushPromises();
+    });
+    expect(host.textContent).toContain('文件已在外部修改');
+    let finishRead!: (file: OpenedFile) => void;
+    fileServiceMock.openPath.mockImplementationOnce(() => new Promise<OpenedFile>((resolve) => { finishRead = resolve; }));
+    const reloadButton = () => Array.from(host.querySelectorAll<HTMLButtonElement>('button.status-notice-action'))
+      .find((button) => button.textContent?.includes('放弃本地并重载'))!;
+    await act(async () => { reloadButton().click(); await flushPromises(); });
+    expect(finishRead).toBeTypeOf('function');
+    const tab = sessionState.tabs[0];
+    sessionState.tabs = [{ ...tab, file: { ...tab.file, content: '# New unsaved edit', dirty: true } }];
+    await act(async () => { root.render(<AppLayout />); await flushPromises(); });
+    const diskFile: OpenedFile = { ...tab.file, content: '# Disk version', lastSavedContent: '# Disk version', dirty: false };
+    await act(async () => { finishRead(diskFile); await flushPromises(); });
+    expect(sessionState.updateCount).toBe(0);
+    expect(sessionState.tabs[0].file.content).toBe('# New unsaved edit');
+    expect(sessionState.tabs[0].file.dirty).toBe(true);
+    // 旧代码虽拒绝了快照，却无条件关闭提示，用户无法继续重载。
+    expect(host.textContent).toContain('文件已在外部修改');
+    expect(reloadButton()).toBeTruthy();
+    fileServiceMock.openPath.mockResolvedValueOnce(diskFile);
+    await act(async () => { reloadButton().click(); await flushPromises(); });
+    await act(async () => { root.render(<AppLayout />); await flushPromises(); });
+    expect(sessionState.updateCount).toBe(1);
+    expect(sessionState.tabs[0].file.content).toBe('# Disk version');
+    expect(host.textContent).not.toContain('文件已在外部修改');
+  });
+
   it('提示后用户点「放弃本地并重载」→ 主动决定,磁盘内容(即使为空)照常写入', async () => {
     const handler = await mountWith('/Users/demo/cloud.md', '# 原文');
 

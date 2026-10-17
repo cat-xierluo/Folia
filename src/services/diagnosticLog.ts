@@ -2,7 +2,7 @@ import type { OpenedFile } from '../types/document';
 
 export const DIAGNOSTIC_EVENT_LIMIT = 500;
 export const DIAGNOSTIC_ID_LIMIT = 128;
-const EVENTS = ['tab-open', 'file-result', 'file-applied', 'tab-active', 'read-start', 'read-complete', 'read-error', 'editor-source', 'editor-ready', 'editor-input', 'editor-error', 'save-start', 'save-complete', 'save-error', 'io-error', 'export-complete', 'export-error'] as const;
+const EVENTS = ['tab-open', 'file-result', 'file-applied', 'tab-active', 'read-start', 'read-complete', 'read-error', 'editor-source', 'editor-ready', 'editor-input', 'editor-error', 'save-start', 'save-complete', 'save-cancelled', 'save-error', 'io-error', 'export-complete', 'export-error'] as const;
 type EventName = typeof EVENTS[number];
 type Details = { tabId?: string; request?: number; mode?: 'source' | 'wysiwyg' };
 type Event = { seq: number; elapsedMs: number; event: EventName; tab?: number; request?: number; mode?: 'source' | 'wysiwyg' };
