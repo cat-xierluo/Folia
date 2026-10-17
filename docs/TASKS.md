@@ -47,6 +47,14 @@
 
 ### 缺陷类
 
+#### 🔧 ISS-227 Gitee 镜像同步自 v0.6.4 后实际失效：大产物上传超时 + `latest` 标签 manifest 追加上传致服务端始终返回最早一份（2026-10-17 v0.8.2 发版验证发现；L2 待授权修复）
+
+- **现象（Gitee 公开 API 实证）:** v0.8.2 与 v0.8.1 的 Gitee release 均只有 3 个 `.sig` + `latest.json`（+ 自动源码包），缺全部 dmg / exe / app.tar.gz；固定 `latest` 标签 release（id 769689，2026-07-31 建）下累积 9 个同名 `latest.json` 资产，`releases/download/latest/latest.json` 实际返回最早一份（`version: 0.6.4`）。release.yml 的两个 Gitee 步骤均 `continue-on-error: true` 且脚本内部对每个失败只 echo 后 continue，step 状态恒为 success——v0.8.1 发版时据 step 状态得出的「Gitee 同步成功」系误判。
+- **根因:** ① `curl_gitee` 使用 `--max-time 90 --retry 1`，GitHub runner → Gitee 上传几十 MB 产物 90s 内传不完，日志逐个出现 `curl: (28) Operation timed out after 90000 milliseconds with 0 bytes received`，5 个大文件全部失败（run 39047213752 publish job，每个约 3 分钟）；② 「Sync latest manifest to fixed Gitee tag」直接 POST 新 `latest.json` 资产而不先删除旧同名资产，Gitee 按最早资产提供下载。
+- **影响:** 更新端点顺序为 GitHub 优先、Gitee 兜底（`tauri.conf.json` → `plugins.updater.endpoints`）；GitHub 可达的用户不受影响。依赖 Gitee 兜底的用户自 0.6.4 起看不到任何新版本（manifest 冻结），不会出现下载 404；本次发版未使其恶化。v0.8.2 release notes「已知限制」已披露。
+- **修法（待用户授权）:** 新增 `gitee-sync.yml`（`workflow_dispatch`，输入 tag）：`gh release download` 后对大文件用 `--max-time 900 --retry 3` 上传，逐文件记录成功/失败并以非零退出暴露失败；`latest` 标签先 GET 资产列表、DELETE 全部旧 `latest.json` 再 POST 新文件；release.yml 两步改为调用同一脚本并去掉吞错。补跑 v0.8.2（可选 v0.8.1）同步，并清理 `latest` release 下 8 份重复资产。
+- **状态:** 已登记，等待决定是否按上述方案修复。
+
 #### ✅ ISS-226 Issue #179 新打开 Markdown 偶发显示前一标签内容及本地诊断日志（PR #182 已合并 77b2b07；已随 v0.8.2 发布（2026-10-17）；Issue #179 保持开放待日志取证）
 
 - **用户现象:** 新打开 Markdown 偶发显示前一个标签内容，关闭该标签重开恢复；稳定复现方式、当时版本与文件环境未知，不能将下列合成回归认定为该次报告的唯一根因。
