@@ -30,7 +30,7 @@
 
 ## 待处理
 
-### ✅ ISS-225 窗口状态记忆（Issue #178 / PR #181 已合并 8af3709；尚未发布/替换已安装版）
+### ✅ ISS-225 窗口状态记忆（Issue #178 / PR #181 已合并 8af3709；已随 v0.8.2 发布（2026-10-17），已安装版待自动更新）
 
 - **需求与范围：** 由 dot 代用户整理；主窗口正常模式的大小和位置退出后持久化，下次启动恢复。仅改 Tauri 窗口层，tear-off 窗口不覆盖主窗口记录，不改文档会话或设置系统。
 - **方案：** 内容尺寸使用逻辑像素、屏幕位置使用原生物理坐标；恢复时选择当前工作区并钳制全部边界。遵循 DESIGN 的 800×600 最小尺寸，工作区不足时临时降低；首次启动或无效记录回退 980×680 并适配工作区。全屏、最大化和最小化保留最近普通边界，下次以普通窗口启动。
@@ -40,14 +40,22 @@
 - **本轮验证：** Rust 全量 90/90（新增 5 项几何、2 项并发回归及 1 个子进程测试入口），cargo check 通过，既有窗口单测继续通过。本轮未启动任何 Folia GUI；下述 GUI 矩阵绑定初版 head `0d5dec6`，不能视作返修 head 的实机证明。Chromium CI 不含 layout-behavior，上一轮 43 通过、14 既有失败的限制继续保留。
 - **macOS 真机（初版 head `0d5dec6`）：** 独立标识 `com.folia.window-state-test` 的 `Folia Window Test.app`（本地 debug bundle，嵌入生产前端）通过 Computer Use 验证。首次 980×680（Retina 截图 1960×1360），拖动/缩放至 870×620，退出保存物理位置 `(460,320)`；重启截图 1740×1240，后续普通关闭再次回读位置不变。原生最大化及全屏退出保留这组普通边界，重启恢复普通窗口；继续拖小被限制在 800×600（截图 1600×1200），红色关闭按钮和最小化后 Cmd+Q 均正常保存。注入 `(99999,99999)` 离屏 fixture，启动回到 `(588,340)`、980×680；损坏 JSON 启动回退 980×680。同步最新 main 后重建测试包并再次验证启动、默认边界恢复与正常退出。测试未打开文档、未替换已安装版、未修改安全设置。
 - **未验边界：** 物理拔插显示器、系统分辨率/DPI 实时调整、小于 800×600 的物理工作区、Windows/Linux 原生窗口、tear-off 窗口交互；前三者的恢复几何由单测覆盖。debug bundle 并非正式发布包。测试日志保留在本地，截图在验收会话；不将私有桌面元数据上传公开仓库。
-- **状态：** 2026-10-17 [PR #181](https://github.com/cat-xierluo/Folia/pull/181) 经 maintainer 独立验收后 squash 合入 `main`，合并提交 `8af3709efd9ec2aace5948b00632884def011897`，Issue #178 随合并关闭；决策记录 DEC-146。尚未发布/替换已安装版。
+- **状态：** 2026-10-17 [PR #181](https://github.com/cat-xierluo/Folia/pull/181) 经 maintainer 独立验收后 squash 合入 `main`，合并提交 `8af3709efd9ec2aace5948b00632884def011897`，Issue #178 随合并关闭；决策记录 DEC-146。已随 v0.8.2 发布（2026-10-17），已安装版待自动更新。
 - **2026-10-17 合并记录（maintainer 独立复核）：** head `c4817b96`（merge-base 即当时 main tip `c8b7a5c`，零漂移）；代码审查无阻塞缺陷；CI 三项全绿；cargo test 90/90 独立复跑。**真机补验关闭作者的 NOT_VERIFIED「移动后位置恢复」**：隔离 worktree 以独立 identifier `com.folia.window-state-accept` 构建（`cargo build --features tauri/custom-protocol`，嵌入复制的 dist），System Events 按 pid 锚定设 position `{340,260}` / size `{900,650}`，Cmd+Q 后 `window-state.json` 为 `{x:680,y:520,width:900,height:650}`（x/y 物理 = 2× 逻辑，符合设计），重启读回 `340,260,900,650` 逐项一致；「仅移动」至 `{120,180}` 同样持久化（JSON `x:240,y:360`）并恢复；三次 Cmd+Q 均正常保存，配置目录无残留 `.tmp`。作者初版拖动不生效系 GUI 输入问题而非功能缺陷。物理多屏/混合 DPI、拔插显示器、Windows/Linux 仍为 NOT_VERIFIED。
 
 > **2026-08-27 代码审计新增**：全仓排查（Rust 命令 / capabilities / CSP / 服务层 / React hooks / 构建配置 / 依赖版本）产出以下条目。两个高危缺陷的修复 PR（ISS-196 #133、ISS-197 #135）曾悬置两日未合并（TASKS 此前「已直接 PR 修复」表述误导，2026-08-29 已补流程：分支追平 main + 对抗式 review 后合并）。
 
 ### 缺陷类
 
-#### ✅ ISS-226 Issue #179 新打开 Markdown 偶发显示前一标签内容及本地诊断日志（PR #182 已合并 77b2b07；尚未发布；Issue #179 保持开放待日志取证）
+#### 🔧 ISS-227 Gitee 镜像同步自 v0.6.4 后实际失效：大产物上传超时 + `latest` 标签 manifest 追加上传致服务端始终返回最早一份（2026-10-17 v0.8.2 发版验证发现；L2 待授权修复）
+
+- **现象（Gitee 公开 API 实证）:** v0.8.2 与 v0.8.1 的 Gitee release 均只有 3 个 `.sig` + `latest.json`（+ 自动源码包），缺全部 dmg / exe / app.tar.gz；固定 `latest` 标签 release（id 769689，2026-07-31 建）下累积 9 个同名 `latest.json` 资产，`releases/download/latest/latest.json` 实际返回最早一份（`version: 0.6.4`）。release.yml 的两个 Gitee 步骤均 `continue-on-error: true` 且脚本内部对每个失败只 echo 后 continue，step 状态恒为 success——v0.8.1 发版时据 step 状态得出的「Gitee 同步成功」系误判。
+- **根因:** ① `curl_gitee` 使用 `--max-time 90 --retry 1`，GitHub runner → Gitee 上传几十 MB 产物 90s 内传不完，日志逐个出现 `curl: (28) Operation timed out after 90000 milliseconds with 0 bytes received`，5 个大文件全部失败（run 39047213752 publish job，每个约 3 分钟）；② 「Sync latest manifest to fixed Gitee tag」直接 POST 新 `latest.json` 资产而不先删除旧同名资产，Gitee 按最早资产提供下载。
+- **影响:** 更新端点顺序为 GitHub 优先、Gitee 兜底（`tauri.conf.json` → `plugins.updater.endpoints`）；GitHub 可达的用户不受影响。依赖 Gitee 兜底的用户自 0.6.4 起看不到任何新版本（manifest 冻结），不会出现下载 404；本次发版未使其恶化。v0.8.2 release notes「已知限制」已披露。
+- **修法（待用户授权）:** 新增 `gitee-sync.yml`（`workflow_dispatch`，输入 tag）：`gh release download` 后对大文件用 `--max-time 900 --retry 3` 上传，逐文件记录成功/失败并以非零退出暴露失败；`latest` 标签先 GET 资产列表、DELETE 全部旧 `latest.json` 再 POST 新文件；release.yml 两步改为调用同一脚本并去掉吞错。补跑 v0.8.2（可选 v0.8.1）同步，并清理 `latest` release 下 8 份重复资产。
+- **状态:** 已登记，等待决定是否按上述方案修复。
+
+#### ✅ ISS-226 Issue #179 新打开 Markdown 偶发显示前一标签内容及本地诊断日志（PR #182 已合并 77b2b07；已随 v0.8.2 发布（2026-10-17）；Issue #179 保持开放待日志取证）
 
 - **用户现象:** 新打开 Markdown 偶发显示前一个标签内容，关闭该标签重开恢复；稳定复现方式、当时版本与文件环境未知，不能将下列合成回归认定为该次报告的唯一根因。
 - **范围:** 基于 main `e8f99e6da304f56bd032237085f36484a551b82c`，仅合成文档；不读取用户真实文档、不改窗口记忆（Issue #178）、不动现有应用进程。
@@ -61,7 +69,7 @@
 - **NOT_VERIFIED:** 原生保存对话框、WKWebView/ETV 未运行；未操作现有应用进程或读取真实用户文档。原用户偶发环境仍待诊断日志取证，Issue #179 保持开放。
 - **2026-10-17 合并记录（maintainer 独立复核）：** [PR #182](https://github.com/cat-xierluo/Folia/pull/182) 经独立验收后 squash 合入 `main`，合并提交 `77b2b07ceb707e832f617c740557cc6bafe6bc47`。合并前由 maintainer 在候选分支上合入 #181 后的 main 并解决 CHANGELOG / ARCHITECTURE 冲突（merge 提交 `fbece25`：`### Added` 保留 #178/#179 两条，ARCHITECTURE 两节共存并保持层级），独立决策文件 `docs/diagnostics-decision.md` 迁入 DECISIONS.md 作 **DEC-147** 并删除（`b9ba894`）；最终 head `b9ba894` CI 三项全绿（含新 e2e 纳入 Chromium job）。复核要点：文件对象快照 CAS / 回调绑标签 / RAF 写入代次 / `key={activeTabId}` 按标签隔离宿主针对真实竞态类别，且原 init effect 本就按 filePath 重建、key 重挂代价仅限同路径标签；导出复用 `write_opened_document` 已核 Rust 校验（绝对路径 + 扩展白名单 + denied roots）允许新路径 `.md`。
 
-#### ✅ ISS-224 「设为默认 Markdown 应用」JXA bundle id 转义漏掉反斜杠——含 `\` 的 identifier 会让脚本抛 SyntaxError 整体失效（外部贡献 PR #177 已合并；尚未发布；2026-10-13 贡献者复核 ISS-222 时发现）
+#### ✅ ISS-224 「设为默认 Markdown 应用」JXA bundle id 转义漏掉反斜杠——含 `\` 的 identifier 会让脚本抛 SyntaxError 整体失效（外部贡献 PR #177 已合并；已随 v0.8.2 发布（2026-10-17）；2026-10-13 贡献者复核 ISS-222 时发现）
 
 - **发现（ISS-222 修复的遗留缺陷）**：用户报告 0.8.1 安装版点击「设为默认 Markdown 应用」报 `LSSetDefaultRoleHandlerForContentType returned status -50`，排查确认根因即 ISS-222（该修复 commit 891255b 于 2026-09-22 合入 main，0.8.1 发布于 09-19，不含修复，属预期）。复核该修复时发现新缺陷：`build_set_default_markdown_jxa` 的转义 `bundle_id.replace('\'', "\\'")` 只替换单引号、不转义反斜杠，且函数注释声称「不含单引号 / 反斜杠等会破坏 JXA 字面量的字符」与实现不符。
 - **根因（真机 osascript 实证）**：形如 `com.folia\` 的 identifier 经该转义后生成 `$.CFStringCreateWithCString($.NULL, 'com.folia\', ...)`——末尾反斜杠把收尾引号转义掉，字符串字面量不再闭合，JXA 抛 `SyntaxError: Unexpected identifier`，整个脚本失效；`com.fol\'ia` 组合同样必炸。当前 identifier `com.folia.reader` 不含特殊字符，属防御性修复，但转义既然存在就必须正确。
@@ -69,7 +77,7 @@
 - **验证**：真机 A/B——旧转义下 trailing-backslash / backslash+quote 两形态均抛 SyntaxError，新转义下 4 种形态（正常 / 单引号 / 尾反斜杠 / 反斜杠+单引号）全部成功执行；修正版 JXA（真实 bundle id）本机实跑返回 0，`.md` 默认 handler 已成功注册为 `/Applications/Folia.app`。新增 2 个回归测试，变异验证：回退转义恰好这 2 个测试变红、恢复全绿。cargo test --lib 75/75（基线 73 + 2）；typecheck / lint 零错误；全量 vitest 113/113 通过。
 - **2026-10-17 合并记录:** [PR #177](https://github.com/cat-xierluo/Folia/pull/177)（@Yillan-lamb 贡献；head `2e04345` 的 parent 即当时 main tip `e8f99e6`，零漂移）经 maintainer 独立复核后 squash 合入 `main`，合并提交 `f3d0ef00bc09ac22bbff674201d8299cfe08c141`，作者字段保留贡献者。复核要点：node 层 A/B 复现旧转义在尾反斜杠 / 反斜杠+单引号两形态下 SyntaxError、新转义 4 种形态语法通过且字面量值往返一致；全库仅此一处 JXA 插值点，无同型漏网；3 文件与声明范围一致；GitHub 的 cargo test / playwright e2e / typecheck+lint+test 三项检查全部通过（此前该贡献者的 fork PR 不触发 CI，本次已触发）。squash 预检时隐私门禁命中 CHANGELOG 第 78 行与 lib.rs 敏感路径黑名单测试夹具中既有的占位符用户目录（分别自 0a581dd、PR #143 起已在 main），均非本 PR 引入，已按 synthetic 例外本地登记。待下次发版在 release notes 行内 @致谢。
 
-#### ✅ ISS-223 固定大纲与导出栏同时打开时 Markdown 正文被挤成窄条（PR #175 已合并；尚未发布/替换已安装版）
+#### ✅ ISS-223 固定大纲与导出栏同时打开时 Markdown 正文被挤成窄条（PR #175 已合并；已随 v0.8.2 发布（2026-10-17），已安装版待自动更新）
 
 - **现象:** 固定大纲与 Word/HTML 导出栏同时打开、任一侧栏调宽后，中间 Markdown 外壳仍占有空间，但真正正文区域会被压成每行数个字的窄条。
 - **2026-09-27 实机补查:** Computer Use 启动 09-26 构建的 `.app`（进程路径确认来自仓库 bundle），真实 WKWebView 三栏布局仍有额外正文留白。定位 Vditor `setPadding()` 在内层 `.vditor-reset` 写入固定像素 padding；侧栏开合没有重新计算，外层百分比 padding 与其叠加。旧测试仍只量 `.vditor-ir` 外层净宽，补测真实段落后失败：默认 980px 下中间栏 400px，段落仅 196px。补修为打开导出栏时清除内层横向 padding，统一由外层自适应留白控制。
