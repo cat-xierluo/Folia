@@ -368,3 +368,39 @@ describe('sessionReducer.markPathInvalid', () => {
     expect(next.tabs[1].pathInvalid).toBeUndefined();
   });
 });
+
+describe('#179 asynchronous completion binding', () => {
+  it('updates the originating background tab while retaining the active document', () => {
+    const a = makeTabFromFile(file('a.md', '# A draft', true));
+    const b = makeTabFromFile(file('b.md', '# B'));
+    const initial = stateWith([a, b], b.id);
+    const saved = { ...a.file, dirty: false };
+    const next = sessionReducer(initial, { type: 'replaceFileIfUnchanged', id: a.id, expected: a.file, file: saved });
+    expect(next.activeTabId).toBe(b.id);
+    expect(next.tabs[1]).toBe(b);
+    expect(next.tabs[0].file).toBe(saved);
+  });
+
+  it('does not discard edits made after the IO snapshot or resurrect closed tabs', () => {
+    const a = makeTabFromFile(file('a.md', '# A draft', true));
+    const newer = { ...a, file: { ...a.file, content: '# Newer unsaved draft' } };
+    const initial = stateWith([newer]);
+    const action = { type: 'replaceFileIfUnchanged' as const, id: a.id, expected: a.file, file: { ...a.file, dirty: false } };
+    expect(sessionReducer(initial, action)).toBe(initial);
+    const reopened = makeTabFromFile(a.file);
+    const afterClose = stateWith([reopened]);
+    expect(sessionReducer(afterClose, action)).toBe(afterClose);
+  });
+});
+
+// 同一事件批次内 switch 已入队而 ref/effect 尚未刷新，reducer 仍须拒绝旧编辑器回调。
+it('#179: queued switch followed by old editor input cannot mutate the new active tab', () => {
+  const a = makeTabFromFile(file('a.md', '# A'));
+  const b = makeTabFromFile(file('b.md', '# B'));
+  const switched = sessionReducer(stateWith([a, b]), { type: 'switchTab', id: b.id });
+  const afterOldInput = sessionReducer(switched, { type: 'updateFile', id: a.id, updater: (prev) => ({ ...prev, content: '# Late A' }) });
+  expect(afterOldInput).toBe(switched);
+  const edited = sessionReducer(switched, { type: 'updateFile', id: b.id, updater: (prev) => ({ ...prev, content: '# B edit' }) });
+  expect(edited.tabs[1].file.content).toBe('# B edit');
+  expect(edited.tabs[0]).toBe(a);
+});

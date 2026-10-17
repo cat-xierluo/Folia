@@ -463,3 +463,13 @@ failure 时自动上传 `test-results/` 与 `playwright-report/` 为 7 天 artif
 ### 主窗口边界持久化（Issue #178）
 
 `src-tauri/src/window_state.rs` 在 setup 恢复主窗口，Moved/Resized/ScaleFactorChanged 维护内存中的普通边界，关闭请求与退出事件保存到应用配置目录的 `window-state.json`。只记录位置和尺寸，不包含文档信息；tear-off 窗口不写入。恢复时验证版本、有限数值和尺寸范围；按保存原点所在（或最近）工作区的缩放构造统一物理矩形，再比较各屏重叠、限制窗口及最小尺寸。保存使用 PID/进程内序号与 create_new 独占创建同目录临时文件，完整写入并关闭句柄后 rename，避免并发进程共享临时文件。异常记录回退默认边界，I/O 失败仅记录日志。
+
+## 本地诊断与异步回填（Issue #179）
+
+`diagnosticLog` 在单窗口内存中保存最多 500 条白名单事件及 128 项匿名标签映射。读取/保存请求采用递增编号，通过 WeakMap 关联文件对象与完成事件；不读取正文或路径作为日志字段。`useSession` 记录标签激活、回填候选和实际文件对象变化，编辑器记录 source/ready/input 事件。清除只影响诊断，窗口退出即释放；`diagnosticExportService` 仅按用户操作导出 Markdown 内 JSON，桌面端复用 `write_opened_document`，浏览器端下载 Blob。
+
+保存/重读回填 action `replaceFileIfUnchanged` 同时匹配原标签 ID 与原 `OpenedFile` 对象，晚返回不能更新当前其他标签，也不能覆盖已编辑、已关闭或被后续完成替换的快照。Vditor 初始化按文档 ID 隔离；旧实例输入和旧 source 帧回调被丢弃。此机制保护会话回填，不保证已经发出的并发磁盘写入顺序。
+
+手动重读另以一次性结果状态确认 reducer 已提交的文件对象，只有回填实际生效才清除外部修改提示。Vditor 各程序性写入的 RAF 带写入代次，避免旧回调解锁新写入；新 source 已等于当前值时主动释放旧守卫。保存日志将取消与完成分开，并避免首次保存的嵌套重复请求。
+
+WYSIWYG 组件以 tab ID 作为 React key，给不同标签独立宿主节点。即使 Vditor 自身等待 Lute 的旧回调在销毁后继续运行，也只能写入旧标签的脱离节点，不能覆盖当前标签宿主。

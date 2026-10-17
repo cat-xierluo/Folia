@@ -1,3 +1,4 @@
+import { diagnosticLog } from '../services/diagnosticLog';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MediaPlaceholder } from './MediaPlaceholder';
 import { attachCodeBlockCopy, type CodeCopyLabels } from '../services/codeBlockCopyService';
@@ -27,6 +28,7 @@ import { applyWithSuppression } from '../services/dirtySuppression';
 
 type WysiwygEditorPaneProps = {
   source: string;
+  documentId?: string;
   onChange: (value: string) => void;
   onViewComplexTable?: (block: HtmlTableBlock, anchor: HTMLElement) => void;
   filePath?: string;
@@ -654,7 +656,7 @@ function rerenderAsyncCodeBlocks(editor: import('vditor').default): void {
   }
 }
 
-export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePath }: WysiwygEditorPaneProps) {
+export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePath, documentId }: WysiwygEditorPaneProps) {
   const settings = useSettings();
   const t = useCallback(
     (key: Parameters<typeof translate>[1]) => translate(settings.locale, key),
@@ -668,6 +670,7 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
   const codeCopyOverlayRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<import('vditor').default | null>(null);
   const applyingExternalValue = useRef(false);
+  const externalValueEpoch = useRef(0);
   const latestSource = useRef(source);
   const collapseTimerRef = useRef<number | null>(null);
   // ISS-106：setupHeadingExpandGuard 返回的 disconnect 函数；init effect
@@ -1196,6 +1199,7 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
             }
           });
 
+          diagnosticLog.record('editor-ready', { tabId: documentId, mode: 'wysiwyg' });
           setPhase('ready');
 
           // 如果在 editor 就绪前有 [source] effect 尝试更新内容但被跳过，
@@ -1205,6 +1209,7 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
             pendingSourceRef.current = null;
             const currentValue = editor.getValue();
             if (currentValue !== pending) {
+              const valueEpoch = ++externalValueEpoch.current;
               applyingExternalValue.current = true;
               lastComplexBlocksRef.current = classifyHtmlTableBlocks(pending).complex;
               // ISS-189：包抑制窗口让 Vditor 的 markdownUpdated 防抖（200ms）
@@ -1218,7 +1223,7 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
                 // 但 RAF 回调捕获了 `editor` 闭包变量。若不在入口检查
                 // cancelled，回调会在 destroyed Vditor 上调 getValue()
                 // 抛 TypeError。
-                if (cancelled) return;
+                if (cancelled || externalValueEpoch.current !== valueEpoch) return;
                 applyingExternalValue.current = false;
                 sanitizingRef.current = true;
                 try {
@@ -1255,7 +1260,7 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
           }
         },
         input(value) {
-          if (initializingRef.current || applyingExternalValue.current || sanitizingRef.current) return;
+          if (cancelled || initializingRef.current || applyingExternalValue.current || sanitizingRef.current) return;
           if (!editorHasFocus(editor)) return;
           if (!userInteractedRef.current) return;
 
@@ -1343,6 +1348,7 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
           });
 
           if (touched) {
+            const valueEpoch = ++externalValueEpoch.current;
             applyingExternalValue.current = true;
             // ISS-189：input() 复杂表 round-trip restore 写入属于「程序性写入」，
             // 应当走抑制窗口，避免被 markdownUpdated 200ms 防抖再次派发的 input
@@ -1352,7 +1358,7 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
             });
             window.requestAnimationFrame(() => {
               // 卸载竞态：cleanup 已 destroy editor，cancelled=true 时直接返回。
-              if (cancelled) return;
+              if (cancelled || externalValueEpoch.current !== valueEpoch) return;
               applyingExternalValue.current = false;
               sanitizingRef.current = true;
               try {
@@ -1407,6 +1413,7 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
       const irEl = getIrElement(editor);
       disconnectHeadingGuardRef.current = irEl ? setupHeadingExpandGuard(irEl) : null;
     }).catch((error) => {
+      diagnosticLog.record('editor-error', { tabId: documentId, mode: 'wysiwyg' });
       console.error('[Folia] Vditor 初始化失败:', error);
       initializingRef.current = false;
       if (!cancelled) {
@@ -1437,13 +1444,16 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
       lastComplexBlocksRef.current = [];
       pendingSourceRef.current = null;
       initializingRef.current = false;
+      applyingExternalValue.current = false;
+      sanitizingRef.current = false;
       userInteractedRef.current = false;
       // ISS-94：Vditor 按 filePath 变化销毁重建，重置 focus 标记让新空白文件可再次 auto-focus
       focusedOnceRef.current = false;
     };
-  }, [filePath, lockComplexTables, emitEditorValueIfChanged, onChange, retryKey, handleImageFiles, handleTextPaste]);
+  }, [documentId, filePath, lockComplexTables, emitEditorValueIfChanged, onChange, retryKey, handleImageFiles, handleTextPaste]);
 
   useEffect(() => {
+    diagnosticLog.record('editor-source', { tabId: documentId, mode: 'wysiwyg' });
     const editor = editorRef.current;
     if (!editor) {
       // Editor 尚未就绪，缓存内容等 after() 回调中补偿应用
@@ -1451,8 +1461,13 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
       return;
     }
 
+    const valueEpoch = ++externalValueEpoch.current;
     const currentValue = editor.getValue();
-    if (currentValue === source) return;
+    if (currentValue === source) {
+      // 规范化后的新 source 已在编辑器中；接管并释放旧写入的守卫，无需等待旧 RAF。
+      applyingExternalValue.current = false;
+      return;
+    }
 
     applyingExternalValue.current = true;
     lastComplexBlocksRef.current = classifyHtmlTableBlocks(source).complex;
@@ -1467,7 +1482,7 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
       // 注意：本 effect 不持有 Vditor init effect 的 `cancelled` 闭包，改用
       // editorRef.current === editor 判定——Vditor init effect cleanup 会把
       // editorRef.current 置 null，相当于跨 effect 的 cancelled 信号。
-      if (editorRef.current !== editor) return;
+      if (editorRef.current !== editor || externalValueEpoch.current !== valueEpoch || latestSource.current !== source) return;
       applyingExternalValue.current = false;
       // ISS-168 编辑器部分：外部 setValue 完成后 sanitize IR DOM。
       sanitizingRef.current = true;
@@ -1490,7 +1505,7 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
         console.error('[Folia] [source] useEffect sanitize 失败:', error);
       }
     });
-  }, [source, filePath, lockComplexTables, emitEditorValueIfChanged]);
+  }, [source, documentId, filePath, lockComplexTables, emitEditorValueIfChanged]);
 
   /* Hover layer: when the user hovers a complex table, inject a small "view
      original" button at the top-right corner. The button is removed on

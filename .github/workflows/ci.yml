@@ -102,8 +102,8 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
-      - name: Run rich-media cross-surface + fixture matrix + mermaid IR + theme visual guards e2e
-        # 限定到富媒体 + 主 IR 矩阵 + 主题视觉守卫，不跑全部 e2e（其它 e2e 由本地 / release 验证）。
+      - name: Run rich-media + mermaid IR + theme guards + tab diagnostics e2e
+        # 限定到富媒体 + 主 IR 矩阵 + 主题视觉守卫 + Issue #179 标签诊断回归，不跑全部 e2e。
         run: |
           npx playwright test \
             --config config/playwright.config.ts \
@@ -113,6 +113,7 @@ jobs:
             e2e/mermaid-fidelity.spec.ts \
             e2e/theme-system-guards.spec.ts \
             e2e/theme-ui-visual-guards.spec.ts \
+            e2e/tab-content-diagnostics.spec.ts \
             --workers=1 \
             --reporter=list
 

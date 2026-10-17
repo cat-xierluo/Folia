@@ -1,3 +1,4 @@
+import { diagnosticLog, diagnosticRequestFor } from '../services/diagnosticLog';
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import type { OpenedFile } from '../types/document';
 import { createEmptyFile } from '../types/document';
@@ -169,7 +170,23 @@ export function useSession() {
   const activeTab = state.tabs.find((t) => t.id === state.activeTabId) ?? state.tabs[0];
   const activeFile = activeTab?.file ?? createEmptyFile();
 
+  const loggedFiles = useRef(new Map<string, OpenedFile>());
+  useEffect(() => {
+    for (const tab of state.tabs) {
+      if (loggedFiles.current.get(tab.id) !== tab.file) {
+        diagnosticLog.record('file-applied', { tabId: tab.id, request: diagnosticRequestFor(tab.file) });
+      }
+    }
+    loggedFiles.current = new Map(state.tabs.map((tab) => [tab.id, tab.file]));
+  }, [state.tabs]);
+
+  const activeReadRequest = activeTab ? diagnosticRequestFor(activeTab.file) : undefined;
+  useEffect(() => {
+    diagnosticLog.record('tab-active', { tabId: activeTab?.id, request: activeReadRequest });
+  }, [activeTab?.id, activeReadRequest]);
+
   const openInNewTab = useCallback((file: OpenedFile) => {
+    diagnosticLog.record('tab-open', { request: diagnosticRequestFor(file) });
     dispatch({ type: 'openInNewTab', file });
     dispatch({ type: 'recordRecentFile', file });
   }, []);
@@ -181,6 +198,15 @@ export function useSession() {
 
   const switchTab = useCallback((id: string) => {
     dispatch({ type: 'switchTab', id });
+  }, []);
+
+  const updateFile = useCallback((id: string, updater: (file: OpenedFile) => OpenedFile) => {
+    dispatch({ type: 'updateFile', id, updater });
+  }, []);
+
+  const replaceFileIfUnchanged = useCallback((id: string, expected: OpenedFile, file: OpenedFile) => {
+    diagnosticLog.record('file-result', { tabId: id, request: diagnosticRequestFor(file) });
+    dispatch({ type: 'replaceFileIfUnchanged', id, expected, file });
   }, []);
 
   const updateActiveFile = useCallback((updater: (f: OpenedFile) => OpenedFile) => {
@@ -322,6 +348,8 @@ export function useSession() {
     closeAll,
     markPathInvalid,
     updateActiveFile,
+    replaceFileIfUnchanged,
+    updateFile,
     updateActiveTabMeta,
     recordRecentFile,
     removeRecentFile,

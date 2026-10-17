@@ -1,3 +1,5 @@
+import { diagnosticLog } from '../../services/diagnosticLog';
+import { exportDiagnosticLog } from '../../services/diagnosticExportService';
 import { useState } from 'react';
 import { getSettings, updateSettings, type AppSettings } from '../../services/settingsService';
 import type { AppLocale, DefaultEncoding } from '../../services/settingsService';
@@ -18,6 +20,7 @@ export function GeneralSection() {
   const [settings, setSettings] = useState(() => getSettings());
   const t = (key: Parameters<typeof translate>[1], params?: Record<string, string | number>) =>
     translate(settings.locale, key, params);
+  const [diagnosticStatus, setDiagnosticStatus] = useState<'idle' | 'busy' | 'saved' | 'cancelled' | 'error' | 'cleared'>('idle');
   const [defaultAppState, setDefaultAppState] = useState<SetDefaultAppState>({ kind: 'idle' });
 
   const handleChange = (patch: Partial<AppSettings>) => {
@@ -111,6 +114,26 @@ export function GeneralSection() {
           className={`toggle-switch ${settings.autoReloadExternalChanges ? 'on' : ''}`}
           onClick={() => handleChange({ autoReloadExternalChanges: !settings.autoReloadExternalChanges })}
         />
+      </div>
+
+      <div className="settings-row settings-row-stacked">
+        <div>
+          <div className="settings-label">{t('diagnosticsLabel')}</div>
+          <div className="settings-desc">{t('diagnosticsDesc')}</div>
+          {diagnosticStatus !== 'idle' && diagnosticStatus !== 'busy' && (
+            <div className="settings-desc" role="status">{t(diagnosticStatus === 'saved' ? 'diagnosticsSaved' : diagnosticStatus === 'error' ? 'diagnosticsError' : diagnosticStatus === 'cleared' ? 'diagnosticsCleared' : 'diagnosticsCancelled')}</div>
+          )}
+        </div>
+        <div>
+          <button type="button" className="settings-action-button" disabled={diagnosticStatus === 'busy'} onClick={async () => {
+            setDiagnosticStatus('busy');
+            setDiagnosticStatus(await exportDiagnosticLog());
+          }}>{t('diagnosticsExport')}</button>
+          <button type="button" className="settings-action-button" disabled={diagnosticStatus === 'busy'} onClick={() => {
+            diagnosticLog.clear();
+            setDiagnosticStatus('cleared');
+          }}>{t('diagnosticsClear')}</button>
+        </div>
       </div>
 
       {/* ISS-192：设为默认 Markdown 应用（macOS 自动注册 .md / .markdown）。 */}

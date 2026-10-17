@@ -1,3 +1,4 @@
+import { diagnosticLog, bindDiagnosticRequest } from './diagnosticLog';
 import { open, save } from '@tauri-apps/plugin-dialog';
 import { readTextFile, readFile, writeTextFile } from '@tauri-apps/plugin-fs';
 import type { OpenedFile } from '../types/document';
@@ -127,6 +128,20 @@ export async function openFile(encoding: DefaultEncoding = 'UTF-8'): Promise<Ope
 }
 
 export async function openPath(path: string, encoding: DefaultEncoding = 'UTF-8'): Promise<OpenedFile> {
+  const request = diagnosticLog.nextRequest();
+  diagnosticLog.record('read-start', { request });
+  try {
+    const file = await readPath(path, encoding);
+    bindDiagnosticRequest(file, request);
+    diagnosticLog.record('read-complete', { request });
+    return file;
+  } catch (error) {
+    diagnosticLog.record('read-error', { request });
+    throw error;
+  }
+}
+
+async function readPath(path: string, encoding: DefaultEncoding): Promise<OpenedFile> {
   const name = fileNameFromPath(path);
   const ext = path.split('.').pop()?.toLowerCase();
 
@@ -166,7 +181,29 @@ export async function openPath(path: string, encoding: DefaultEncoding = 'UTF-8'
 }
 
 export async function saveFile(file: OpenedFile): Promise<OpenedFile> {
-  if (!file.path) return saveFileAs(file);
+  return traceSave(file, () => saveExistingFile(file));
+}
+
+async function traceSave(original: OpenedFile, save: () => Promise<OpenedFile>): Promise<OpenedFile> {
+  const request = diagnosticLog.nextRequest();
+  diagnosticLog.record('save-start', { request });
+  try {
+    const file = await save();
+    // saveFileAs 取消时按既有契约返回原对象；取消不冒充完成，也不改写原读取关联。
+    if (file === original) diagnosticLog.record('save-cancelled', { request });
+    else {
+      bindDiagnosticRequest(file, request);
+      diagnosticLog.record('save-complete', { request });
+    }
+    return file;
+  } catch (error) {
+    diagnosticLog.record('save-error', { request });
+    throw error;
+  }
+}
+
+async function saveExistingFile(file: OpenedFile): Promise<OpenedFile> {
+  if (!file.path) return saveFileAsImpl(file);
 
   try {
     if (isTauriRuntime()) {
@@ -185,6 +222,10 @@ export async function saveFile(file: OpenedFile): Promise<OpenedFile> {
 }
 
 export async function saveFileAs(file: OpenedFile): Promise<OpenedFile> {
+  return traceSave(file, () => saveFileAsImpl(file));
+}
+
+async function saveFileAsImpl(file: OpenedFile): Promise<OpenedFile> {
   const path = await save({
     defaultPath: file.name || 'untitled.md',
     filters: [

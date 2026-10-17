@@ -1,7 +1,8 @@
+import { diagnosticLog } from '../services/diagnosticLog';
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { createEmptyFile, type TocItem } from '../types/document';
+import { createEmptyFile, type TocItem, type OpenedFile } from '../types/document';
 import {
   bindRenderedTocHeadings,
   extractMarkdownToc,
@@ -257,7 +258,8 @@ export function AppLayout() {
     openInNewTab,
     closeTab,
     activeTabId,
-    updateActiveFile,
+    updateFile,
+    replaceFileIfUnchanged,
     updateActiveTabMeta,
     tearOffViaDrag,
   } = session;
@@ -547,6 +549,7 @@ export function AppLayout() {
   const notifyIoError = useCallback(async (action: 'open' | 'save' | 'export', error: unknown) => {
     // ISS-200 review MAJOR-1:fileService 对 oversized / denied-path 已弹原生
     // 提示后才 throw,这里跳过,避免同一错误连弹两个对话框。
+    diagnosticLog.record('io-error', { tabId: activeTabIdRef.current });
     const { isAlreadyNotifiedFileError } = await import('../services/fileService');
     if (isAlreadyNotifiedFileError(error)) return;
     if (!isTauriRuntime) {
@@ -613,20 +616,20 @@ export function AppLayout() {
     }
     try {
       const updated = await saveFile(fileToSave);
-      updateActiveFile(() => updated);
+      replaceFileIfUnchanged(activeTabId, file, updated);
       if (updated.path) setLastOpenedPath(updated.path);
     } catch (error) {
       // ISS-200:保存失败(磁盘满/权限/文件被移走)兜底提示,不再静默。
       await notifyIoError('save', error);
     }
-  }, [file, updateActiveFile, imageAssetStore, notifyIoError]);
+  }, [file, activeTabId, replaceFileIfUnchanged, imageAssetStore, notifyIoError]);
 
   const handleSaveAs = useCallback(async () => {
     if (file.fileType === 'docx') return;
     try {
       const { saveFileAs } = await import('../services/fileService');
       const updated = await saveFileAs(file);
-      updateActiveFile(() => updated);
+      replaceFileIfUnchanged(activeTabId, file, updated);
       if (updated.path) setLastOpenedPath(updated.path);
     // DEC-119 决策 7：另存为到新路径后，把 pending 图片落盘到新路径的
     // <doc>.assets/ 并更新 content。saveFileAs 已写入旧 content，这里
@@ -642,7 +645,7 @@ export function AppLayout() {
         const { invoke } = await import('@tauri-apps/api/core');
         await invoke('write_opened_document', { path: updated.path, content: nextContent });
         const rewritten = { ...updated, content: nextContent, lastSavedContent: nextContent };
-        updateActiveFile(() => rewritten);
+        replaceFileIfUnchanged(activeTabId, updated, rewritten);
       }
     }
     } catch (error) {
@@ -650,7 +653,7 @@ export function AppLayout() {
       // 与 handleSave 同语义,不再 unhandled rejection。
       await notifyIoError('save', error);
     }
-  }, [file, updateActiveFile, imageAssetStore, notifyIoError]);
+  }, [file, activeTabId, replaceFileIfUnchanged, imageAssetStore, notifyIoError]);
 
   // Issue #68：按 tabId 落盘指定标签（退出 / 关闭确认循环里用于保存非 active 标签）。
   // 复用 saveFile 底层写盘 + 图片落盘逻辑，但不依赖 active 状态——直接从 session.tabs
@@ -700,8 +703,9 @@ export function AppLayout() {
   const handleContentChange = useCallback((value: string) => {
     // ISS-189：抑制窗口期内的 onChange（程序性 setValue 后的 input/markdownUpdated
     // 防抖回调）直接吞掉，不更新 content / dirty。窗口期外的「真正用户编辑」走原路径。
-    if (isSuppressed()) return;
-    updateActiveFile((prev) => ({
+    if (activeTabIdRef.current !== activeTabId || isSuppressed()) return;
+    diagnosticLog.record('editor-input', { tabId: activeTabId });
+    updateFile(activeTabId, (prev) => ({
       ...prev,
       content: value,
       dirty: value !== prev.lastSavedContent,
@@ -714,7 +718,7 @@ export function AppLayout() {
       tocRefreshTimerRef.current = null;
       setToc(extractMarkdownToc(value));
     }, TOC_REFRESH_DEBOUNCE_MS);
-  }, [updateActiveFile]);
+  }, [activeTabId, updateFile]);
 
   const handleToggleEditorMode = useCallback(() => {
     if (file.fileType === 'docx') return;
@@ -1134,7 +1138,7 @@ export function AppLayout() {
   // 安全门：当前 tab 处于 dirty 时，外部修改不得静默覆盖。把路径
   // 放进 `externalChangeBlocked` 让 StatusBar 显示「外部修改」提示 +
   // 「放弃本地并重载」按钮（用户主动决定）。非 dirty 路径直接
-  // openPath 重新读盘，updateActiveFile 触发 [source] effect →
+  // openPath 重新读盘，按标签快照回填后触发 [source] effect →
   // WysiwygEditorPane setValue；setValue 包在 ISS-189 的抑制窗口内，
   // 不会污染 dirty。
   //
@@ -1142,6 +1146,7 @@ export function AppLayout() {
   // 串行：reload 进行中（pendingReloadRef）忽略新事件，避免并发读盘。
   const [externalChangeBlocked, setExternalChangeBlocked] = useState(false);
   const externalChangeBlockedRef = useRef(false);
+  const [manualReloadResult, setManualReloadResult] = useState<{ tabId: string; file: OpenedFile } | null>(null);
   const debounceRef = useRef<number | null>(null);
   const pendingReloadRef = useRef(false);
 
@@ -1180,9 +1185,9 @@ export function AppLayout() {
           }
           return;
         }
-        // updateActiveFile 走 reducer：dirty=false（磁盘内容与文件一致），lastSavedContent
+        // 快照匹配后走 reducer：dirty=false（磁盘内容与文件一致），lastSavedContent
         // 同步更新。后续 [source] effect → setValue 包在 ISS-189 抑制窗口内。
-        updateActiveFile(() => opened);
+        replaceFileIfUnchanged(targetTabId, current.file, opened);
       } catch (error) {
         console.warn('[Folia] 自动重新加载失败:', error);
       } finally {
@@ -1225,7 +1230,7 @@ export function AppLayout() {
     settings.defaultEncoding,
     session.tabs,
     session.activeTabId,
-    updateActiveFile,
+    replaceFileIfUnchanged,
   ]);
 
   // ISS-188：切换 tab 时清掉 externalChangeBlocked 提示（提示与具体 tab 绑定）。
@@ -1276,13 +1281,25 @@ export function AppLayout() {
       const opened = await openPath(cur.file.path, settings.defaultEncoding);
       // MAJOR-2：await 期间用户切走了 tab → 丢弃，避免写错 tab。
       if (activeTabIdRef.current !== targetTabId) return;
-      updateActiveFile(() => opened);
-      externalChangeBlockedRef.current = false;
-      setExternalChangeBlocked(false);
+      replaceFileIfUnchanged(targetTabId, cur.file, opened);
+      // reducer 可能因读取期间的新编辑拒绝回填；提交后再确认，不在 IO 返回时清提示。
+      setManualReloadResult({ tabId: targetTabId, file: opened });
     } catch (error) {
       console.warn('[Folia] 外部修改重载失败:', error);
     }
-  }, [activeTabId, session.tabs, settings.defaultEncoding, updateActiveFile]);
+  }, [activeTabId, session.tabs, settings.defaultEncoding, replaceFileIfUnchanged]);
+
+  useEffect(() => {
+    if (!manualReloadResult) return;
+    if (activeTabId === manualReloadResult.tabId && activeTab?.file === manualReloadResult.file) {
+      externalChangeBlockedRef.current = false;
+      // 仅确认已经提交的 reducer 回填，沿既有提示状态同步模式。
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setExternalChangeBlocked(false);
+    }
+    // 本次确认结束后释放结果，不保留已被拒绝的文档快照。
+    setManualReloadResult(null);
+  }, [manualReloadResult, activeTabId, activeTab?.file]);
 
   const handleExternalChangeDismiss = useCallback(() => {
     externalChangeBlockedRef.current = false;
@@ -1301,10 +1318,10 @@ export function AppLayout() {
     let cancelled = false;
     void import('../services/fileService')
       .then(({ openPath }) => openPath(activeTab.file.path, settings.defaultEncoding))
-      .then((opened) => { if (!cancelled) updateActiveFile(() => opened); })
+      .then((opened) => { if (!cancelled) replaceFileIfUnchanged(activeTab.id, activeTab.file, opened); })
       .catch(() => { if (!cancelled) markPathInvalid(activeTab.id); });
     return () => { cancelled = true; };
-  }, [activeTab, settings.defaultEncoding, updateActiveFile, markPathInvalid]);
+  }, [activeTab, settings.defaultEncoding, replaceFileIfUnchanged, markPathInvalid]);
   const reloading = !!activeTab
     && !activeTab.pathInvalid
     && !activeTab.draftPersisted
@@ -1342,11 +1359,11 @@ export function AppLayout() {
         : Promise.resolve(file);
       void persistStep
         .then((fileToSave) => import('../services/fileService').then(({ saveFile }) => saveFile(fileToSave)))
-        .then((updated) => updateActiveFile(() => updated))
+        .then((updated) => replaceFileIfUnchanged(activeTabId, file, updated))
         .catch((e) => console.error('Auto-save failed:', e));
     }, 800);
     return () => window.clearTimeout(timeout);
-  }, [file, settings.autoSave, updateActiveFile, reloading, activePathInvalid, imageAssetStore]);
+  }, [file, activeTabId, settings.autoSave, replaceFileIfUnchanged, reloading, activePathInvalid, imageAssetStore]);
 
   useEffect(() => {
     if (!isTauriRuntime) return;
@@ -1518,6 +1535,7 @@ export function AppLayout() {
   ) : editorMode === 'source' ? (
     <Suspense fallback={<div className="editor-pane lazy-pane"><span>源码编辑器加载中</span></div>}>
       <EditorPane
+        documentId={activeTabId}
         source={file.content}
         autoFocusKey={activeTabId}
         onChange={handleContentChange}
@@ -1534,7 +1552,7 @@ export function AppLayout() {
     </Suspense>
   ) : (
     <Suspense fallback={<div className="wysiwyg-editor-pane lazy-pane"><span>所见即所得编辑器加载中</span></div>}>
-      <WysiwygEditorPane source={file.content} onChange={handleContentChange} onViewComplexTable={handleHtmlTableView} filePath={file.path} />
+      <WysiwygEditorPane key={activeTabId} documentId={activeTabId} source={file.content} onChange={handleContentChange} onViewComplexTable={handleHtmlTableView} filePath={file.path} />
     </Suspense>
   );
 

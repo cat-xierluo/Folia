@@ -1,3 +1,4 @@
+import { diagnosticLog } from '../services/diagnosticLog';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import CodeMirror from '@uiw/react-codemirror';
 import { markdown } from '@codemirror/lang-markdown';
@@ -13,14 +14,16 @@ export type SourceHeadingScrollRequest = {
 
 type EditorPaneProps = {
   source: string;
+  documentId?: string;
   onChange: (value: string) => void;
   headingScrollRequest?: SourceHeadingScrollRequest;
   /** ISS-94 review B1：tab 标识，变化（切 tab）时允许重新触发 auto-focus。 */
   autoFocusKey?: string;
 };
 
-export function EditorPane({ source, onChange, headingScrollRequest, autoFocusKey }: EditorPaneProps) {
+export function EditorPane({ source, onChange, headingScrollRequest, autoFocusKey, documentId }: EditorPaneProps) {
   const settings = useSettings();
+  useEffect(() => { diagnosticLog.record('editor-source', { tabId: documentId, mode: 'source' }); }, [source, documentId]);
   const [editorView, setEditorView] = useState<EditorView | null>(null);
   const handledHeadingScrollRequestRef = useRef<number | null>(null);
   // ISS-94：新建空白文件时编辑器初始化完成后自动 focus 一次。

@@ -36,7 +36,7 @@ type VditorConstructorCall = {
   host: HTMLElement;
   options: VditorInstanceOptions;
   // ISS-94：暴露 mock 实例让测试可以断言 focus 是否被调用
-  instance: { focus: () => void };
+  instance: { focus: () => void; getValue: () => string; setValue: (value: string) => void };
 };
 
 const vditorCalls: VditorConstructorCall[] = [];
@@ -173,6 +173,85 @@ describe('WysiwygEditorPane 内联 SVG 显示 + sanitize (ISS-168 编辑器部�
   afterEach(() => {
     host.remove();
     vi.clearAllMocks();
+  });
+
+  it('#179: same-path tabs rebuild by document identity and cancelled editor callbacks cannot emit', async () => {
+    const root = createRoot(host);
+    const onChange = vi.fn();
+    const render = (documentId: string) => renderWithProvider(<WysiwygEditorPane source="# Same synthetic source" filePath="" documentId={documentId} onChange={onChange} />);
+    await act(async () => { root.render(render('A')); await flushMicrotasks(); });
+    const old = vditorCalls[0];
+    await act(async () => { old.options.after?.(); await flushMicrotasks(); });
+    await act(async () => { root.render(render('B')); await flushMicrotasks(); });
+    expect(vditorCalls).toHaveLength(2);
+    await act(async () => { vditorCalls[1].options.after?.(); await new Promise((resolve) => window.setTimeout(resolve, 40)); });
+    // 保持旧 mock DOM 聚焦且新实例已交互，确保只有 cancelled 守卫能拒绝旧 input。
+    const pre = old.host.querySelector<HTMLElement>('.vditor-ir pre')!;
+    pre.setAttribute('tabindex', '0');
+    pre.focus();
+    old.host.dispatchEvent(new Event('beforeinput', { bubbles: true }));
+    onChange.mockClear();
+    await act(async () => { old.options.input?.('# Late A'); old.options.after?.(); });
+    expect(onChange).not.toHaveBeenCalled();
+    act(() => root.unmount());
+  });
+
+  it('#179 review: normalized equal source releases the pending external update guard', async () => {
+    const root = createRoot(host);
+    const onChange = vi.fn();
+    const render = (source: string) => renderWithProvider(<WysiwygEditorPane source={source} onChange={onChange} />);
+    let rafSpy: ReturnType<typeof vi.spyOn> | undefined;
+    try {
+      await act(async () => { root.render(render('Initial')); await flushMicrotasks(); });
+      const call = vditorCalls[0];
+      await act(async () => { call.options.after?.(); await flushFrames(4); });
+      let value = 'Initial';
+      vi.spyOn(call.instance, 'getValue').mockImplementation(() => value);
+      vi.spyOn(call.instance, 'setValue').mockImplementation(() => { value = 'Normalized B'; });
+      const frames: FrameRequestCallback[] = [];
+      rafSpy = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => { frames.push(cb); return frames.length; });
+      await act(async () => { root.render(render('Raw B')); });
+      expect(frames).toHaveLength(1);
+      await act(async () => { root.render(render('Normalized B')); });
+      await act(async () => { frames[0](0); });
+      const pre = call.host.querySelector<HTMLElement>('.vditor-ir pre')!;
+      pre.setAttribute('tabindex', '0'); pre.focus();
+      call.host.dispatchEvent(new Event('beforeinput', { bubbles: true }));
+      onChange.mockClear();
+      await act(async () => { call.options.input?.('New user edit'); });
+      expect(onChange).toHaveBeenCalledWith('New user edit');
+    } finally { act(() => root.unmount()); rafSpy?.mockRestore(); }
+  });
+
+  it('#179 review: an old RAF cannot unlock a newer external write', async () => {
+    const root = createRoot(host);
+    const onChange = vi.fn();
+    const render = (source: string) => renderWithProvider(<WysiwygEditorPane source={source} onChange={onChange} />);
+    let rafSpy: ReturnType<typeof vi.spyOn> | undefined;
+    try {
+      await act(async () => { root.render(render('Initial')); await flushMicrotasks(); });
+      const call = vditorCalls[0];
+      await act(async () => { call.options.after?.(); await flushFrames(4); });
+      let value = 'Initial';
+      vi.spyOn(call.instance, 'getValue').mockImplementation(() => value);
+      vi.spyOn(call.instance, 'setValue').mockImplementation((next) => { value = next; });
+      const frames: FrameRequestCallback[] = [];
+      rafSpy = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => { frames.push(cb); return frames.length; });
+      await act(async () => { root.render(render('B')); });
+      await act(async () => { root.render(render('C')); });
+      await act(async () => { root.render(render('B')); });
+      expect(frames).toHaveLength(3);
+      const pre = call.host.querySelector<HTMLElement>('.vditor-ir pre')!;
+      pre.setAttribute('tabindex', '0'); pre.focus();
+      call.host.dispatchEvent(new Event('beforeinput', { bubbles: true }));
+      onChange.mockClear();
+      await act(async () => { frames[0](0); call.options.input?.('premature'); });
+      expect(onChange).not.toHaveBeenCalled();
+      await act(async () => { frames[1](0); call.options.input?.('still premature'); });
+      expect(onChange).not.toHaveBeenCalled();
+      await act(async () => { frames[2](0); call.options.input?.('after latest B'); });
+      expect(onChange).toHaveBeenCalledWith('after latest B');
+    } finally { act(() => root.unmount()); rafSpy?.mockRestore(); }
   });
 
   describe('WysiwygEditorPane 集成', () => {
