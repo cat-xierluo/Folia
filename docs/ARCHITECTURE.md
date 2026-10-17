@@ -459,3 +459,7 @@ failure 时自动上传 `test-results/` 与 `playwright-report/` 为 7 天 artif
 2. **Mermaid / SVG / 图片**：DOCX 用文本/栅格 fallback；预览用浏览器原生渲染 + 诊断占位。两者形态不同是有意的。
 3. **数学公式**：DOCX 文本 fallback；预览 KaTeX 矢量。
 4. **超长段落 / 超高表格行**：预览可能被纸张 `overflow:hidden` 截断（分页只拆顶层节点）；DOCX 不受影响。**ISS-182 后续**会加告警。
+
+### 主窗口边界持久化（Issue #178）
+
+`src-tauri/src/window_state.rs` 在 setup 恢复主窗口，Moved/Resized/ScaleFactorChanged 维护内存中的普通边界，关闭请求与退出事件保存到应用配置目录的 `window-state.json`。只记录位置和尺寸，不包含文档信息；tear-off 窗口不写入。恢复时验证版本、有限数值和尺寸范围，按当前显示器工作区限制窗口及最小尺寸；异常记录回退默认边界，I/O 失败仅记录日志。
