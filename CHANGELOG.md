@@ -4,6 +4,10 @@ All notable changes of this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- 主窗口记住退出前的普通窗口大小和位置，下次启动恢复；屏幕断开或工作区缩小时自动调整到可见区域。全屏、最大化或最小化退出后，下次恢复最近的普通窗口边界；混合缩放显示器不再因重复放大窗口面积而误选屏，多个进程同时保存时各自使用独立临时文件（Issue #178）。
+
 ### Fixed
 
 - **修复「设为默认 Markdown 应用」JXA 脚本对含反斜杠 bundle id 的转义缺陷（ISS-224）**：ISS-222 修复时对 bundle id 的转义只替换单引号、不转义反斜杠——若 identifier（取自 tauri.conf.json）含反斜杠（如 `com.folia\`），末尾反斜杠会把 JXA 字符串字面量的收尾引号转义掉，生成的脚本直接抛 SyntaxError，「设为默认」整体失效。现按「先反斜杠、后单引号」的顺序转义（顺序反了会把 `\'` 二次转义成语义错误的形态）。防御性修复：当前 identifier `com.folia.reader` 不含特殊字符，实际不触发；真机 osascript 实证旧转义在含 `\` 的 id 下必抛 SyntaxError、新转义全部通过。新增 2 个回归测试（反斜杠单独出现 / 反斜杠+单引号组合），变异验证：回退转义后恰好这 2 个测试变红。cargo test 75/75。

@@ -1,3 +1,5 @@
+mod window_state;
+
 use std::{
   borrow::Cow,
   collections::HashMap,
@@ -1297,6 +1299,7 @@ pub fn run() {
   tauri::Builder::default()
     .manage(OpenedPaths(Mutex::new(collect_initial_open_paths())))
     .manage(app_state)
+    .manage(window_state::WindowState::default())
     .plugin(tauri_plugin_dialog::init())
     .plugin(tauri_plugin_fs::init())
     .plugin(tauri_plugin_opener::init())
@@ -1319,6 +1322,7 @@ pub fn run() {
       set_as_default_markdown_app
     ])
     .setup(|app| {
+      window_state::initialize(app);
       if cfg!(debug_assertions) {
         app.handle().plugin(
           tauri_plugin_log::Builder::default()
@@ -1329,6 +1333,18 @@ pub fn run() {
       Ok(())
     })
     .on_window_event(|window, event| {
+      if matches!(
+        event,
+        tauri::WindowEvent::Moved(_)
+          | tauri::WindowEvent::Resized(_)
+          | tauri::WindowEvent::ScaleFactorChanged { .. }
+          | tauri::WindowEvent::CloseRequested { .. }
+      ) {
+        window_state::capture(window);
+      }
+      if matches!(event, tauri::WindowEvent::CloseRequested { .. }) && window.label() == "main" {
+        window_state::save(window.app_handle());
+      }
       // Issue #68：用户请求关闭窗口（红绿灯 / Cmd+Q / 窗口 X）时，先交给前端
       // 检查是否存在未保存修改（dirty 标签），由前端弹三选项确认框后决定真正
       // 关闭还是取消。这里只 prevent_close 并 emit `request:confirm-close`，
@@ -1353,6 +1369,9 @@ pub fn run() {
     .build(tauri::generate_context!())
     .expect("error while building tauri application")
     .run(|_app, _event| {
+      if matches!(_event, tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit) {
+        window_state::save(_app);
+      }
       #[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
       if let tauri::RunEvent::Opened { urls } = _event {
         let paths = opened_paths_from_urls(urls);
