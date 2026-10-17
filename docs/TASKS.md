@@ -34,6 +34,13 @@
 
 ### 缺陷类
 
+#### 🔧 ISS-224 「设为默认 Markdown 应用」JXA bundle id 转义漏掉反斜杠——含 `\` 的 identifier 会让脚本抛 SyntaxError 整体失效（L1 直接修复，2026-10-13 用户会话发现）
+
+- **发现（ISS-222 修复的遗留缺陷）**：用户报告 0.8.1 安装版点击「设为默认 Markdown 应用」报 `LSSetDefaultRoleHandlerForContentType returned status -50`，排查确认根因即 ISS-222（该修复 commit 891255b 于 2026-09-22 合入 main，0.8.1 发布于 09-19，不含修复，属预期）。复核该修复时发现新缺陷：`build_set_default_markdown_jxa` 的转义 `bundle_id.replace('\'', "\\'")` 只替换单引号、不转义反斜杠，且函数注释声称「不含单引号 / 反斜杠等会破坏 JXA 字面量的字符」与实现不符。
+- **根因（真机 osascript 实证）**：形如 `com.folia\` 的 identifier 经该转义后生成 `$.CFStringCreateWithCString($.NULL, 'com.folia\', ...)`——末尾反斜杠把收尾引号转义掉，字符串字面量不再闭合，JXA 抛 `SyntaxError: Unexpected identifier`，整个脚本失效；`com.fol\'ia` 组合同样必炸。当前 identifier `com.folia.reader` 不含特殊字符，属防御性修复，但转义既然存在就必须正确。
+- **修法**：转义改为先反斜杠后单引号（`replace('\\', "\\\\").replace('\'', "\\'")`）——顺序不可反，否则替换引号时引入的 `\` 会被前一步二次转义成 `\\'` 语义错误形态。同步修正函数注释，如实描述转义顺序及其原因。
+- **验证**：真机 A/B——旧转义下 trailing-backslash / backslash+quote 两形态均抛 SyntaxError，新转义下 4 种形态（正常 / 单引号 / 尾反斜杠 / 反斜杠+单引号）全部成功执行；修正版 JXA（真实 bundle id）本机实跑返回 0，`.md` 默认 handler 已成功注册为 `/Applications/Folia.app`。新增 2 个回归测试，变异验证：回退转义恰好这 2 个测试变红、恢复全绿。cargo test --lib 75/75（基线 73 + 2）；typecheck / lint 零错误；全量 vitest 113/113 通过。
+
 #### ✅ ISS-223 固定大纲与导出栏同时打开时 Markdown 正文被挤成窄条（PR #175 已合并；尚未发布/替换已安装版）
 
 - **现象:** 固定大纲与 Word/HTML 导出栏同时打开、任一侧栏调宽后，中间 Markdown 外壳仍占有空间，但真正正文区域会被压成每行数个字的窄条。
