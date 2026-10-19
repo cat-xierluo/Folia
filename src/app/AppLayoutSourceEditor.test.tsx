@@ -28,7 +28,7 @@ const fileServiceMock = vi.hoisted(() => ({
 }));
 
 const updateServiceMock = vi.hoisted(() => ({
-  checkForAppUpdate: vi.fn<() => Promise<UpdateCheckResult>>(),
+  checkForAppUpdate: vi.fn<() => Promise<UpdateCheckResult>>().mockResolvedValue({ status: 'not-available' }),
   downloadAppUpdate: vi.fn<() => Promise<void>>(),
   installDownloadedAppUpdate: vi.fn<() => Promise<void>>(),
 }));

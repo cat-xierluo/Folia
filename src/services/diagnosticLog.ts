@@ -2,10 +2,15 @@ import type { OpenedFile } from '../types/document';
 
 export const DIAGNOSTIC_EVENT_LIMIT = 500;
 export const DIAGNOSTIC_ID_LIMIT = 128;
-const EVENTS = ['tab-open', 'file-result', 'file-applied', 'tab-active', 'read-start', 'read-complete', 'read-error', 'editor-source', 'editor-ready', 'editor-input', 'editor-error', 'save-start', 'save-complete', 'save-cancelled', 'save-error', 'io-error', 'export-complete', 'export-error'] as const;
+const EVENTS = ['tab-open', 'file-result', 'file-applied', 'tab-active', 'read-start', 'read-complete', 'read-error', 'editor-source', 'editor-ready', 'editor-input', 'editor-error', 'save-start', 'save-complete', 'save-cancelled', 'save-error', 'io-error', 'export-complete', 'export-error', 'update-check'] as const;
 type EventName = typeof EVENTS[number];
-type Details = { tabId?: string; request?: number; mode?: 'source' | 'wysiwyg' };
-type Event = { seq: number; elapsedMs: number; event: EventName; tab?: number; request?: number; mode?: 'source' | 'wysiwyg' };
+/** ISS-227：自动更新检查的终态/重试枚举——白名单构造，不记录原始错误文本。 */
+const UPDATE_OUTCOMES = ['available', 'not-available', 'unsupported', 'error-retrying', 'error-final'] as const;
+type UpdateOutcome = typeof UPDATE_OUTCOMES[number];
+const isUpdateOutcome = (value: unknown): value is UpdateOutcome =>
+  typeof value === 'string' && (UPDATE_OUTCOMES as readonly unknown[]).includes(value);
+type Details = { tabId?: string; request?: number; mode?: 'source' | 'wysiwyg'; outcome?: UpdateOutcome };
+type Event = { seq: number; elapsedMs: number; event: EventName; tab?: number; request?: number; mode?: 'source' | 'wysiwyg'; outcome?: UpdateOutcome };
 
 /** 白名单构造：从不序列化调用方对象、原始错误或文件信息。窗口内存上限 500 条，退出即清。 */
 export function createDiagnosticLog() {
@@ -28,6 +33,7 @@ export function createDiagnosticLog() {
     }
     if (Number.isSafeInteger(details.request) && details.request! > 0) entry.request = details.request;
     if (details.mode === 'source' || details.mode === 'wysiwyg') entry.mode = details.mode;
+    if (isUpdateOutcome(details.outcome)) entry.outcome = details.outcome;
     entries.push(entry);
     if (entries.length > DIAGNOSTIC_EVENT_LIMIT) { entries.shift(); dropped++; }
   };

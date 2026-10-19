@@ -1130,6 +1130,9 @@ export function AppLayout() {
       hasStarted: () => autoUpdateCheckStarted,
       markStarted: () => setAutoUpdateCheckStarted(true),
       checkForAppUpdate,
+      // ISS-227：自动检查结果写入本地诊断日志（仅终态枚举，无原始错误文本），
+      // 与手动检查路径的错误 UI 互补。
+      onOutcome: (outcome) => diagnosticLog.record('update-check', { outcome }),
       onUpdateAvailable: (result) => startBackgroundUpdateDownload('auto', result),
     });
   }, [isTauriRuntime, settings.autoUpdateCheck, autoUpdateCheckStarted, startBackgroundUpdateDownload]);

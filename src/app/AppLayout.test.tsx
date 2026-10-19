@@ -12,7 +12,7 @@ import type { UpdateCheckResult, UpdateProgress } from '../services/updateServic
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const updateServiceMock = vi.hoisted(() => ({
-  checkForAppUpdate: vi.fn<() => Promise<UpdateCheckResult>>(),
+  checkForAppUpdate: vi.fn<() => Promise<UpdateCheckResult>>().mockResolvedValue({ status: 'not-available' }),
   downloadAppUpdate: vi.fn<(update: Update, onProgress?: (progress: UpdateProgress) => void) => Promise<void>>(),
   installDownloadedAppUpdate: vi.fn<() => Promise<void>>(),
 }));

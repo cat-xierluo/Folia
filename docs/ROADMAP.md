@@ -22,7 +22,7 @@
 | v0.2 渲染引擎 | Vditor 替换 markdown-it | 🟢 已完成 | Vditor.preview() + 本地 CDN |
 | v0.3 编辑体验 | Typora-like 所见即所得 + HTML 阅读优先 + Word / HTML 导出预览 | 🟡 进行中 | 普通 Markdown 默认 WYSIWYG；原生 HTML 表格自动稳定预览；源码 fallback、按需 Word 多页预览与 HTML 预览面板已完成 |
 | v0.4 文档管理 | 最近文件、多文件 | 🟢 已完成 | 多标签页会话 + 最近文件首页 + 标签右键菜单/Cmd+W + 大文件降级 + 标签栏并入工具栏 + i18n 三语 + 大文件降级/失效文件/启动恢复三态提示（ISS-40/ISS-42） |
-| v0.5 桌面发布体验 | 自动更新、发布产物、版本提示 | 🟢 已完成 | Tauri updater + GitHub Releases；Gitee 作为产物镜像 |
+| v0.5 桌面发布体验 | 自动更新、发布产物、版本提示 | 🟢 已完成 | Tauri updater + GitHub Releases 单一更新源（Gitee 镜像自 v0.6.4 起失效，DEC-148 停用） |
 | v0.6 Word 导出与预览 | md2word 集成、docx 导出 + 预览 | 🟡 优化中 | 核心导出已完成；继续扩展 JSON schema，并按 DEC-123 提升快速 HTML 纸张预览的配置映射与边界说明 |
 | v0.7 法律增强 | 表格编辑、模板 | 🟡 进行中 | 已完成 HTML table 共享模型、源码区块定位服务、法律表格 fixture 基线 |
 | v0.8 预设生态 | 自定义预设槽位、组织共享、内测授权探索 | 🟡 进行中 | 常规版本保留 2 个自定义槽位，输入内测码可使用更多槽位 |
