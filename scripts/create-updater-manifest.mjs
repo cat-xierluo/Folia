@@ -3,15 +3,11 @@ import { arch, platform } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 
 const githubRepo = process.env.FOLIA_UPDATE_REPO ?? 'https://github.com/cat-xierluo/Folia';
-const giteeRepo = process.env.FOLIA_UPDATE_GITEE_REPO ?? 'https://gitee.com/cat-xierluo/Folia';
 const version = process.env.FOLIA_UPDATE_VERSION ?? await readConfiguredVersion();
 const tag = process.env.FOLIA_UPDATE_TAG ?? `v${version}`;
 const notes = process.env.FOLIA_UPDATE_NOTES ?? `Folia ${version}`;
 const signatureRoot = resolve(process.env.FOLIA_SIGNATURE_DIR ?? 'src-tauri/target/release/bundle');
 const outputPath = resolve(process.env.FOLIA_MANIFEST_OUTPUT ?? 'src-tauri/target/release/bundle/updater/latest.json');
-const giteeOutputPath = resolve(
-  process.env.FOLIA_GITEE_MANIFEST_OUTPUT ?? 'src-tauri/target/release/bundle/updater/latest-gitee.json',
-);
 const requiredPlatforms = (process.env.FOLIA_REQUIRE_PLATFORMS ?? '')
   .split(',')
   .map((item) => item.trim())
@@ -130,5 +126,4 @@ async function writeJson(path, value) {
 
 const platforms = await collectPlatforms();
 await writeJson(outputPath, createManifest(githubRepo, platforms));
-await writeJson(giteeOutputPath, createManifest(giteeRepo, platforms));
 console.log(`Platforms: ${Object.keys(platforms).join(', ')}`);

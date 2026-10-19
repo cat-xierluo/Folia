@@ -2,6 +2,13 @@
 
 ## 第一部分：决策记录
 
+### [DEC-148] - 2026-10-19 - 停用 Gitee 镜像与更新兜底，收敛为 GitHub 单一更新源（ISS-227）
+
+- **决策:** 不修复 Gitee 同步，直接停用国内二次分发。`tauri.conf.json` 更新端点收敛为 GitHub Releases 单源；release.yml 删除两个 Gitee 同步步骤；`create-updater-manifest.mjs` 不再生成 `latest-gitee.json`。Gitee 上既有 release 不再维护。
+- **依据:** ① Gitee 镜像自 v0.6.4 起实际失效（上传 90s 超时 + `latest` 标签 manifest 追加上传，服务端恒返最早一份），修复需引入独立同步工作流与逐文件长超时上传，维护成本与其「兜底」价值不成比例；② 更关键的是 tauri-plugin-updater 2.10.1 的端点语义（按序尝试、首个 2xx+合法 JSON 即采用并清错误）会让**陈旧但可用的兜底把主源瞬时失败伪装成「已是最新」**——GitHub 冷启动超时即落到 Gitee 0.6.4，版本比较为假，`check()` 返回无更新而非报错，自动路径静默、手动路径误显「已是最新版本」。maintainer 亲历「启动不弹更新」、外部报告者停在 0.6.4 均源于此；一个 404 的兜底无害，一个陈旧 200 的兜底有害。2026-05-20 归档 ISS-049/050/051 时已有「收敛为 GitHub」意向但未落实端点，本次彻底执行。
+- **配套加固:** 自动检查失败改为静默重试一次（45s，`autoUpdateScheduler.ts`），结果以枚举记入本地诊断日志（`update-check` 事件，白名单构造、不落原始错误文本）；错误 UI 仍由设置页手动检查路径承载。三个 AppLayout 集成测试的 `checkForAppUpdate` mock 补默认返回值（修复高负载下 2.6s 定时器 `undefined.then` 崩测的既有卫生问题）。
+- **边界与遗留:** 已安装存量（0.6.4~0.8.2）内置的 Gitee 兜底端点无法由代码 PR 移除——唯一补救是服务端删除 Gitee `latest` release（id 769689）下 9 份陈旧 `latest.json` 使其 404，由 maintainer 手动执行（见 TASKS ISS-227 服务端清理小节）。更新完全依赖 GitHub 可达性，国内无代理用户需手动到 Releases 下载（README 与 issue 回复已提供指引）。
+
 ### [DEC-147] - 2026-10-17 - Issue #179：异步回填绑定标签快照 + 有界内存本地诊断日志（PR #182）
 
 - **证据与取舍:** 合成 A 保存晚于 B 打开时，手动保存、autosave、另存为 3 条真实 session/reducer 回归在旧代码全部失败。回填采用 tab ID + 原 file 对象快照（`replaceFileIfUnchanged`），而不是返回时的 active tab；期间继续编辑则保守丢弃 UI 回填、保留 dirty 草稿，避免清除更新的内容。此保护不改变已经发出的磁盘写入，也不声称解决同一路径多请求的磁盘写入排序。

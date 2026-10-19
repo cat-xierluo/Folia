@@ -18,6 +18,24 @@ describe('local diagnostic privacy and retention', () => {
     expect(Object.keys(snapshot.events[0]).sort()).toEqual(['elapsedMs', 'event', 'mode', 'request', 'seq', 'tab']);
   });
 
+  // ISS-227：update-check 事件只接受白名单终态枚举，不落原始错误文本。
+  it('records update-check outcomes from the enum only and drops raw payloads', () => {
+    const log = createDiagnosticLog();
+    const rawMessage = 'error sending request for url https://example.invalid/latest.json';
+    log.record('update-check', { outcome: 'error-retrying' });
+    log.record('update-check', { outcome: 'error-final' });
+    log.record('update-check', { outcome: 'available' });
+    log.record('update-check', { outcome: 'nonsense' } as unknown as Parameters<typeof log.record>[1]);
+    log.record('update-check', { outcome: rawMessage } as unknown as Parameters<typeof log.record>[1]);
+    const events = log.snapshot().events;
+    // 与 request/mode 的白名单先例一致：非法值不阻断事件，只省略该字段。
+    expect(events).toHaveLength(5);
+    expect(events.slice(0, 3).map((event) => event.outcome)).toEqual(['error-retrying', 'error-final', 'available']);
+    expect(events[3]).not.toHaveProperty('outcome');
+    expect(events[4]).not.toHaveProperty('outcome');
+    expect(JSON.stringify(log.snapshot())).not.toContain(rawMessage);
+  });
+
   it('bounds events and alias storage, counts dropped events and returns independent snapshots', () => {
     const log = createDiagnosticLog();
     for (let i = 0; i < 1200; i++) log.record('tab-active', { tabId: `tab-${i}` });

@@ -52,15 +52,18 @@
 - **现象:** v0.8.2 新增的「导出诊断日志 / 清除日志」按钮装在无类名裸 `<div>` 里，被 block 流竖向堆叠（不是横排），窄列下「导出诊断日志」文字折行；状态文案用裸 `.settings-desc` 无错误配色——与 ISS-192「设为默认 Markdown 应用」行确立的行布局（信息列 `flex:1` + 按钮贴右 + `.settings-default-app-message` 错误红）不一致。
 - **修法:** 信息列改 `.settings-row-info`（与 `.settings-default-app-info` 共享规则），按钮组改 `.settings-action-group`（inline-flex + gap 8px + 按钮 nowrap），状态文案改 `.settings-row-message`（导出失败显式标 `error`）。CSS 以组合选择器与 ISS-192 类共享规则，不改动既有类语义。
 - **验证:** GeneralSection.test 新增结构回归（按钮组定位与顺序、行内信息列、失败 error 标记、清除后不残留）；typecheck / vitest 全量 / lint / build 通过；Chromium 截图对比按钮横排、无折行、与默认应用行对齐（见 PR）。e2e layout-behavior 与 tab-content-diagnostics 无该行断言，全量子集结果见 PR。
-- **状态:** 分支 `fix/repo/diagnostics-row-layout`，PR 待开。
+- **状态:** 2026-10-19 [PR #189](https://github.com/cat-xierluo/Folia/pull/189) squash 合入 `main`，合并提交 `e20ee05739c06c896ac25b064684e9b773119594`，CI 三项全绿；e2e 失败集与同机 pristine main（c79e55f）基线 15 项 diff 为空。Issue #179 保持开放等复现日志。
 
-#### 🔧 ISS-227 Gitee 镜像同步自 v0.6.4 后实际失效：大产物上传超时 + `latest` 标签 manifest 追加上传致服务端始终返回最早一份（2026-10-17 v0.8.2 发版验证发现；L2 待授权修复）
+#### 🔧 ISS-227 Gitee 镜像同步自 v0.6.4 后实际失效：大产物上传超时 + `latest` 标签 manifest 追加上传致服务端始终返回最早一份（2026-10-17 v0.8.2 发版验证发现；2026-10-19 用户拍板：停用 Gitee 分发，DEC-148，L2 进行中）
 
 - **现象（Gitee 公开 API 实证）:** v0.8.2 与 v0.8.1 的 Gitee release 均只有 3 个 `.sig` + `latest.json`（+ 自动源码包），缺全部 dmg / exe / app.tar.gz；固定 `latest` 标签 release（id 769689，2026-07-31 建）下累积 9 个同名 `latest.json` 资产，`releases/download/latest/latest.json` 实际返回最早一份（`version: 0.6.4`）。release.yml 的两个 Gitee 步骤均 `continue-on-error: true` 且脚本内部对每个失败只 echo 后 continue，step 状态恒为 success——v0.8.1 发版时据 step 状态得出的「Gitee 同步成功」系误判。
 - **根因:** ① `curl_gitee` 使用 `--max-time 90 --retry 1`，GitHub runner → Gitee 上传几十 MB 产物 90s 内传不完，日志逐个出现 `curl: (28) Operation timed out after 90000 milliseconds with 0 bytes received`，5 个大文件全部失败（run 39047213752 publish job，每个约 3 分钟）；② 「Sync latest manifest to fixed Gitee tag」直接 POST 新 `latest.json` 资产而不先删除旧同名资产，Gitee 按最早资产提供下载。
 - **影响:** 更新端点顺序为 GitHub 优先、Gitee 兜底（`tauri.conf.json` → `plugins.updater.endpoints`）；GitHub 可达的用户不受影响。依赖 Gitee 兜底的用户自 0.6.4 起看不到任何新版本（manifest 冻结），不会出现下载 404；本次发版未使其恶化。v0.8.2 release notes「已知限制」已披露。
-- **修法（待用户授权）:** 新增 `gitee-sync.yml`（`workflow_dispatch`，输入 tag）：`gh release download` 后对大文件用 `--max-time 900 --retry 3` 上传，逐文件记录成功/失败并以非零退出暴露失败；`latest` 标签先 GET 资产列表、DELETE 全部旧 `latest.json` 再 POST 新文件；release.yml 两步改为调用同一脚本并去掉吞错。补跑 v0.8.2（可选 v0.8.1）同步，并清理 `latest` release 下 8 份重复资产。
-- **状态:** 已登记，等待决定是否按上述方案修复。
+- **2026-10-19 影响修正（决定停用的直接依据）:** tauri-plugin-updater 2.10.1 `updater.rs:412-532` 按序试端点、首个 2xx+合法 JSON 即 break 并清 `last_error`（非 2xx 时 `:508` 甚至不记错误直接落下一个）——**任何一次 GitHub 瞬时超时/被拦（国内冷启动常态）都会落到 Gitee 0.6.4，`0.6.4 > 当前版本` 为假 → `check()` 返回 Ok(None)「已是最新」而非报错**。自动路径只响应 available、静默吞掉其余结果；手动路径同条件下显示「已是最新版本」（自信地错）。maintainer 本机 0.8.1→0.8.2 亲历「启动不弹更新、进设置才有」；#186/#187 报告者 leo123-tto 停在 0.6.4 是活体受害者。本机已核：`autoUpdateCheck=true`（localStorage），GitHub 端点 TTFB 3s 两跳，Gitee 1.3s 返 0.6.4 且 URL 全指 gitee v0.6.4 资产。
+- **处置（DEC-148，用户 2026-10-19 拍板「不同步到 Gitee，没必要做国内二次分发」）:** 不修 Gitee 同步，直接停用——① `tauri.conf.json` endpoints 收敛为 GitHub 单源；② release.yml 删除「Sync to Gitee」「Sync latest manifest to fixed Gitee tag」两步与 `FOLIA_GITEE_MANIFEST_OUTPUT`；③ `create-updater-manifest.mjs` 移除 `latest-gitee.json` 生成；④ 前端加固：自动检查失败静默重试一次（45s），结果以枚举写入本地诊断日志（新 `update-check` 事件，白名单构造），三个 AppLayout 测试的 `checkForAppUpdate` mock 补默认返回值（修掉高负载下 `undefined.then` 崩测的卫生问题）；⑤ ARCHITECTURE/ROADMAP 同步改写。
+- **服务端清理（唯一能救已安装存量 0.6.4~0.8.2 的动作，需 maintainer 手动执行，代码 PR 无法覆盖）:** 删除 Gitee `latest` release（id 769689）下全部 9 份陈旧 `latest.json`（或整份 release），使其 404——已安装版本的内置兜底端点将不再返回假「已是最新」，GitHub 失败如实报错。另可选：删除 Gitee 上 v0.6.4 之后各版本的残缺 release（只有 .sig + latest.json，无产物，仅误导）。Gitee 侧不再维护。
+- **验证:** vitest 81 文件 864/864（新增 4：调度器重试 3 + 诊断日志枚举 1）；typecheck / lint / build / cargo check 通过；manifest 脚本冒烟（合成 .sig 三平台 → 仅生成 latest.json，无 gitee 产物）；release.yml YAML 解析通过；e2e layout-behavior 43 通过 / 14 失败，失败集为同机基线 15 项的真子集（「live preview reveals markers」本机偶发项本次通过）。三个 AppLayout 集成测试 mock 加固后，与 e2e 并发跑全量 vitest 也不再崩测。
+- **状态:** 代码/工作流/文档处置走 L2（分支 `fix/repo/drop-gitee-update-source`）；服务端清理待 maintainer 手动执行后在本条目登记完成。
 
 #### ✅ ISS-226 Issue #179 新打开 Markdown 偶发显示前一标签内容及本地诊断日志（PR #182 已合并 77b2b07；已随 v0.8.2 发布（2026-10-17）；Issue #179 保持开放待日志取证）
 

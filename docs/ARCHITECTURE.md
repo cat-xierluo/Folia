@@ -190,12 +190,12 @@ word/table-handler.ts 输出 docx Table；Markdown 管道表格使用专用 pars
 ## 自动更新
 
 - 运行时：`AppLayout` 在 Tauri 桌面端根据 `autoUpdateCheck` 设置延迟调用 `updateService.checkForAppUpdate()`；延迟调度由 `autoUpdateScheduler.ts` 管理，只有检查真正开始时才标记为已启动，避免用户在延迟期关闭再开启后漏检。自动检查默认开启，可在 Settings / 关于关闭。发现更新后直接调用 `update.download()` 后台下载；下载完成后 Toolbar 显示“重启更新”，用户点击后执行 `update.install()` 并通过 process 插件 `relaunch()`。
-- 更新源：`src-tauri/tauri.conf.json` 配置两个 endpoint，Tauri updater 按顺序尝试，GitHub 不可达时自动 fallback 到 Gitee：① GitHub Releases `https://github.com/cat-xierluo/Folia/releases/latest/download/latest.json`；② Gitee `https://gitee.com/cat-xierluo/Folia/releases/download/latest/latest.json`。注意 Gitee 资产直链形式是 `/releases/download/{tag}/{file}`（download 在 tag 前），**不是** GitHub 的关键字别名 `/releases/latest/download/{file}`（ISS-84：曾误用 GitHub 形式导致 fallback 一直 404）。Gitee 的 `latest.json` 由 release.yml 的「Sync latest manifest to fixed Gitee tag」步骤同步到一个固定 `latest` tag 下（Gitee 没有 `/releases/latest` 别名，必须挂固定 tag），其内平台下载 URL 也指向 gitee.com，保证 GFW 网络下整条更新链路可达。
+- 更新源：`src-tauri/tauri.conf.json` 配置单一 endpoint——GitHub Releases `https://github.com/cat-xierluo/Folia/releases/latest/download/latest.json`（DEC-148，2026-10-19 起收敛）。历史上的 Gitee 兜底端点已移除：其镜像同步自 v0.6.4 后实际失效（上传超时 + `latest` 标签 manifest 追加上传，服务端始终返回最早一份），且 tauri-plugin-updater「首个 2xx + 合法 JSON 即采用」的端点语义会让陈旧兜底把 GitHub 瞬时失败伪装成「已是最新」（ISS-227）。GitHub 端点失败时自动检查会如实进入 error 路径并静默重试一次（`autoUpdateScheduler.ts`），结果以枚举形式记入本地诊断日志（`update-check` 事件），错误 UI 由设置页手动检查路径承载。
 - 权限：默认 capabilities 需要同时包含 `updater:default`、`process:allow-restart` 和标题栏使用的 `core:window:allow-start-dragging` / `core:window:allow-toggle-maximize` / `core:window:allow-set-title`，否则更新重启或自定义标题栏窗口操作会被 Tauri ACL 拦截。
 - 签名：公钥写入 Tauri updater 配置；私钥位于本机 `~/.tauri/folia.key`，不得提交到仓库。
 - 本地完整打包：`npm run tauri build` 会生成 updater artifact，需要设置 `TAURI_SIGNING_PRIVATE_KEY` 和 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`。
 - 发布更新：推送 `v*` tag 后由 GitHub Actions 构建 macOS ARM / Intel（`.dmg`）与 Windows（NSIS `.exe`）产物，生成统一 `latest.json` 并发布 Release。`bundle.targets` 已收窄为 `["dmg", "nsis"]`，不再生成 Windows MSI（DEC-093）；`fileAssociations.description` 保留 ASCII 文本作为历史兼容约束（NSIS 安装包不读取该字段，仅在未来恢复 MSI 时才生效）。
-- Manifest 生成：`npm run updater:manifest` 会扫描签名文件生成 `latest.json` / `latest-gitee.json`；CI 中要求 `darwin-aarch64`、`darwin-x86_64`、`windows-x86_64` 都存在，否则发布失败。
+- Manifest 生成：`npm run updater:manifest` 会扫描签名文件生成 `latest.json`；CI 中要求 `darwin-aarch64`、`darwin-x86_64`、`windows-x86_64` 都存在，否则发布失败。Gitee 变体 `latest-gitee.json` 的生成已随 DEC-148 移除。
 
 ### 静态资源
 
