@@ -116,15 +116,22 @@ export function GeneralSection() {
         />
       </div>
 
+      {/* ISS-229（Issue #179 后续）：诊断日志行对齐 ISS-192 的行布局——
+          左侧信息列 flex:1 撑满，右侧按钮组横排贴右（此前按钮装在无样式
+          裸 div 里被 block 流竖着堆叠、窄列下文字折行）。状态文案与
+          默认应用行同构，失败态显式标 error。 */}
       <div className="settings-row settings-row-stacked">
-        <div>
+        <div className="settings-row-info">
           <div className="settings-label">{t('diagnosticsLabel')}</div>
           <div className="settings-desc">{t('diagnosticsDesc')}</div>
           {diagnosticStatus !== 'idle' && diagnosticStatus !== 'busy' && (
-            <div className="settings-desc" role="status">{t(diagnosticStatus === 'saved' ? 'diagnosticsSaved' : diagnosticStatus === 'error' ? 'diagnosticsError' : diagnosticStatus === 'cleared' ? 'diagnosticsCleared' : 'diagnosticsCancelled')}</div>
+            <div
+              className={`settings-desc settings-row-message${diagnosticStatus === 'error' ? ' error' : ''}`}
+              role="status"
+            >{t(diagnosticStatus === 'saved' ? 'diagnosticsSaved' : diagnosticStatus === 'error' ? 'diagnosticsError' : diagnosticStatus === 'cleared' ? 'diagnosticsCleared' : 'diagnosticsCancelled')}</div>
           )}
         </div>
-        <div>
+        <div className="settings-action-group">
           <button type="button" className="settings-action-button" disabled={diagnosticStatus === 'busy'} onClick={async () => {
             setDiagnosticStatus('busy');
             setDiagnosticStatus(await exportDiagnosticLog());
