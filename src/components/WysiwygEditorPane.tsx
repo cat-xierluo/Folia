@@ -25,6 +25,7 @@ import {
   registerImageAssetFromFile,
 } from '../services/mediaInsertionService';
 import { applyWithSuppression } from '../services/dirtySuppression';
+import type { EditorHistoryApi } from '../types/editor';
 
 type WysiwygEditorPaneProps = {
   source: string;
@@ -32,7 +33,23 @@ type WysiwygEditorPaneProps = {
   onChange: (value: string) => void;
   onViewComplexTable?: (block: HtmlTableBlock, anchor: HTMLElement) => void;
   filePath?: string;
+  /** ISS-228：编辑器就绪时上报撤销/重做 API，卸载/销毁时上报 null。
+   *  外壳（AppLayout → Toolbar）据此启用工具栏撤销/重做按钮。 */
+  onHistoryApiChange?: (api: EditorHistoryApi | null) => void;
 };
+
+/** ISS-228：Vditor 3.11 的统一 Undo 类（undo/redo/栈）未随 dist 分发类型
+ *  声明，这里按运行时形状访问——与 Vditor 内置工具栏 undo/redo 按钮及
+ *  ⌘Z 快捷键处理走同一调用路径（vditor.undo.undo(vditor)）。 */
+function createVditorHistoryApi(editor: import('vditor').default): EditorHistoryApi {
+  const internal = editor.vditor as unknown as {
+    undo?: { undo: (vditor: unknown) => void; redo: (vditor: unknown) => void };
+  };
+  return {
+    undo: () => internal.undo?.undo(editor.vditor),
+    redo: () => internal.undo?.redo(editor.vditor),
+  };
+}
 
 // 复用 IR 模式展开 → 自动折叠的"停顿"延迟（ISS-151）
 // Vditor IR 默认在编辑时让 `**` / `*` 等 marker 始终可见（vditor-ir__node--expand），
@@ -656,7 +673,7 @@ function rerenderAsyncCodeBlocks(editor: import('vditor').default): void {
   }
 }
 
-export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePath, documentId }: WysiwygEditorPaneProps) {
+export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePath, documentId, onHistoryApiChange }: WysiwygEditorPaneProps) {
   const settings = useSettings();
   const t = useCallback(
     (key: Parameters<typeof translate>[1]) => translate(settings.locale, key),
@@ -669,6 +686,12 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
   // 避免 editor.getValue() 经 Lute 反序列化把按钮写回 markdown 污染文档。
   const codeCopyOverlayRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<import('vditor').default | null>(null);
+  // ISS-228：onHistoryApiChange 走 ref 转发而不是进 init effect deps——
+  // 进 deps 会让回调身份变化触发 Vditor 销毁重建（init effect 本体）。
+  const onHistoryApiChangeRef = useRef(onHistoryApiChange);
+  useEffect(() => {
+    onHistoryApiChangeRef.current = onHistoryApiChange;
+  }, [onHistoryApiChange]);
   const applyingExternalValue = useRef(false);
   const externalValueEpoch = useRef(0);
   const latestSource = useRef(source);
@@ -1408,6 +1431,8 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
       });
 
       editorRef.current = editor;
+      // ISS-228：编辑器就绪，向外壳上报撤销/重做 API。
+      onHistoryApiChangeRef.current?.(createVditorHistoryApi(editor));
       // ISS-106：标题方向键光标漂移根治——MutationObserver 守卫，覆盖 RAF
       // 无法稳定捕捉的异步 selectionchange 路径（见 setupHeadingExpandGuard）。
       const irEl = getIrElement(editor);
@@ -1441,6 +1466,8 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
       }
       editorRef.current?.destroy();
       editorRef.current = null;
+      // ISS-228：编辑器销毁，撤销/重做 API 随之失效。
+      onHistoryApiChangeRef.current?.(null);
       lastComplexBlocksRef.current = [];
       pendingSourceRef.current = null;
       initializingRef.current = false;

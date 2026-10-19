@@ -5,13 +5,16 @@ import {
   FolderOpen,
   Newspaper,
   RefreshCw,
+  Redo2,
   Save,
   SaveAll,
   SlidersHorizontal,
+  Undo2,
 } from 'lucide-react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useSettings } from '../hooks/useSettings';
 import { translate } from '../services/i18n';
+import { getHistoryShortcutLabels } from '../services/shortcutLabels';
 import { handleTitlebarMouseDown } from '../services/titlebarDrag';
 import type { EditorMode } from '../types/session';
 
@@ -45,12 +48,18 @@ type ToolbarProps = {
   onRestartUpdate?: () => void;
   /** ISS-72：错误状态下点击重试按钮。仅在 updateStatus.phase === 'error' 时使用。 */
   onRetryUpdate?: () => void;
+  /** ISS-228：当前是否有可操作的活动编辑器；无编辑器（只读 docx / HTML 演示态）时按钮禁用。 */
+  historyAvailable: boolean;
+  /** ISS-228（Issue #186）：工具栏撤销/重做入口，桥接到当前编辑器的历史栈。 */
+  onUndo: () => void;
+  onRedo: () => void;
 };
 
 export function Toolbar({
   dirty, fileName, tabBar,
   editorMode, wordPreviewVisible, wechatPreviewVisible, editingDisabled, onToggleEditorMode, onToggleWordPreview, onToggleWechatPreview,
   onOpen, onSave, onSaveAs, onOpenSettings, onPreloadSettings, updateStatus, onRestartUpdate, onRetryUpdate,
+  historyAvailable, onUndo, onRedo,
 }: ToolbarProps) {
   const settings = useSettings();
   const t = (key: Parameters<typeof translate>[1], params?: Record<string, string | number>) =>
@@ -58,6 +67,8 @@ export function Toolbar({
   const hasOpenedFile = fileName !== '未命名';
   const iconSize = 18;
   const strokeWidth = 1.6;
+  const historyShortcuts = getHistoryShortcutLabels();
+  const historyDisabled = editingDisabled || !historyAvailable;
 
   const handleMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
     if (!('__TAURI_INTERNALS__' in window)) return;
@@ -82,6 +93,35 @@ export function Toolbar({
           </button>
           <button data-no-window-drag="true" onClick={onSaveAs} disabled={editingDisabled} title={t('toolbarSaveAsTitle')} aria-label={t('toolbarSaveAsLabel')}>
             <SaveAll size={iconSize} strokeWidth={strokeWidth} />
+          </button>
+        </div>
+        {/* ISS-228（Issue #186 Part A）：撤销/重做可视化入口。普通用户不知道
+            ⌘Z / ⌘⇧Z 快捷键；macOS 原生「编辑」菜单的 undo: 走 WKWebView 的
+            DOM 原生 undo manager，驱动不了 Vditor 自身的撤销栈，工具栏按钮
+            （直接调 Vditor/CM6 的 undo）才是可靠入口。
+            onMouseDown preventDefault：不让按钮抢走 contenteditable 的焦点，
+            编辑器保持选区，undo/redo 与快捷键路径行为一致（Vditor 内置工具栏
+            用不带焦点的 div 按钮，同样不抢焦点）。 */}
+        <div className="toolbar-group toolbar-edit-actions" aria-label={t('toolbarEditGroup')}>
+          <button
+            data-no-window-drag="true"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={onUndo}
+            disabled={historyDisabled}
+            title={t('toolbarUndoTitle', { shortcut: historyShortcuts.undo })}
+            aria-label={t('toolbarUndoLabel')}
+          >
+            <Undo2 size={iconSize} strokeWidth={strokeWidth} />
+          </button>
+          <button
+            data-no-window-drag="true"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={onRedo}
+            disabled={historyDisabled}
+            title={t('toolbarRedoTitle', { shortcut: historyShortcuts.redo })}
+            aria-label={t('toolbarRedoLabel')}
+          >
+            <Redo2 size={iconSize} strokeWidth={strokeWidth} />
           </button>
         </div>
       </div>

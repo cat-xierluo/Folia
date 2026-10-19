@@ -2,10 +2,12 @@ import { diagnosticLog } from '../services/diagnosticLog';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import CodeMirror from '@uiw/react-codemirror';
 import { markdown } from '@codemirror/lang-markdown';
+import { undo as cmUndo, redo as cmRedo } from '@codemirror/commands';
 import { EditorState } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { useSettings } from '../hooks/useSettings';
 import { findMarkdownHeadingPosition } from '../services/tocService';
+import type { EditorHistoryApi } from '../types/editor';
 
 export type SourceHeadingScrollRequest = {
   index: number;
@@ -19,9 +21,11 @@ type EditorPaneProps = {
   headingScrollRequest?: SourceHeadingScrollRequest;
   /** ISS-94 review B1：tab 标识，变化（切 tab）时允许重新触发 auto-focus。 */
   autoFocusKey?: string;
+  /** ISS-228：view 就绪时上报撤销/重做 API，卸载时上报 null（与 WysiwygEditorPane 同形）。 */
+  onHistoryApiChange?: (api: EditorHistoryApi | null) => void;
 };
 
-export function EditorPane({ source, onChange, headingScrollRequest, autoFocusKey, documentId }: EditorPaneProps) {
+export function EditorPane({ source, onChange, headingScrollRequest, autoFocusKey, documentId, onHistoryApiChange }: EditorPaneProps) {
   const settings = useSettings();
   useEffect(() => { diagnosticLog.record('editor-source', { tabId: documentId, mode: 'source' }); }, [source, documentId]);
   const [editorView, setEditorView] = useState<EditorView | null>(null);
@@ -78,6 +82,14 @@ export function EditorPane({ source, onChange, headingScrollRequest, autoFocusKe
       selection: { anchor: position },
     });
   }, [editorView, headingScrollRequest, source]);
+
+  // ISS-228：把 CM6 history 的 undo/redo 透出给外壳工具栏；view 卸载时置空。
+  // onHistoryApiChange 由 AppLayout 传 useState setter（引用稳定），进 deps 安全。
+  useEffect(() => {
+    if (!editorView) return;
+    onHistoryApiChange?.({ undo: () => cmUndo(editorView), redo: () => cmRedo(editorView) });
+    return () => onHistoryApiChange?.(null);
+  }, [editorView, onHistoryApiChange]);
 
   // ISS-94：editorView 就绪后，若 source 为空且未 focus 过，则 focus 一次。
   // autoFocusKey 变（切 tab）时重置 focusedOnceRef，让新空白文件能再次 auto-focus；

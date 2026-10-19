@@ -166,6 +166,21 @@
 
 ### 收口 / 演进类
 
+#### 🔧 ISS-228 工具栏撤销/重做入口（Issue #186 Part A；外部建议 2026-10-19；L2 进行中）
+
+- **需求:** 外部用户报告编辑误改后找不到撤销入口——编辑器工具栏配置为空（`toolbar: []`）、无自定义「编辑」菜单，普通用户不知道 ⌘Z / ⌘⇧Z 快捷键。建议在顶栏或菜单增加「撤销」「重做」并标注快捷键（macOS ⌘Z / ⌘⇧Z，Windows Ctrl+Z / Ctrl+Y）。
+- **方案:** 顶栏文件操作组右侧新增撤销/重做按钮（lucide `Undo2` / `Redo2`），tooltip 按平台标注快捷键（`navigator.platform` 判定，与 main.tsx 同口径）。WYSIWYG 走 Vditor 3.11 统一 Undo 类（`vditor.undo.undo(vditor)`，与内置工具栏/⌘Z 同一路径，运行时形状访问——类型未随 dist 分发）；源码模式走 `@codemirror/commands` 的 `undo`/`redo`（从传递依赖提升为直接依赖，版本 6.11.0 与既装一致）。两个编辑器经统一的 `EditorHistoryApi`（`onHistoryApiChange` 上报，null 表示无活动编辑器）桥接到 AppLayout → Toolbar；无编辑器（只读 docx / HTML 演示态）或编辑禁用时按钮 disabled。按钮 `onMouseDown preventDefault` 不抢 contenteditable 焦点，保持与快捷键路径一致的选区行为。
+- **不覆盖（Part B，见 ISS-231）:** 切换标签/外部修改重载后的撤销历史保留属结构性改造（`WysiwygEditorPane key={activeTabId}` 卸载重建实例），独立登记。
+- **验证:** 新增 `shortcutLabels.test.ts`（3）、`Toolbar.test.tsx`（4，平台固定 MacIntel/Win32 防 CI 漂移）、`EditorPane.test.tsx` 桥接用例（2）、`WysiwygEditorPane.test.tsx` 桥接用例（2，含切标签重建时旧报 null/新上报）。全量 vitest 81 文件 859/859；typecheck / lint / 生产构建 / cargo check 通过。e2e layout-behavior 全量 56 项 43 通过 / 14 失败，失败集与 main 文档化基线一致——「toolbar toggles source mode without showing Word preview」已在 pristine main 单跑核证为既有失败（同用例同断言位置）；「toolbar hides the app name」的分组列表断言随新增「编辑操作」分组更新后通过。Chromium 真浏览器功能验证（vite dev）：WYSIWYG 与源码两模式 打字→工具栏撤销→内容消失→工具栏重做→内容恢复 全通过，撤销点击后焦点保持在编辑器内（mousedown preventDefault 生效）；欢迎页/无编辑器态按钮置灰。WKWebView（etv）真机手测未跑。
+- **状态:** 分支 `feat/repo/undo-redo-toolbar`，PR 待开。
+
+#### 🔧 ISS-231 撤销历史跨标签保留（Issue #186 Part B；2026-10-19 分拆登记，暂不排期）
+
+- **需求:** 用户建议兜底——切换标签、重载或自动保存后撤销历史不被清空，至少能回退到本次打开时的状态。
+- **现状:** `WysiwygEditorPane` 以 `key={activeTabId}` 挂载（ISS-179/DEC-147 为隔离旧实例晚初始化写入引入），切标签即卸载重建 Vditor 实例，撤销历史结构性清空；源码模式 EditorPane 复用实例但同样按 tab 换内容。macOS 原生「编辑→撤销」走 WKWebView 的 DOM 原生 undo manager，不驱动 Vditor 栈，不能作为兜底。
+- **方向（待排期）:** 常驻隐藏的每标签编辑器实例或序列化历史栈迁移；须与 DEC-147 的按标签隔离挂载动机、多标签内存占用一起权衡，属架构项，不在 ISS-228 顺带处理。
+- **状态:** 已登记待排期。
+
 #### ✅ ISS-220 固定大纲宽度可调节 + 「总是固定大纲」双入口（原 #166，maintainer 承接 PR #171，2026-09-19 squash merge 40631c5；review REQUEST_CHANGES 双入口拍板→承接整合，改号 ISS-220/DEC-145、拆出版本号切版提交；CI 三绿 + maintainer 本地 vitest 失败集合与 main 逐条一致 + TOC e2e 子集 7/7；WKWebView 真机拖拽手感 NOT_VERIFIED 移交，详见 DEC-145）
 
 - **需求:** 用户反馈①固定态大纲左栏固定 260px 不可调；②希望「总是固定大纲」有设置页入口。maintainer 拍板：面板内开关保留，与设置页开关双入口并存（撤回原 PR 的「面板内开关移除」，理由见 DEC-145）。

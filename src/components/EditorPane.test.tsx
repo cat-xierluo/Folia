@@ -46,6 +46,7 @@ vi.mock('@uiw/react-codemirror', () => {
 });
 
 vi.mock('@codemirror/lang-markdown', () => ({ markdown: () => ({} as never) }));
+vi.mock('@codemirror/commands', () => ({ undo: vi.fn(), redo: vi.fn() }));
 vi.mock('@codemirror/state', () => ({ EditorState: { tabSize: { of: () => ({}) } } }));
 vi.mock('@codemirror/view', () => ({
   EditorView: {
@@ -71,6 +72,7 @@ vi.mock('../services/tocService', () => ({ findMarkdownHeadingPosition: () => nu
 
 // 在 mock 之后导入组件，确保 mock 生效
 import { EditorPane } from './EditorPane';
+import { undo as cmUndoMock, redo as cmRedoMock } from '@codemirror/commands';
 
 describe('EditorPane 自动聚焦 (ISS-94)', () => {
   let host: HTMLDivElement;
@@ -134,6 +136,62 @@ describe('EditorPane 自动聚焦 (ISS-94)', () => {
     // ISS-94：打开已有文档不应抢焦点
     expect(focusSpy).not.toHaveBeenCalled();
 
+    await act(async () => {
+      root?.unmount();
+    });
+  });
+});
+
+describe('EditorPane 撤销/重做桥接 (ISS-228, Issue #186 Part A)', () => {
+  let host: HTMLDivElement;
+
+  beforeEach(() => {
+    host = document.createElement('div');
+    document.body.append(host);
+  });
+
+  afterEach(() => {
+    host.remove();
+    vi.clearAllMocks();
+  });
+
+  it('#186: view 就绪后上报 undo/redo（透传到 @codemirror/commands），卸载时上报 null', async () => {
+    const onHistoryApiChange = vi.fn();
+    let root: Root | null = null;
+    await act(async () => {
+      root = createRoot(host);
+      root.render(
+        React.createElement(EditorPane, {
+          source: '# 已有标题',
+          onChange: () => undefined,
+          onHistoryApiChange,
+        }),
+      );
+    });
+
+    expect(onHistoryApiChange).toHaveBeenCalledTimes(1);
+    const api = onHistoryApiChange.mock.calls[0][0] as { undo: () => void; redo: () => void };
+    expect(api).not.toBeNull();
+
+    api.undo();
+    api.redo();
+    expect(cmUndoMock).toHaveBeenCalledTimes(1);
+    expect(cmRedoMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      root?.unmount();
+    });
+    expect(onHistoryApiChange).toHaveBeenLastCalledWith(null);
+  });
+
+  it('#186: 不传 onHistoryApiChange 时正常挂载卸载，不报错', async () => {
+    let root: Root | null = null;
+    await act(async () => {
+      root = createRoot(host);
+      root.render(
+        React.createElement(EditorPane, { source: '# t', onChange: () => undefined }),
+      );
+    });
     await act(async () => {
       root?.unmount();
     });
