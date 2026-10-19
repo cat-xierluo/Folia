@@ -1,0 +1,118 @@
+name: Gitee cleanup
+
+# 一次性维护工作流（ISS-227 / DEC-148）。
+#
+# 背景：Gitee 镜像自 v0.6.4 起实际失效，`latest` 标签 release 下累积了 9 份
+# 同名 latest.json，服务端恒返最早一份（version 0.6.4）。客户端更新端点已
+# 收敛为 GitHub 单源（PR #190），但**已安装的旧版本仍把 Gitee 当兜底**，
+# 会把 GitHub 的瞬时失败伪装成「已是最新」。删除陈旧清单后，Gitee 端点返回
+# 404，GitHub 失败时客户端如实报错。
+#
+# 用法：Actions → Gitee cleanup → Run workflow（可填 release tag，默认 latest）。
+# 安全性：仅使用仓库自有 GITEE_TOKEN / GITEE_OWNER，只删除本仓库镜像下的
+# latest.json 资产；不触碰任何 Gitee 版本 release 的产物。
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '要清理的 release 标签（默认 latest，即客户端兜底端点所用的那份）'
+        required: false
+        default: 'latest'
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Gitee secrets
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          GITEE_OWNER: ${{ secrets.GITEE_OWNER }}
+        run: |
+          if [ -z "${GITEE_TOKEN}" ] || [ -z "${GITEE_OWNER}" ]; then
+            echo "::error::GITEE_TOKEN / GITEE_OWNER not configured"
+            exit 1
+          fi
+          echo "secrets present"
+
+      - name: Delete stale latest.json assets
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          GITEE_OWNER: ${{ secrets.GITEE_OWNER }}
+          TARGET_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          REPO="${GITEE_OWNER}/Folia"
+          API="https://gitee.com/api/v5/repos/${REPO}"
+
+          echo "== release ${TARGET_TAG} =="
+          curl -sS --fail-with-body \
+            "${API}/releases/tags/${TARGET_TAG}?access_token=${GITEE_TOKEN}" \
+            -o /tmp/release.json
+          RELEASE_ID=$(python3 -c "import json;print(json.load(open('/tmp/release.json')).get('id',''))")
+          if [ -z "$RELEASE_ID" ]; then
+            echo "::error::cannot resolve release id for tag ${TARGET_TAG}"
+            exit 1
+          fi
+          echo "release id: ${RELEASE_ID}"
+
+          # 资产清单（带 token 的响应含 asset id）
+          python3 - <<'PY' > /tmp/assets.tsv
+          import json
+          release = json.load(open('/tmp/release.json'))
+          for asset in release.get('assets') or []:
+              print('{}\t{}'.format(asset.get('id'), asset.get('name')))
+          PY
+          echo "assets total: $(wc -l < /tmp/assets.tsv | tr -d ' ')"
+          cat /tmp/assets.tsv
+
+          DELETED=0
+          while IFS=$'\t' read -r ASSET_ID ASSET_NAME; do
+            [ -z "${ASSET_NAME}" ] && continue
+            if [ "${ASSET_NAME}" != "latest.json" ]; then
+              echo "skip (not a manifest): ${ASSET_NAME}"
+              continue
+            fi
+            if [ -n "${ASSET_ID}" ] && [ "${ASSET_ID}" != "None" ]; then
+              # 首选按 asset id 删除（Gitee 官方文档形式）
+              URL="${API}/releases/${RELEASE_ID}/assets/${ASSET_ID}?access_token=${GITEE_TOKEN}"
+            else
+              # 回退：按资产名删除
+              URL="${API}/releases/${RELEASE_ID}/assets?name=latest.json&access_token=${GITEE_TOKEN}"
+            fi
+            CODE=$(curl -sS -o /dev/null -w '%{http_code}' -X DELETE "${URL}" || true)
+            echo "delete ${ASSET_NAME} (id=${ASSET_ID}) -> HTTP ${CODE}"
+            case "${CODE}" in
+              200|204|404) DELETED=$((DELETED + 1)) ;;
+            esac
+          done < /tmp/assets.tsv
+          echo "delete requests accepted: ${DELETED}"
+
+      - name: Verify
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          GITEE_OWNER: ${{ secrets.GITEE_OWNER }}
+          TARGET_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          REPO="${GITEE_OWNER}/Folia"
+          API="https://gitee.com/api/v5/repos/${REPO}"
+          curl -sS "${API}/releases/tags/${TARGET_TAG}?access_token=${GITEE_TOKEN}" \
+            -o /tmp/release_after.json
+          python3 - <<'PY'
+          import json
+          release = json.load(open('/tmp/release_after.json'))
+          assets = release.get('assets') or []
+          manifests = [a for a in assets if a.get('name') == 'latest.json']
+          print('assets remaining: {}, latest.json remaining: {}'.format(len(assets), len(manifests)))
+          for asset in assets:
+              print('  - {}'.format(asset.get('name')))
+          if manifests:
+              raise SystemExit('stale manifests still present')
+          PY
+          echo "== client endpoint status =="
+          curl -sS -o /dev/null -w 'GET /releases/download/%s/latest.json -> HTTP %{http_code}\n' \
+            "https://gitee.com/cat-xierluo/Folia/releases/download/${TARGET_TAG}/latest.json"
