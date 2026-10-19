@@ -57,49 +57,66 @@ jobs:
           set -euo pipefail
           REPO="${GITEE_OWNER}/Folia"
           API="https://gitee.com/api/v5/repos/${REPO}"
+          DELETED=0
 
-          echo "== release ${TARGET_TAG} =="
-          curl -sS --fail-with-body \
-            "${API}/releases/tags/${TARGET_TAG}?access_token=${GITEE_TOKEN}" \
-            -o /tmp/release.json
-          RELEASE_ID=$(python3 -c "import json;print(json.load(open('/tmp/release.json')).get('id',''))")
-          if [ -z "$RELEASE_ID" ]; then
-            echo "::error::cannot resolve release id for tag ${TARGET_TAG}"
-            exit 1
-          fi
-          echo "release id: ${RELEASE_ID}"
-
-          # 带附件 id 的资产清单（release.assets 里没有 id）
-          curl -sS --fail-with-body \
-            "${API}/releases/${RELEASE_ID}/attach_files?access_token=${GITEE_TOKEN}" \
-            -o /tmp/attach.json
-          python3 - <<'PY' > /tmp/assets.tsv
-          import json
-          for asset in json.load(open('/tmp/attach.json')) or []:
+          # 删除某个 release 下所有名为 latest.json 的附件
+          delete_manifests() {
+            local rid="$1"
+            local json="/tmp/attach_${rid}.json"
+            local tsv="/tmp/assets_${rid}.tsv"
+            curl -sS --fail-with-body \
+              "${API}/releases/${rid}/attach_files?access_token=${GITEE_TOKEN}" \
+              -o "$json"
+            python3 - "$json" <<'PY' > "$tsv"
+          import json, sys
+          for asset in json.load(open(sys.argv[1])) or []:
               print('{}\t{}'.format(asset.get('id'), asset.get('name')))
           PY
-          echo "assets total: $(wc -l < /tmp/assets.tsv | tr -d ' ')"
-          cat /tmp/assets.tsv
+            while IFS=$'\t' read -r asset_id asset_name; do
+              [ -z "${asset_name}" ] && continue
+              if [ "${asset_name}" != "latest.json" ]; then
+                echo "  skip (not a manifest): ${asset_name}"
+                continue
+              fi
+              if [ -z "${asset_id}" ] || [ "${asset_id}" = "None" ]; then
+                echo "::error::asset id missing for ${asset_name} — cannot delete precisely"
+                exit 1
+              fi
+              code=$(curl -sS -o /tmp/del.out -w '%{http_code}' -X DELETE \
+                "${API}/releases/${rid}/attach_files/${asset_id}?access_token=${GITEE_TOKEN}" || true)
+              echo "  delete ${asset_name} (id=${asset_id}) -> HTTP ${code}"
+              case "${code}" in
+                200|204) DELETED=$((DELETED + 1)) ;;
+                404) DELETED=$((DELETED + 1)) ;;
+              esac
+            done < "$tsv"
+          }
 
-          DELETED=0
-          while IFS=$'\t' read -r ASSET_ID ASSET_NAME; do
-            [ -z "${ASSET_NAME}" ] && continue
-            if [ "${ASSET_NAME}" != "latest.json" ]; then
-              echo "skip (not a manifest): ${ASSET_NAME}"
-              continue
-            fi
-            if [ -z "${ASSET_ID}" ] || [ "${ASSET_ID}" = "None" ]; then
-              echo "::error::asset id missing for ${ASSET_NAME} — cannot delete precisely"
+          if [ "${TARGET_TAG}" = "all" ]; then
+            # 客户端端点 /releases/download/latest/latest.json 在本 release 找不到
+            # 同名文件时，会回退到仓库里其它 release 的同名资产——所以必须清掉
+            # **所有** release 的 latest.json，端点才会真正 404。
+            echo "== all releases =="
+            curl -sS --fail-with-body \
+              "${API}/releases?per_page=100&access_token=${GITEE_TOKEN}" \
+              -o /tmp/releases.json
+            for rid in $(python3 -c 'import json;print(" ".join(str(r.get("id")) for r in json.load(open("/tmp/releases.json"))))'); do
+              echo "== release ${rid} =="
+              delete_manifests "${rid}"
+            done
+          else
+            echo "== release ${TARGET_TAG} =="
+            curl -sS --fail-with-body \
+              "${API}/releases/tags/${TARGET_TAG}?access_token=${GITEE_TOKEN}" \
+              -o /tmp/release.json
+            RELEASE_ID=$(python3 -c "import json;print(json.load(open('/tmp/release.json')).get('id',''))")
+            if [ -z "$RELEASE_ID" ]; then
+              echo "::error::cannot resolve release id for tag ${TARGET_TAG}"
               exit 1
             fi
-            CODE=$(curl -sS -o /tmp/del.out -w '%{http_code}' -X DELETE \
-              "${API}/releases/${RELEASE_ID}/attach_files/${ASSET_ID}?access_token=${GITEE_TOKEN}" || true)
-            echo "delete ${ASSET_NAME} (id=${ASSET_ID}) -> HTTP ${CODE} $(head -c 200 /tmp/del.out | tr -d '\n')"
-            case "${CODE}" in
-              200|204) DELETED=$((DELETED + 1)) ;;
-              404) echo "  (already gone?)" ; DELETED=$((DELETED + 1)) ;;
-            esac
-          done < /tmp/assets.tsv
+            echo "release id: ${RELEASE_ID}"
+            delete_manifests "${RELEASE_ID}"
+          fi
           echo "delete requests accepted: ${DELETED}"
 
       - name: Drop release (optional)
@@ -128,21 +145,26 @@ jobs:
           set -euo pipefail
           REPO="${GITEE_OWNER}/Folia"
           API="https://gitee.com/api/v5/repos/${REPO}"
-          CODE=$(curl -sS -o /tmp/release_after.json -w '%{http_code}' \
-            "${API}/releases/tags/${TARGET_TAG}?access_token=${GITEE_TOKEN}" || true)
-          if [ "${CODE}" = "404" ]; then
-            echo "release ${TARGET_TAG} no longer exists — nothing stale left"
-            exit 0
-          fi
+          # 全仓扫描：任何一个 release 还留着 latest.json，端点就仍可能被回退命中
+          curl -sS --fail-with-body \
+            "${API}/releases?per_page=100&access_token=${GITEE_TOKEN}" \
+            -o /tmp/releases_after.json
+          for rid in $(python3 -c 'import json;print(" ".join(str(r.get("id")) for r in json.load(open("/tmp/releases_after.json"))))'); do
+            curl -sS --fail-with-body \
+              "${API}/releases/${rid}/attach_files?access_token=${GITEE_TOKEN}" \
+              -o "/tmp/after_${rid}.json"
+          done
           python3 - <<'PY'
-          import json
-          release = json.load(open('/tmp/release_after.json'))
-          assets = release.get('assets') or []
-          manifests = [a for a in assets if a.get('name') == 'latest.json']
-          print('assets remaining: {}, latest.json remaining: {}'.format(len(assets), len(manifests)))
-          for asset in assets:
-              print('  - {}'.format(asset.get('name')))
-          if manifests:
+          import glob, json
+          remaining = []
+          for path in glob.glob('/tmp/after_*.json'):
+              for asset in json.load(open(path)) or []:
+                  if asset.get('name') == 'latest.json':
+                      remaining.append((path, asset.get('id')))
+          print('manifests remaining across all releases: {}'.format(len(remaining)))
+          for path, asset_id in remaining:
+              print('  - {} id={}'.format(path, asset_id))
+          if remaining:
               raise SystemExit('stale manifests still present')
           PY
 
@@ -152,3 +174,6 @@ jobs:
         run: |
           curl -sS -o /dev/null -w 'GET /releases/download/%s/latest.json -> HTTP %{http_code}\n' \
             "https://gitee.com/cat-xierluo/Folia/releases/download/${TARGET_TAG}/latest.json"
+          curl -sL -o /tmp/endpoint_body.json -w 'followed -> HTTP %{http_code} size=%{size_download} ctype=%{content_type}\n' \
+            "https://gitee.com/cat-xierluo/Folia/releases/download/${TARGET_TAG}/latest.json"
+          head -c 200 /tmp/endpoint_body.json; echo
