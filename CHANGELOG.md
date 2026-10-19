@@ -8,6 +8,10 @@ All notable changes of this project will be documented in this file.
 
 - **工具栏撤销/重做按钮（Issue #186）**：顶栏文件操作组右侧新增「撤销」「重做」按钮，tooltip 按平台标注快捷键（macOS ⌘Z / ⇧⌘Z，Windows Ctrl+Z / Ctrl+Y）。所见即所得与源码模式均可用；无活动编辑器（只读 Word 文档、HTML 演示态）时按钮置灰。撤销历史跨标签保留已单独立项跟进（见任务清单）。
 
+### Fixed
+
+- **设置页诊断日志按钮布局（Issue #179 后续）**：「导出诊断日志 / 清除日志」两个按钮此前竖向堆叠且窄列下文字折行，现改为横排操作组贴右对齐，与「设为默认 Markdown 应用」行布局一致；导出失败的状态提示现以错误色显示。
+
 ## [0.8.2] - 2026-10-17
 
 ### Added

@@ -1887,6 +1887,7 @@ Vditor.preview() 是纯渲染方法，不需要引入完整编辑器。实测可
   3. `@codemirror/commands` 由传递依赖（经 @uiw/react-codemirror）提升为直接依赖，版本 6.11.0 与既装一致；i18n 三语新增 5 键。
 - **决策:** 不接 macOS 原生「编辑→撤销」菜单——其 `undo:` 选择器走 WKWebView 的 DOM 原生 undo manager，驱动不了 Vditor 自身撤销栈，工具栏按钮（直调 `vditor.undo.undo(vditor)`，与内置工具栏/⌘Z 同路径）是可靠入口。撤销历史跨标签保留（#186 Part B）因 `key={activeTabId}` 卸载重建属结构性改造，分拆为 ISS-231 独立排期，不顺带处理。
 - **验证:** 全量 vitest 81 文件 859/859（基线 848 + 新增 11）；typecheck / lint / 生产构建 / cargo check 通过；WKWebView 真机手测未跑（按钮为纯前端桥接，无 Tauri IPC），标注于 PR。
+- **后续同日（ISS-229）:** 修复 v0.8.2 诊断日志行按钮竖排堆叠/窄列折行——按钮组改 `.settings-action-group` 横排、信息列 `.settings-row-info` 与状态 `.settings-row-message` 以组合选择器与 ISS-192 既有类共享规则，不新造平行样式体系。
 
 ### 2026-05-30 (Codex)
 
