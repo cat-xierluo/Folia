@@ -176,6 +176,13 @@
 
 ### 收口 / 演进类
 
+#### 🔧 ISS-230 应用内反馈指引（Issue #187 轻量版；外部建议 2026-10-19，maintainer 拍板不做后端收件箱；L2 进行中）
+
+- **需求与取舍:** 外部用户建议应用内反馈窗口 + Supabase 收件箱（自动附诊断、作者回复、未读红点）。maintainer 2026-10-19 拍板：**不引入后端**（云数据库 / 客户端嵌 token / 审核与隐私声明，与 v0.8.2 诊断日志「仅手动导出、零自动上传」立场冲突），直发 issue 也因需客户端凭据不做；采纳轻量指引版（issue 已回复）。顶栏固定入口暂不做，收在设置 → 关于。
+- **实现:** 新增 `feedbackService`（环境信息收集 / 反馈 Markdown 生成 / 预填 new-issue URL 生成 / 受控文本导出）+ AboutSection「问题反馈」卡片：描述 textarea（空描述拦截）+「打开 GitHub 反馈页」（完整 Markdown 复制到剪贴板〔失败不阻塞并如实提示〕+ 打开预填标题/环境/描述的 issue 页，URL 正文按 9 倍编码膨胀保守截断至 650 原始字符）+「另存为 Markdown」兜底（复用 exportDiagnosticLog 同款 save 对话框 / blob 下载通道，不扩权限）+ 诊断日志附带指引。i18n 三语 12 键；生成物（Markdown / issue 模板）用英文标签、UI 本地化。
+- **验证:** 新增 `feedbackService.test` 4 项（环境收集 / Markdown 结构 / 预填 URL / 截断预算）+ AboutSection 集成 4 项（复制+打开+文案、空描述拦截、本地下载兜底、剪贴板被拒仍打开）；typecheck / lint / build / 全量 vitest 通过；e2e 结果见 PR。
+- **状态:** 分支 `feat/repo/feedback-guide`，PR 待开。
+
 #### 🔧 ISS-228 工具栏撤销/重做入口（Issue #186 Part A；外部建议 2026-10-19；L2 进行中）
 
 - **需求:** 外部用户报告编辑误改后找不到撤销入口——编辑器工具栏配置为空（`toolbar: []`）、无自定义「编辑」菜单，普通用户不知道 ⌘Z / ⌘⇧Z 快捷键。建议在顶栏或菜单增加「撤销」「重做」并标注快捷键（macOS ⌘Z / ⌘⇧Z，Windows Ctrl+Z / Ctrl+Y）。
