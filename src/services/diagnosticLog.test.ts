@@ -25,13 +25,15 @@ describe('local diagnostic privacy and retention', () => {
     log.record('update-check', { outcome: 'error-retrying' });
     log.record('update-check', { outcome: 'error-final' });
     log.record('update-check', { outcome: 'available' });
-    log.record('update-check', { outcome: 'nonsense' } as Parameters<typeof log.record>[1]);
+    log.record('update-check', { outcome: 'nonsense' } as unknown as Parameters<typeof log.record>[1]);
     log.record('update-check', { outcome: rawMessage } as unknown as Parameters<typeof log.record>[1]);
     const events = log.snapshot().events;
-    expect(events).toHaveLength(3);
-    expect(events.map((event) => event.outcome)).toEqual(['error-retrying', 'error-final', 'available']);
+    // 与 request/mode 的白名单先例一致：非法值不阻断事件，只省略该字段。
+    expect(events).toHaveLength(5);
+    expect(events.slice(0, 3).map((event) => event.outcome)).toEqual(['error-retrying', 'error-final', 'available']);
+    expect(events[3]).not.toHaveProperty('outcome');
+    expect(events[4]).not.toHaveProperty('outcome');
     expect(JSON.stringify(log.snapshot())).not.toContain(rawMessage);
-    expect(events[3]).toBeUndefined();
   });
 
   it('bounds events and alias storage, counts dropped events and returns independent snapshots', () => {

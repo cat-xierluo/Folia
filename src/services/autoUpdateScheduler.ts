@@ -39,7 +39,8 @@ export function scheduleDelayedAutoUpdateCheck({
   clearTimeoutFn = window.clearTimeout,
 }: DelayedAutoUpdateCheckOptions): () => void {
   let cancelled = false;
-  let retryTimer: ReturnType<typeof setTimeoutFn> | undefined;
+  // window.setTimeout（DOM）返回 number；测试注入的 jsdom 定时器同型。
+  let retryTimer: number | undefined;
 
   // ISS-227：自动路径此前对 error/not-available 完全静默——GitHub 冷启动超时
   // 落到陈旧 Gitee 兜底时被伪装成「已是最新」，用户无任何线索。端点收敛为
