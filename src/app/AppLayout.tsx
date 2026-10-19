@@ -220,9 +220,6 @@ export function AppLayout() {
   // tabs 会重绑 effect,局部变量随之重置,第二条关闭流可并发进入
   // (孤儿 promise:旧弹窗的 resolve 再也等不到)。ref 跨重绑存活。
   const closingRef = useRef(false);
-  // ISS-72：用 state 而非 ref，让"关闭再打开自动检查"开关后能重触发检查。
-  // ref 在 effect 依赖里不会触发重渲染，开关切回 on 时 useEffect 不会重跑。
-  const [autoUpdateCheckStarted, setAutoUpdateCheckStarted] = useState(false);
   const updateDownloadVersionRef = useRef<string | null>(null);
   // ISS-99：per-attempt 单调令牌。Tauri updater 的 update.download 无法中途取消,
   // 超时/重试后旧尝试的 onProgress 仍挂在跑着的 Rust 下载流上,会继续发 Progress。
@@ -1122,20 +1119,21 @@ export function AppLayout() {
   }, [file.path, handleOpenPath, settings.reopenLastFile, systemOpenChecked, session.tabs]);
 
   useEffect(() => {
-    // ISS-72：用 state（而非 ref）作为防重入标志，让"关闭再打开自动检查"
-    // 开关后能重触发检查（ref 不会触发 useEffect 重跑）。
-    if (!settings.autoUpdateCheck || autoUpdateCheckStarted || !isTauriRuntime) return;
+    // 防重入标志属于本次 effect 生命周期。用 state 会在请求刚发出时重跑
+    // effect 并取消自己的异步结果/重试；开关变化本身已会触发 cleanup 和重建。
+    if (!settings.autoUpdateCheck || !isTauriRuntime) return;
+    let started = false;
 
     return scheduleDelayedAutoUpdateCheck({
-      hasStarted: () => autoUpdateCheckStarted,
-      markStarted: () => setAutoUpdateCheckStarted(true),
+      hasStarted: () => started,
+      markStarted: () => { started = true; },
       checkForAppUpdate,
       // ISS-227：自动检查结果写入本地诊断日志（仅终态枚举，无原始错误文本），
       // 与手动检查路径的错误 UI 互补。
       onOutcome: (outcome) => diagnosticLog.record('update-check', { outcome }),
       onUpdateAvailable: (result) => startBackgroundUpdateDownload('auto', result),
     });
-  }, [isTauriRuntime, settings.autoUpdateCheck, autoUpdateCheckStarted, startBackgroundUpdateDownload]);
+  }, [isTauriRuntime, settings.autoUpdateCheck, startBackgroundUpdateDownload]);
 
   // ISS-188：监听文件外部修改 → 自动 reload / 提示手动 reload。
   //

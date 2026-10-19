@@ -2,6 +2,14 @@
 
 ## 第一部分：决策记录
 
+### 2026-10-20（dot 凌晨自动审计）：自动更新 effect 生命周期
+
+- 检查开始的防重入状态只在该 effect 内使用，因此采用局部变量，避免 setState 触发自身 cleanup。设置 off/on 已会改变依赖并重建，无需额外状态驱动。
+- 回归使用分开的 React act 与受控 Promise，确保 start 标志提交后才返回网络结果；旧实现两个新增用例均失败，修复后通过。原有 off/on 测试曾仅推进时钟，本次改为实际调用 updateSettings。
+- 界面语言切换仍按 effect 依赖重建检查；回归固定此行为并确保旧语言请求结果被忽略，不改为跨语言常驻检查。
+- 保持 DEC-148 GitHub 单源/静默重试与诊断枚举，不涉及安装、发布或权限。draft 等待独立审查；原生 macOS 未运行。
+
+
 ### [DEC-148] - 2026-10-19 - 停用 Gitee 镜像与更新兜底，收敛为 GitHub 单一更新源（ISS-227）
 
 - **决策:** 不修复 Gitee 同步，直接停用国内二次分发。`tauri.conf.json` 更新端点收敛为 GitHub Releases 单源；release.yml 删除两个 Gitee 同步步骤；`create-updater-manifest.mjs` 不再生成 `latest-gitee.json`。Gitee 上既有 release 不再维护。
