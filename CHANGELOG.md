@@ -7,6 +7,7 @@ All notable changes of this project will be documented in this file.
 ### Added
 
 - **工具栏撤销/重做按钮（Issue #186）**：顶栏文件操作组右侧新增「撤销」「重做」按钮，tooltip 按平台标注快捷键（macOS ⌘Z / ⇧⌘Z，Windows Ctrl+Z / Ctrl+Y）。所见即所得与源码模式均可用；无活动编辑器（只读 Word 文档、HTML 演示态）时按钮置灰。撤销历史跨标签保留已单独立项跟进（见任务清单）。
+- **应用内反馈指引（Issue #187）**：设置 → 关于 新增「问题反馈」卡片。填写描述后一键打开预填好版本/系统信息的 GitHub issue 页面（完整反馈内容同时复制到剪贴板）；无网络或无 GitHub 账号时可另存为本地 Markdown。不引入任何后端或自动上传。
 
 ### Fixed
 

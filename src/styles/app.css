@@ -3247,6 +3247,46 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   border-color: var(--accent);
 }
 
+/* ISS-230（Issue #187 轻量版）：关于页反馈卡片——纵向排布，
+   区别于左右布局的 .settings-row；复用 Settings Controls 的描边/背景变量。 */
+.about-feedback-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.settings-textarea {
+  width: 100%;
+  min-height: 84px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: 4px;
+  background-color: var(--surface);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: 13px;
+  line-height: 1.5;
+  resize: vertical;
+  box-shadow: none;
+}
+
+.settings-textarea:focus {
+  outline: 2px solid oklch(58% 0.16 35 / 0.18);
+  outline-offset: 1px;
+  border-color: var(--accent);
+}
+
+.about-feedback-card .settings-action-group {
+  align-self: flex-end;
+}
+
+.feedback-log-hint {
+  margin-top: 2px;
+}
+
 .settings-font-control {
   display: flex;
   align-items: center;
