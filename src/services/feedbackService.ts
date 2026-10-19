@@ -44,9 +44,20 @@ export function buildFeedbackMarkdown(description: string, env: FeedbackEnvironm
  *  （%XX%XX%XX），按 9 倍保守截断原始正文；完整内容已复制到剪贴板。 */
 const ISSUE_URL_BODY_LIMIT = 650;
 
+/** 保持原 UTF-16 长度预算，但不在代理对中间截断，否则 URI 编码会抛错。 */
+function truncateIssueText(value: string, limit: number): string {
+  const prefix = value.slice(0, limit);
+  const last = prefix.charCodeAt(prefix.length - 1);
+  const next = value.charCodeAt(limit);
+  return last >= 0xd800 && last <= 0xdbff && next >= 0xdc00 && next <= 0xdfff
+    ? prefix.slice(0, -1)
+    : prefix;
+}
+
+
 export function buildFeedbackIssueUrl(description: string, env: FeedbackEnvironment): string {
   const trimmed = description.trim();
-  const firstLine = trimmed.split('\n')[0].slice(0, 60) || 'feedback';
+  const firstLine = truncateIssueText(trimmed.split('\n')[0], 60) || 'feedback';
   const title = `[Feedback] ${firstLine}`;
   let body = [
     '### Environment',
@@ -62,7 +73,7 @@ export function buildFeedbackIssueUrl(description: string, env: FeedbackEnvironm
     '_(完整反馈内容已复制到剪贴板，如有诊断日志请粘贴在下方)_',
   ].join('\n');
   if (body.length > ISSUE_URL_BODY_LIMIT) {
-    body = `${body.slice(0, ISSUE_URL_BODY_LIMIT).trimEnd()}\n\n_(truncated — full content on clipboard)_`;
+    body = `${truncateIssueText(body, ISSUE_URL_BODY_LIMIT).trimEnd()}\n\n_(truncated — full content on clipboard)_`;
   }
   return `https://github.com/cat-xierluo/Folia/issues/new?title=${encodeURIComponent(title)}&body=${encodeURIComponent(body)}`;
 }

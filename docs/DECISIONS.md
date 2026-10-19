@@ -2,6 +2,13 @@
 
 ## 第一部分：决策记录
 
+### 2026-10-20（dot 凌晨自动审计）：反馈 URL 保留 Unicode 字符边界
+
+- 不改为按 Unicode code point 放大截断上限：现有 60/650 是 UTF-16 长度预算。只在合法代理对中间截断时退一个 code unit，避免 encodeURIComponent 收到孤立高代理项。
+- 标题与正文各有一项负控回归，旧实现均抛 URIError，修复后保持编码预算并通过；完整 Markdown、剪贴板以及本地导出通道不变。
+- 不引入依赖/后端/权限，不自动提交 issue。draft 等待独立审查；原生 macOS 未运行。
+
+
 ### [DEC-148] - 2026-10-19 - 停用 Gitee 镜像与更新兜底，收敛为 GitHub 单一更新源（ISS-227）
 
 - **决策:** 不修复 Gitee 同步，直接停用国内二次分发。`tauri.conf.json` 更新端点收敛为 GitHub Releases 单源；release.yml 删除两个 Gitee 同步步骤；`create-updater-manifest.mjs` 不再生成 `latest-gitee.json`。Gitee 上既有 release 不再维护。

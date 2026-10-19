@@ -32,6 +32,20 @@ describe('feedbackService (ISS-230)', () => {
     expect(url).toContain(encodeURIComponent('正文细节'));
   });
 
+  it('does not split a supplementary Unicode character at the title boundary', () => {
+    const url = new URL(buildFeedbackIssueUrl(`${'a'.repeat(59)}😀 more`, env));
+    expect(url.searchParams.get('title')).toBe(`[Feedback] ${'a'.repeat(59)}`);
+  });
+
+  it('does not split a supplementary Unicode character at the body boundary', () => {
+    const prefix = `### Environment\n\n- Folia ${env.version}\n- OS: ${env.platform}\n- Locale: ${env.locale}\n\n### Description\n\n`;
+    const description = `${'a'.repeat(649 - prefix.length)}😀${'b'.repeat(100)}`;
+    const url = new URL(buildFeedbackIssueUrl(description, env));
+    expect(url.searchParams.get('body')).toContain('_(truncated — full content on clipboard)_');
+    expect(url.searchParams.get('body')).not.toContain('�');
+    expect(url.toString().length).toBeLessThan(8_000);
+  });
+
   it('truncates oversized issue bodies within a URL-safe encoded budget', () => {
     const url = buildFeedbackIssueUrl('长描述'.repeat(2000), env);
     // 650 原始字符 × 9 倍最坏膨胀 + 标题/参数 ≈ 7k 以内

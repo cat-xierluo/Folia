@@ -11,6 +11,8 @@ All notable changes of this project will be documented in this file.
 
 ### Fixed
 
+- **反馈页 Unicode 截断**：反馈标题或长正文的截断边界遇到 emoji/补充平面字符时，不再因切开代理对而导致 GitHub 反馈页打不开；原 URL 长度预算与完整剪贴板/本地 Markdown 内容保持不变。
+
 - **设置页诊断日志按钮布局（Issue #179 后续）**：「导出诊断日志 / 清除日志」两个按钮此前竖向堆叠且窄列下文字折行，现改为横排操作组贴右对齐，与「设为默认 Markdown 应用」行布局一致；导出失败的状态提示现以错误色显示。
 
 ### Changed
