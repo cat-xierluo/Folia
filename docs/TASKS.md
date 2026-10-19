@@ -63,7 +63,7 @@
 - **处置（DEC-148，用户 2026-10-19 拍板「不同步到 Gitee，没必要做国内二次分发」）:** 不修 Gitee 同步，直接停用——① `tauri.conf.json` endpoints 收敛为 GitHub 单源；② release.yml 删除「Sync to Gitee」「Sync latest manifest to fixed Gitee tag」两步与 `FOLIA_GITEE_MANIFEST_OUTPUT`；③ `create-updater-manifest.mjs` 移除 `latest-gitee.json` 生成；④ 前端加固：自动检查失败静默重试一次（45s），结果以枚举写入本地诊断日志（新 `update-check` 事件，白名单构造），三个 AppLayout 测试的 `checkForAppUpdate` mock 补默认返回值（修掉高负载下 `undefined.then` 崩测的卫生问题）；⑤ ARCHITECTURE/ROADMAP 同步改写。
 - **服务端清理（唯一能救已安装存量 0.6.4~0.8.2 的动作，需 maintainer 手动执行，代码 PR 无法覆盖）:** 删除 Gitee `latest` release（id 769689）下全部 9 份陈旧 `latest.json`（或整份 release），使其 404——已安装版本的内置兜底端点将不再返回假「已是最新」，GitHub 失败如实报错。另可选：删除 Gitee 上 v0.6.4 之后各版本的残缺 release（只有 .sig + latest.json，无产物，仅误导）。Gitee 侧不再维护。
 - **验证:** vitest 81 文件 864/864（新增 4：调度器重试 3 + 诊断日志枚举 1）；typecheck / lint / build / cargo check 通过；manifest 脚本冒烟（合成 .sig 三平台 → 仅生成 latest.json，无 gitee 产物）；release.yml YAML 解析通过；e2e layout-behavior 43 通过 / 14 失败，失败集为同机基线 15 项的真子集（「live preview reveals markers」本机偶发项本次通过）。三个 AppLayout 集成测试 mock 加固后，与 e2e 并发跑全量 vitest 也不再崩测。
-- **状态:** 代码/工作流/文档处置走 L2（分支 `fix/repo/drop-gitee-update-source`）；服务端清理待 maintainer 手动执行后在本条目登记完成。
+- **状态:** 2026-10-19 [PR #190](https://github.com/cat-xierluo/Folia/pull/190) squash 合入 `main`，合并提交 `f69504ecc8e11178a2ae61dcfb4f70c8f77f50f3`，CI 三项全绿；DEC-148 落地。**服务端清理仍待 maintainer 手动执行**（Gitee `latest` release id 769689 下 9 份陈旧 `latest.json`），完成后在本条目补记。
 
 #### ✅ ISS-226 Issue #179 新打开 Markdown 偶发显示前一标签内容及本地诊断日志（PR #182 已合并 77b2b07；已随 v0.8.2 发布（2026-10-17）；Issue #179 保持开放待日志取证）
 
@@ -176,20 +176,20 @@
 
 ### 收口 / 演进类
 
-#### 🔧 ISS-230 应用内反馈指引（Issue #187 轻量版；外部建议 2026-10-19，maintainer 拍板不做后端收件箱；L2 进行中）
+#### ✅ ISS-230 应用内反馈指引（Issue #187 轻量版；外部建议 2026-10-19，maintainer 拍板不做后端收件箱；PR #191 已合并 bbedaf1）
 
 - **需求与取舍:** 外部用户建议应用内反馈窗口 + Supabase 收件箱（自动附诊断、作者回复、未读红点）。maintainer 2026-10-19 拍板：**不引入后端**（云数据库 / 客户端嵌 token / 审核与隐私声明，与 v0.8.2 诊断日志「仅手动导出、零自动上传」立场冲突），直发 issue 也因需客户端凭据不做；采纳轻量指引版（issue 已回复）。顶栏固定入口暂不做，收在设置 → 关于。
 - **实现:** 新增 `feedbackService`（环境信息收集 / 反馈 Markdown 生成 / 预填 new-issue URL 生成 / 受控文本导出）+ AboutSection「问题反馈」卡片：描述 textarea（空描述拦截）+「打开 GitHub 反馈页」（完整 Markdown 复制到剪贴板〔失败不阻塞并如实提示〕+ 打开预填标题/环境/描述的 issue 页，URL 正文按 9 倍编码膨胀保守截断至 650 原始字符）+「另存为 Markdown」兜底（复用 exportDiagnosticLog 同款 save 对话框 / blob 下载通道，不扩权限）+ 诊断日志附带指引。i18n 三语 12 键；生成物（Markdown / issue 模板）用英文标签、UI 本地化。
 - **验证:** 新增 `feedbackService.test` 4 项（环境收集 / Markdown 结构 / 预填 URL / 截断预算）+ AboutSection 集成 4 项（复制+打开+文案、空描述拦截、本地下载兜底、剪贴板被拒仍打开）；typecheck / lint / build / 全量 vitest 通过；e2e 结果见 PR。
-- **状态:** 分支 `feat/repo/feedback-guide`，PR 待开。
+- **状态:** 2026-10-19 [PR #191](https://github.com/cat-xierluo/Folia/pull/191) squash 合入 `main`，合并提交 `bbedaf1fd3e42ad74fd0eaf016d9440a645801f1`，CI 三项全绿。Issue #187 保持开放：顶栏固定反馈入口（issue 原建议）未做，设置入口先行，观察实际使用后再议。
 
-#### 🔧 ISS-228 工具栏撤销/重做入口（Issue #186 Part A；外部建议 2026-10-19；L2 进行中）
+#### ✅ ISS-228 工具栏撤销/重做入口（Issue #186 Part A；外部建议 2026-10-19；PR #188 已合并 c79e55f）
 
 - **需求:** 外部用户报告编辑误改后找不到撤销入口——编辑器工具栏配置为空（`toolbar: []`）、无自定义「编辑」菜单，普通用户不知道 ⌘Z / ⌘⇧Z 快捷键。建议在顶栏或菜单增加「撤销」「重做」并标注快捷键（macOS ⌘Z / ⌘⇧Z，Windows Ctrl+Z / Ctrl+Y）。
 - **方案:** 顶栏文件操作组右侧新增撤销/重做按钮（lucide `Undo2` / `Redo2`），tooltip 按平台标注快捷键（`navigator.platform` 判定，与 main.tsx 同口径）。WYSIWYG 走 Vditor 3.11 统一 Undo 类（`vditor.undo.undo(vditor)`，与内置工具栏/⌘Z 同一路径，运行时形状访问——类型未随 dist 分发）；源码模式走 `@codemirror/commands` 的 `undo`/`redo`（从传递依赖提升为直接依赖，版本 6.11.0 与既装一致）。两个编辑器经统一的 `EditorHistoryApi`（`onHistoryApiChange` 上报，null 表示无活动编辑器）桥接到 AppLayout → Toolbar；无编辑器（只读 docx / HTML 演示态）或编辑禁用时按钮 disabled。按钮 `onMouseDown preventDefault` 不抢 contenteditable 焦点，保持与快捷键路径一致的选区行为。
 - **不覆盖（Part B，见 ISS-231）:** 切换标签/外部修改重载后的撤销历史保留属结构性改造（`WysiwygEditorPane key={activeTabId}` 卸载重建实例），独立登记。
 - **验证:** 新增 `shortcutLabels.test.ts`（3）、`Toolbar.test.tsx`（4，平台固定 MacIntel/Win32 防 CI 漂移）、`EditorPane.test.tsx` 桥接用例（2）、`WysiwygEditorPane.test.tsx` 桥接用例（2，含切标签重建时旧报 null/新上报）。全量 vitest 81 文件 859/859；typecheck / lint / 生产构建 / cargo check 通过。e2e layout-behavior 全量 56 项 43 通过 / 14 失败，失败集与 main 文档化基线一致——「toolbar toggles source mode without showing Word preview」已在 pristine main 单跑核证为既有失败（同用例同断言位置）；「toolbar hides the app name」的分组列表断言随新增「编辑操作」分组更新后通过。Chromium 真浏览器功能验证（vite dev）：WYSIWYG 与源码两模式 打字→工具栏撤销→内容消失→工具栏重做→内容恢复 全通过，撤销点击后焦点保持在编辑器内（mousedown preventDefault 生效）；欢迎页/无编辑器态按钮置灰。WKWebView（etv）真机手测未跑。
-- **状态:** 分支 `feat/repo/undo-redo-toolbar`，PR 待开。
+- **状态:** 2026-10-19 [PR #188](https://github.com/cat-xierluo/Folia/pull/188) squash 合入 `main`，合并提交 `c79e55f5d67fbb1b049f391a30245b5aacb01350`，CI 三项全绿。Issue #186 保持开放：Part B（跨标签撤销历史）见 ISS-231。
 
 #### 🔧 ISS-231 撤销历史跨标签保留（Issue #186 Part B；2026-10-19 分拆登记，暂不排期）
 
