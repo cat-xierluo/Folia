@@ -3,6 +3,7 @@ import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRe
 
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { createEmptyFile, type TocItem, type OpenedFile } from '../types/document';
+import type { EditorHistoryApi } from '../types/editor';
 import {
   bindRenderedTocHeadings,
   extractMarkdownToc,
@@ -370,6 +371,10 @@ export function AppLayout() {
   const [htmlTableViewer, setHtmlTableViewer] = useState<{ block: HtmlTableBlock } | null>(null);
   const [systemOpenChecked, setSystemOpenChecked] = useState(!isTauriRuntime);
   const [updateState, setUpdateState] = useState<UpdateInstallState>({ phase: 'idle' });
+  // ISS-228（Issue #186）：当前活动编辑器（WYSIWYG / 源码）上报的撤销/重做
+  // API。WysiwygEditorPane 按标签 key 挂载、EditorPane 复用实例，两者切换
+  // 时旧的先报 null、新的再上报，AppLayout 只持有最新一份。
+  const [historyApi, setHistoryApi] = useState<EditorHistoryApi | null>(null);
 
   // 切换 tab 时刷新左侧大纲（ISS-163）。React 19 推荐"render 中调整 state"模式：
   // 不放在 useEffect 里是因为 react-hooks/set-state-in-effect 不允许 effect 体内同步 setState，
@@ -1540,6 +1545,7 @@ export function AppLayout() {
         autoFocusKey={activeTabId}
         onChange={handleContentChange}
         headingScrollRequest={sourceHeadingScrollRequest}
+        onHistoryApiChange={setHistoryApi}
       />
     </Suspense>
   ) : shouldShowHtmlPresentation ? (
@@ -1552,7 +1558,7 @@ export function AppLayout() {
     </Suspense>
   ) : (
     <Suspense fallback={<div className="wysiwyg-editor-pane lazy-pane"><span>所见即所得编辑器加载中</span></div>}>
-      <WysiwygEditorPane key={activeTabId} documentId={activeTabId} source={file.content} onChange={handleContentChange} onViewComplexTable={handleHtmlTableView} filePath={file.path} />
+      <WysiwygEditorPane key={activeTabId} documentId={activeTabId} source={file.content} onChange={handleContentChange} onViewComplexTable={handleHtmlTableView} filePath={file.path} onHistoryApiChange={setHistoryApi} />
     </Suspense>
   );
 
@@ -1637,6 +1643,9 @@ export function AppLayout() {
         onPreloadSettings={preloadNonDefaultSettingsSections}
         updateStatus={updateToolbarStatus}
         onRestartUpdate={handleRestartUpdate}
+        historyAvailable={historyApi !== null}
+        onUndo={() => historyApi?.undo()}
+        onRedo={() => historyApi?.redo()}
         onRetryUpdate={handleRetryUpdate}
       />
       <div

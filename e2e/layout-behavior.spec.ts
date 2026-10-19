@@ -81,7 +81,8 @@ test('toolbar hides the app name and keeps draggable space around controls', asy
     newBtnNoDrag: true,
     overlayCount: 0,
     fallback: 'manual',
-    groups: ['文件操作', '视图与导出', '导航设置'],
+    // ISS-228：撤销/重做新增「编辑操作」分组（文件操作之后）。
+    groups: ['文件操作', '编辑操作', '视图与导出', '导航设置'],
   }));
   await expect(page.getByRole('button', { name: '大纲', exact: true })).toHaveCount(0);
 });

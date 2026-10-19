@@ -36,13 +36,18 @@ type VditorConstructorCall = {
   host: HTMLElement;
   options: VditorInstanceOptions;
   // ISS-94：暴露 mock 实例让测试可以断言 focus 是否被调用
-  instance: { focus: () => void; getValue: () => string; setValue: (value: string) => void };
+  // ISS-228：vditor 内部对象供 undo/redo 桥接断言比对
+  instance: { focus: () => void; getValue: () => string; setValue: (value: string) => void; vditor: unknown };
 };
 
 const vditorCalls: VditorConstructorCall[] = [];
 const setValueCalls: string[] = [];
 // ISS-94：记录每个 Vditor mock 实例的 focus 调用次数，与 vditorCalls 一一对应
 const focusCalls: number[] = [];
+// ISS-228：记录传给 Vditor 统一 Undo 类的 undo/redo 调用（含第一参 vditor 对象），
+// 供工具栏撤销/重做桥接断言使用。
+const vditorUndoCalls: unknown[][] = [];
+const vditorRedoCalls: unknown[][] = [];
 
 /** Minimal Vditor mock: 构造时往 host 注入一个真实可操作的 .vditor-ir pre，
  *  让 sanitizeIrDom 能在真实 DOM 子树上工作（保留 sanitizeForVditor 的
@@ -61,6 +66,7 @@ vi.mock('vditor', () => {
   class VditorMock {
     public vditor: {
       ir: { element: HTMLElement };
+      undo: { undo: (...args: unknown[]) => void; redo: (...args: unknown[]) => void };
     };
     private readonly index: number;
 
@@ -81,7 +87,13 @@ vi.mock('vditor', () => {
       pre.innerHTML = '<p data-block="0"><span data-type="text">init</span></p>';
       ir.appendChild(pre);
       host.appendChild(ir);
-      this.vditor = { ir: { element: pre } };
+      this.vditor = {
+        ir: { element: pre },
+        undo: {
+          undo: (...args: unknown[]) => { vditorUndoCalls.push(args); },
+          redo: (...args: unknown[]) => { vditorRedoCalls.push(args); },
+        },
+      };
     }
 
     // ISS-94：记录 focus 调用次数，让测试断言 auto-focus 行为
@@ -2219,6 +2231,92 @@ describe('WysiwygEditorPane 重试后再挂起 (ISS-217 review I1)', () => {
     // 关键断言：条目未被静默删除（review I1 的失败形态）
     expect(host.textContent).toContain('加载超时');
     expect(host.querySelectorAll('[data-testid="media-placeholder-timeout"]').length).toBe(1);
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+});
+
+describe('WysiwygEditorPane 撤销/重做桥接 (ISS-228, Issue #186 Part A)', () => {
+  let host: HTMLDivElement;
+
+  beforeEach(() => {
+    vditorCalls.length = 0;
+    vditorUndoCalls.length = 0;
+    vditorRedoCalls.length = 0;
+    host = document.createElement('div');
+    document.body.append(host);
+  });
+
+  afterEach(() => {
+    host.remove();
+    vi.clearAllMocks();
+  });
+
+  it('#186: 编辑器就绪后上报 undo/redo API（透传到 vditor.undo），卸载时上报 null', async () => {
+    const onHistoryApiChange = vi.fn();
+    const root = createRoot(host);
+    await act(async () => {
+      root.render(renderWithProvider(
+        <WysiwygEditorPane
+          source="# synthetic"
+          filePath=""
+          documentId="A"
+          onChange={() => undefined}
+          onHistoryApiChange={onHistoryApiChange}
+        />,
+      ));
+      await flushMicrotasks();
+    });
+
+    expect(vditorCalls).toHaveLength(1);
+    expect(onHistoryApiChange).toHaveBeenCalledTimes(1);
+    const api = onHistoryApiChange.mock.calls[0][0] as { undo: () => void; redo: () => void };
+    expect(api).not.toBeNull();
+
+    api.undo();
+    api.redo();
+    expect(vditorUndoCalls).toHaveLength(1);
+    expect(vditorRedoCalls).toHaveLength(1);
+    // 桥接必须把内部 vditor 对象作为第一参传给统一 Undo 类——与 Vditor
+    // 内置工具栏 undo/redo 按钮同一调用路径。
+    expect(vditorUndoCalls[0][0]).toBe(vditorCalls[0].instance.vditor);
+    expect(vditorRedoCalls[0][0]).toBe(vditorCalls[0].instance.vditor);
+
+    await act(async () => {
+      root.unmount();
+    });
+    expect(onHistoryApiChange).toHaveBeenLastCalledWith(null);
+  });
+
+  it('#186: 切换 documentId 重建编辑器时，旧实例报 null、新实例上报新 API', async () => {
+    const onHistoryApiChange = vi.fn();
+    const root = createRoot(host);
+    const renderPane = (documentId: string) => renderWithProvider(
+      <WysiwygEditorPane
+        source="# synthetic"
+        filePath=""
+        documentId={documentId}
+        onChange={() => undefined}
+        onHistoryApiChange={onHistoryApiChange}
+      />,
+    );
+    await act(async () => {
+      root.render(renderPane('A'));
+      await flushMicrotasks();
+    });
+    await act(async () => {
+      root.render(renderPane('B'));
+      await flushMicrotasks();
+    });
+
+    expect(vditorCalls).toHaveLength(2);
+    const calls = onHistoryApiChange.mock.calls.map((call) => call[0]);
+    // A 上报 api → A 卸载报 null → B 上报 api
+    expect(calls[0]).not.toBeNull();
+    expect(calls[1]).toBeNull();
+    expect(calls[2]).not.toBeNull();
 
     await act(async () => {
       root.unmount();
