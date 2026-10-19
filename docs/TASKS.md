@@ -47,6 +47,13 @@
 
 ### 缺陷类
 
+#### 🔧 ISS-229 设置页诊断日志行按钮竖排堆叠、窄列折行——未对齐 ISS-192 设置行布局（Issue #179 后续，maintainer 自查 2026-10-19；L2 进行中）
+
+- **现象:** v0.8.2 新增的「导出诊断日志 / 清除日志」按钮装在无类名裸 `<div>` 里，被 block 流竖向堆叠（不是横排），窄列下「导出诊断日志」文字折行；状态文案用裸 `.settings-desc` 无错误配色——与 ISS-192「设为默认 Markdown 应用」行确立的行布局（信息列 `flex:1` + 按钮贴右 + `.settings-default-app-message` 错误红）不一致。
+- **修法:** 信息列改 `.settings-row-info`（与 `.settings-default-app-info` 共享规则），按钮组改 `.settings-action-group`（inline-flex + gap 8px + 按钮 nowrap），状态文案改 `.settings-row-message`（导出失败显式标 `error`）。CSS 以组合选择器与 ISS-192 类共享规则，不改动既有类语义。
+- **验证:** GeneralSection.test 新增结构回归（按钮组定位与顺序、行内信息列、失败 error 标记、清除后不残留）；typecheck / vitest 全量 / lint / build 通过；Chromium 截图对比按钮横排、无折行、与默认应用行对齐（见 PR）。e2e layout-behavior 与 tab-content-diagnostics 无该行断言，全量子集结果见 PR。
+- **状态:** 分支 `fix/repo/diagnostics-row-layout`，PR 待开。
+
 #### 🔧 ISS-227 Gitee 镜像同步自 v0.6.4 后实际失效：大产物上传超时 + `latest` 标签 manifest 追加上传致服务端始终返回最早一份（2026-10-17 v0.8.2 发版验证发现；L2 待授权修复）
 
 - **现象（Gitee 公开 API 实证）:** v0.8.2 与 v0.8.1 的 Gitee release 均只有 3 个 `.sig` + `latest.json`（+ 自动源码包），缺全部 dmg / exe / app.tar.gz；固定 `latest` 标签 release（id 769689，2026-07-31 建）下累积 9 个同名 `latest.json` 资产，`releases/download/latest/latest.json` 实际返回最早一份（`version: 0.6.4`）。release.yml 的两个 Gitee 步骤均 `continue-on-error: true` 且脚本内部对每个失败只 echo 后 continue，step 状态恒为 success——v0.8.1 发版时据 step 状态得出的「Gitee 同步成功」系误判。

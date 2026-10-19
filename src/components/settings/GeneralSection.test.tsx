@@ -48,9 +48,27 @@ describe('GeneralSection set-as-default-Markdown-app (ISS-192)', () => {
     await act(async () => { button.click(); });
     expect(exportMock.exportDiagnosticLog).toHaveBeenCalledTimes(1);
     expect(host.textContent).toContain('诊断日志导出失败，请重试');
+    // ISS-229：导出失败的状态文案带 error 样式标记。
+    expect(host.querySelector('.settings-row-message.error')).toBeTruthy();
     const clear = Array.from(host.querySelectorAll('button')).find((node) => node.textContent === '清除日志')!;
     await act(async () => { clear.click(); });
     expect(host.textContent).toContain('诊断日志已清除');
+    // 清除成功不是错误，不应残留 error 标记。
+    expect(host.querySelector('.settings-row-message.error')).toBeFalsy();
+  });
+
+  // ISS-229（Issue #179 后续）：诊断日志行对齐 ISS-192 行布局——按钮装进
+  // .settings-action-group 横排（此前裸 div 使按钮竖向堆叠、窄列下折行），
+  // 信息列使用 .settings-row-info（flex:1）。
+  it('renders diagnostic buttons inside a horizontal action group with a flex info column', async () => {
+    await act(async () => { root.render(<GeneralSection />); });
+    const group = host.querySelector('.settings-action-group');
+    expect(group).toBeTruthy();
+    const buttons = Array.from(group!.querySelectorAll('button.settings-action-button'));
+    expect(buttons.map((node) => node.textContent)).toEqual(['导出诊断日志', '清除日志']);
+    // 同一 settings-row 内：信息列 flex:1 + 按钮组并列。
+    const row = group!.closest('.settings-row')!;
+    expect(row.querySelector(':scope > .settings-row-info')).toBeTruthy();
   });
 
   it('renders the set-as-default button', async () => {
