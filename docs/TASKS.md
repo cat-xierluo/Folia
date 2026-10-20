@@ -30,17 +30,17 @@
 
 ## 待处理
 
-### ✅ 自动更新检查生命周期（ISS-227 审计补充，2026-10-20；PR #198 已合并 1c6a6eb）
+### ✅ 自动更新检查生命周期（ISS-227 审计补充，2026-10-20；PR #198 已合并 1c6a6eb；已随 v0.8.3 发布（2026-10-20））
 
 - **复现：** 自动检查的 `markStarted` 更新 effect 依赖中的 state，触发 cleanup；网络 Promise 真正晚返回时被 `cancelled` 丢弃，已可用更新不会下载、错误也不会安排 45 秒重试。此前即时 resolved mock 与独立 scheduler 单测未覆盖该消费者时序。
 - **修复：** 防重入标志改为 effect 局部变量，不引起自取消；设置关闭/重新开启自然清理与重建。新增真实 AppLayout 延迟结果、延迟失败重试、关闭后丢弃结果/取消重试测试，并将原有「切换开关」测试改为实际触发 false/true。
 - **边界：** 切换界面语言会清理旧请求并重新安排检查，以使用最新语言；新增回归覆盖旧结果丢弃与新检查仅触发一次。
-- **状态：** 2026-10-20 [PR #198](https://github.com/cat-xierluo/Folia/pull/198) squash 合入 `main`，合并提交 `1c6a6eb`，CI 三项全绿。独立复现（pristine main 上「延迟返回 available」下载 0 次、「延迟返回 error」不重试）与验收记录见 PR 评论。最小修复不改变更新源、下载/安装策略、权限或原生窗口行为；原生 macOS/WKWebView 未验证。
-### ✅ 反馈 URL Unicode 截断（ISS-230 / Issue #187 审计补充，2026-10-20；PR #197 已合并 60e8be8）
+- **状态：** 2026-10-20 [PR #198](https://github.com/cat-xierluo/Folia/pull/198) squash 合入 `main`，合并提交 `1c6a6eb`，CI 三项全绿。已随 v0.8.3 发布（2026-10-20）。独立复现（pristine main 上「延迟返回 available」下载 0 次、「延迟返回 error」不重试）与验收记录见 PR 评论。最小修复不改变更新源、下载/安装策略、权限或原生窗口行为；原生 macOS/WKWebView 未验证。
+### ✅ 反馈 URL Unicode 截断（ISS-230 / Issue #187 审计补充，2026-10-20；PR #197 已合并 60e8be8；已随 v0.8.3 发布（2026-10-20））
 
 - **复现：** 60 UTF-16 code unit 标题边界或 650 code unit 正文边界切开 emoji 代理对时，encodeURIComponent 抛 URIError，打开反馈页失败。新增两项边界回归在原实现均失败。
 - **修复：** 保持现有长度预算，仅在截断点落于完整代理对中间时退一个 code unit；不扩展 URL 预算、不更改完整 Markdown/剪贴板内容或增加权限。
-- **状态：** 2026-10-20 [PR #197](https://github.com/cat-xierluo/Folia/pull/197) squash 合入 `main`，合并提交 `60e8be8`，CI 四项全绿（typecheck / lint / test、playwright e2e、cargo test）。独立复现：pristine main 上标题 59 ASCII + emoji、正文切点落在描述索引 569 两处均抛 URIError；验收记录见 PR 评论。PR 与 #198 的文档改动冲突经合并提交 `ea023a6` 处理，两段审计记录并存，合并后文件树与单独验收过的树逐字节一致。原生 macOS/WKWebView 未验证。
+- **状态：** 2026-10-20 [PR #197](https://github.com/cat-xierluo/Folia/pull/197) squash 合入 `main`，合并提交 `60e8be8`，CI 四项全绿（typecheck / lint / test、playwright e2e、cargo test）。已随 v0.8.3 发布（2026-10-20）。独立复现：pristine main 上标题 59 ASCII + emoji、正文切点落在描述索引 569 两处均抛 URIError；验收记录见 PR 评论。PR 与 #198 的文档改动冲突经合并提交 `ea023a6` 处理，两段审计记录并存，合并后文件树与单独验收过的树逐字节一致。原生 macOS/WKWebView 未验证。
 
 
 ### ✅ ISS-225 窗口状态记忆（Issue #178 / PR #181 已合并 8af3709；已随 v0.8.2 发布（2026-10-17），已安装版待自动更新）
@@ -60,14 +60,14 @@
 
 ### 缺陷类
 
-#### 🔧 ISS-229 设置页诊断日志行按钮竖排堆叠、窄列折行——未对齐 ISS-192 设置行布局（Issue #179 后续，maintainer 自查 2026-10-19；L2 进行中）
+#### ✅ ISS-229 设置页诊断日志行按钮竖排堆叠、窄列折行——未对齐 ISS-192 设置行布局（Issue #179 后续，maintainer 自查 2026-10-19；PR #189 已合并 e20ee057；已随 v0.8.3 发布（2026-10-20））
 
 - **现象:** v0.8.2 新增的「导出诊断日志 / 清除日志」按钮装在无类名裸 `<div>` 里，被 block 流竖向堆叠（不是横排），窄列下「导出诊断日志」文字折行；状态文案用裸 `.settings-desc` 无错误配色——与 ISS-192「设为默认 Markdown 应用」行确立的行布局（信息列 `flex:1` + 按钮贴右 + `.settings-default-app-message` 错误红）不一致。
 - **修法:** 信息列改 `.settings-row-info`（与 `.settings-default-app-info` 共享规则），按钮组改 `.settings-action-group`（inline-flex + gap 8px + 按钮 nowrap），状态文案改 `.settings-row-message`（导出失败显式标 `error`）。CSS 以组合选择器与 ISS-192 类共享规则，不改动既有类语义。
 - **验证:** GeneralSection.test 新增结构回归（按钮组定位与顺序、行内信息列、失败 error 标记、清除后不残留）；typecheck / vitest 全量 / lint / build 通过；Chromium 截图对比按钮横排、无折行、与默认应用行对齐（见 PR）。e2e layout-behavior 与 tab-content-diagnostics 无该行断言，全量子集结果见 PR。
-- **状态:** 2026-10-19 [PR #189](https://github.com/cat-xierluo/Folia/pull/189) squash 合入 `main`，合并提交 `e20ee05739c06c896ac25b064684e9b773119594`，CI 三项全绿；e2e 失败集与同机 pristine main（c79e55f）基线 15 项 diff 为空。Issue #179 保持开放等复现日志。
+- **状态:** 2026-10-19 [PR #189](https://github.com/cat-xierluo/Folia/pull/189) squash 合入 `main`，合并提交 `e20ee05739c06c896ac25b064684e9b773119594`，CI 三项全绿；e2e 失败集与同机 pristine main（c79e55f）基线 15 项 diff 为空。Issue #179 保持开放等复现日志。已随 v0.8.3 发布（2026-10-20）。
 
-#### 🔧 ISS-227 Gitee 镜像同步自 v0.6.4 后实际失效：大产物上传超时 + `latest` 标签 manifest 追加上传致服务端始终返回最早一份（2026-10-17 v0.8.2 发版验证发现；2026-10-19 用户拍板：停用 Gitee 分发，DEC-148，L2 进行中）
+#### ✅ ISS-227 Gitee 镜像同步自 v0.6.4 后实际失效：大产物上传超时 + `latest` 标签 manifest 追加上传致服务端始终返回最早一份（2026-10-17 v0.8.2 发版验证发现；2026-10-19 用户拍板：停用 Gitee 分发，DEC-148；PR #190 已合并 f69504e；已随 v0.8.3 发布（2026-10-20））
 
 - **现象（Gitee 公开 API 实证）:** v0.8.2 与 v0.8.1 的 Gitee release 均只有 3 个 `.sig` + `latest.json`（+ 自动源码包），缺全部 dmg / exe / app.tar.gz；固定 `latest` 标签 release（id 769689，2026-07-31 建）下累积 9 个同名 `latest.json` 资产，`releases/download/latest/latest.json` 实际返回最早一份（`version: 0.6.4`）。release.yml 的两个 Gitee 步骤均 `continue-on-error: true` 且脚本内部对每个失败只 echo 后 continue，step 状态恒为 success——v0.8.1 发版时据 step 状态得出的「Gitee 同步成功」系误判。
 - **根因:** ① `curl_gitee` 使用 `--max-time 90 --retry 1`，GitHub runner → Gitee 上传几十 MB 产物 90s 内传不完，日志逐个出现 `curl: (28) Operation timed out after 90000 milliseconds with 0 bytes received`，5 个大文件全部失败（run 39047213752 publish job，每个约 3 分钟）；② 「Sync latest manifest to fixed Gitee tag」直接 POST 新 `latest.json` 资产而不先删除旧同名资产，Gitee 按最早资产提供下载。
@@ -78,7 +78,7 @@
 - **清理过程中的两条 Gitee API 事实（避免后人重踩）:** ① release 对象的 `assets` 数组只含 `name` 与 `browser_download_url`、**不含附件 id**；带 id 的清单在 `GET .../releases/{id}/attach_files`，删除端点是 `DELETE .../releases/{id}/attach_files/{attachment_id}`——`.../assets?name=latest.json` **不是有效路径**（返回 404）。当年 release.yml 里那条被 `|| true` 吞掉的 DELETE 用的正是错误路径，这正是 9 份同名清单逐次追加的根因。② `GET /releases/download/{tag}/{file}` 在目标 release 没有同名资产时，会**回退到仓库内其它 release 的同名资产**——因此只清 `latest` release 不足以让端点失效，必须清掉全仓所有 release 的 `latest.json`。
 - **一次性工作流已随本 PR 移除:** Gitee 侧不再维护（DEC-148），仓库不保留 Gitee 维护工具；上述两条 API 事实留在本条目备查。
 - **验证:** vitest 81 文件 864/864（新增 4：调度器重试 3 + 诊断日志枚举 1）；typecheck / lint / build / cargo check 通过；manifest 脚本冒烟（合成 .sig 三平台 → 仅生成 latest.json，无 gitee 产物）；release.yml YAML 解析通过；e2e layout-behavior 43 通过 / 14 失败，失败集为同机基线 15 项的真子集（「live preview reveals markers」本机偶发项本次通过）。三个 AppLayout 集成测试 mock 加固后，与 e2e 并发跑全量 vitest 也不再崩测。 PR #190 CI 三项全绿。
-- **状态:** 2026-10-19 [PR #190](https://github.com/cat-xierluo/Folia/pull/190) squash 合入 `main`，合并提交 `f69504ecc8e11178a2ae61dcfb4f70c8f77f50f3`，CI 三项全绿；DEC-148 落地。**服务端清理已于同日执行完毕**（清理工具 PR #193 / #194 / #195，run 39286405601 + 39288829119 + 39290547264；32 份清单全删，兜底端点转 404），本条目闭环。
+- **状态:** 2026-10-19 [PR #190](https://github.com/cat-xierluo/Folia/pull/190) squash 合入 `main`，合并提交 `f69504ecc8e11178a2ae61dcfb4f70c8f77f50f3`，CI 三项全绿；DEC-148 落地。**服务端清理已于同日执行完毕**（清理工具 PR #193 / #194 / #195，run 39286405601 + 39288829119 + 39290547264；32 份清单全删，兜底端点转 404），本条目闭环。已随 v0.8.3 发布（2026-10-20）——客户端端点收敛为 GitHub 单源、发布流程不再同步 Gitee。**注意：v0.8.2 及更早版本的启动自动检查链路本身有缺陷（#198），启动时不会弹更新提示，需到 设置 → 关于 手动检查或直接下载 v0.8.3；v0.8.3 起启动即自动检查并静默下载。**
 
 #### ✅ ISS-226 Issue #179 新打开 Markdown 偶发显示前一标签内容及本地诊断日志（PR #182 已合并 77b2b07；已随 v0.8.2 发布（2026-10-17）；Issue #179 保持开放待日志取证）
 
@@ -191,20 +191,20 @@
 
 ### 收口 / 演进类
 
-#### ✅ ISS-230 应用内反馈指引（Issue #187 轻量版；外部建议 2026-10-19，maintainer 拍板不做后端收件箱；PR #191 已合并 bbedaf1）
+#### ✅ ISS-230 应用内反馈指引（Issue #187 轻量版；外部建议 2026-10-19，maintainer 拍板不做后端收件箱；PR #191 已合并 bbedaf1；已随 v0.8.3 发布（2026-10-20））
 
 - **需求与取舍:** 外部用户建议应用内反馈窗口 + Supabase 收件箱（自动附诊断、作者回复、未读红点）。maintainer 2026-10-19 拍板：**不引入后端**（云数据库 / 客户端嵌 token / 审核与隐私声明，与 v0.8.2 诊断日志「仅手动导出、零自动上传」立场冲突），直发 issue 也因需客户端凭据不做；采纳轻量指引版（issue 已回复）。顶栏固定入口暂不做，收在设置 → 关于。
 - **实现:** 新增 `feedbackService`（环境信息收集 / 反馈 Markdown 生成 / 预填 new-issue URL 生成 / 受控文本导出）+ AboutSection「问题反馈」卡片：描述 textarea（空描述拦截）+「打开 GitHub 反馈页」（完整 Markdown 复制到剪贴板〔失败不阻塞并如实提示〕+ 打开预填标题/环境/描述的 issue 页，URL 正文按 9 倍编码膨胀保守截断至 650 原始字符）+「另存为 Markdown」兜底（复用 exportDiagnosticLog 同款 save 对话框 / blob 下载通道，不扩权限）+ 诊断日志附带指引。i18n 三语 12 键；生成物（Markdown / issue 模板）用英文标签、UI 本地化。
 - **验证:** 新增 `feedbackService.test` 4 项（环境收集 / Markdown 结构 / 预填 URL / 截断预算）+ AboutSection 集成 4 项（复制+打开+文案、空描述拦截、本地下载兜底、剪贴板被拒仍打开）；typecheck / lint / build / 全量 vitest 通过；e2e 结果见 PR。
-- **状态:** 2026-10-19 [PR #191](https://github.com/cat-xierluo/Folia/pull/191) squash 合入 `main`，合并提交 `bbedaf1fd3e42ad74fd0eaf016d9440a645801f1`，CI 三项全绿。Issue #187 保持开放：顶栏固定反馈入口（issue 原建议）未做，设置入口先行，观察实际使用后再议。
+- **状态:** 2026-10-19 [PR #191](https://github.com/cat-xierluo/Folia/pull/191) squash 合入 `main`，合并提交 `bbedaf1fd3e42ad74fd0eaf016d9440a645801f1`，CI 三项全绿。Issue #187 保持开放：顶栏固定反馈入口（issue 原建议）未做，设置入口先行，观察实际使用后再议。已随 v0.8.3 发布（2026-10-20）；待报告者升级到 v0.8.3 试用后再关闭。
 
-#### ✅ ISS-228 工具栏撤销/重做入口（Issue #186 Part A；外部建议 2026-10-19；PR #188 已合并 c79e55f）
+#### ✅ ISS-228 工具栏撤销/重做入口（Issue #186 Part A；外部建议 2026-10-19；PR #188 已合并 c79e55f；已随 v0.8.3 发布（2026-10-20））
 
 - **需求:** 外部用户报告编辑误改后找不到撤销入口——编辑器工具栏配置为空（`toolbar: []`）、无自定义「编辑」菜单，普通用户不知道 ⌘Z / ⌘⇧Z 快捷键。建议在顶栏或菜单增加「撤销」「重做」并标注快捷键（macOS ⌘Z / ⌘⇧Z，Windows Ctrl+Z / Ctrl+Y）。
 - **方案:** 顶栏文件操作组右侧新增撤销/重做按钮（lucide `Undo2` / `Redo2`），tooltip 按平台标注快捷键（`navigator.platform` 判定，与 main.tsx 同口径）。WYSIWYG 走 Vditor 3.11 统一 Undo 类（`vditor.undo.undo(vditor)`，与内置工具栏/⌘Z 同一路径，运行时形状访问——类型未随 dist 分发）；源码模式走 `@codemirror/commands` 的 `undo`/`redo`（从传递依赖提升为直接依赖，版本 6.11.0 与既装一致）。两个编辑器经统一的 `EditorHistoryApi`（`onHistoryApiChange` 上报，null 表示无活动编辑器）桥接到 AppLayout → Toolbar；无编辑器（只读 docx / HTML 演示态）或编辑禁用时按钮 disabled。按钮 `onMouseDown preventDefault` 不抢 contenteditable 焦点，保持与快捷键路径一致的选区行为。
 - **不覆盖（Part B，见 ISS-231）:** 切换标签/外部修改重载后的撤销历史保留属结构性改造（`WysiwygEditorPane key={activeTabId}` 卸载重建实例），独立登记。
 - **验证:** 新增 `shortcutLabels.test.ts`（3）、`Toolbar.test.tsx`（4，平台固定 MacIntel/Win32 防 CI 漂移）、`EditorPane.test.tsx` 桥接用例（2）、`WysiwygEditorPane.test.tsx` 桥接用例（2，含切标签重建时旧报 null/新上报）。全量 vitest 81 文件 859/859；typecheck / lint / 生产构建 / cargo check 通过。e2e layout-behavior 全量 56 项 43 通过 / 14 失败，失败集与 main 文档化基线一致——「toolbar toggles source mode without showing Word preview」已在 pristine main 单跑核证为既有失败（同用例同断言位置）；「toolbar hides the app name」的分组列表断言随新增「编辑操作」分组更新后通过。Chromium 真浏览器功能验证（vite dev）：WYSIWYG 与源码两模式 打字→工具栏撤销→内容消失→工具栏重做→内容恢复 全通过，撤销点击后焦点保持在编辑器内（mousedown preventDefault 生效）；欢迎页/无编辑器态按钮置灰。WKWebView（etv）真机手测未跑。
-- **状态:** 2026-10-19 [PR #188](https://github.com/cat-xierluo/Folia/pull/188) squash 合入 `main`，合并提交 `c79e55f5d67fbb1b049f391a30245b5aacb01350`，CI 三项全绿。Issue #186 保持开放：Part B（跨标签撤销历史）见 ISS-231。
+- **状态:** 2026-10-19 [PR #188](https://github.com/cat-xierluo/Folia/pull/188) squash 合入 `main`，合并提交 `c79e55f5d67fbb1b049f391a30245b5aacb01350`，CI 三项全绿。Issue #186 保持开放：Part B（跨标签撤销历史）见 ISS-231。已随 v0.8.3 发布（2026-10-20）；待报告者升级到 v0.8.3 试用后再关闭。
 
 #### 🔧 ISS-231 撤销历史跨标签保留（Issue #186 Part B；2026-10-19 分拆登记，暂不排期）
 
