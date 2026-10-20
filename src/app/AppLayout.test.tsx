@@ -387,6 +387,66 @@ describe('AppLayout update flow', () => {
     resolveAttempt2();
   });
 
+  it('keeps a pending automatic check alive after marking it started', async () => {
+    let resolveCheck!: (result: UpdateCheckResult) => void;
+    updateServiceMock.checkForAppUpdate.mockImplementationOnce(() => new Promise((resolve) => { resolveCheck = resolve; }));
+    updateServiceMock.downloadAppUpdate.mockResolvedValue(undefined);
+    await act(async () => { root.render(<AppLayout />); });
+    await act(async () => { vi.advanceTimersByTime(2600); });
+    expect(updateServiceMock.checkForAppUpdate).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      resolveCheck({ status: 'available', version: '0.9.0', update: {} as Update });
+      await flushPromises();
+    });
+    expect(updateServiceMock.downloadAppUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries an asynchronous automatic check failure after 45 seconds', async () => {
+    let resolveCheck!: (result: UpdateCheckResult) => void;
+    updateServiceMock.checkForAppUpdate
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveCheck = resolve; }))
+      .mockResolvedValueOnce({ status: 'not-available' });
+    await act(async () => { root.render(<AppLayout />); });
+    await act(async () => { vi.advanceTimersByTime(2600); });
+    await act(async () => { resolveCheck({ status: 'error', message: 'synthetic timeout' }); });
+    await act(async () => { vi.advanceTimersByTime(45_000); await flushPromises(); });
+    expect(updateServiceMock.checkForAppUpdate).toHaveBeenCalledTimes(2);
+  });
+
+  it('disabling auto update ignores a pending result and cancels the retry', async () => {
+    let resolveCheck!: (result: UpdateCheckResult) => void;
+    updateServiceMock.checkForAppUpdate.mockImplementationOnce(() => new Promise((resolve) => { resolveCheck = resolve; }));
+    await act(async () => { root.render(<AppLayout />); });
+    await act(async () => { vi.advanceTimersByTime(2600); });
+    await act(async () => { updateSettings({ autoUpdateCheck: false }); });
+    await act(async () => { resolveCheck({ status: 'available', version: '0.9.0', update: {} as Update }); });
+    expect(updateServiceMock.downloadAppUpdate).not.toHaveBeenCalled();
+
+    updateServiceMock.checkForAppUpdate.mockResolvedValueOnce({ status: 'error', message: 'synthetic timeout' });
+    await act(async () => { updateSettings({ autoUpdateCheck: true }); });
+    await act(async () => { vi.advanceTimersByTime(2600); await flushPromises(); });
+    expect(updateServiceMock.checkForAppUpdate).toHaveBeenCalledTimes(2);
+    await act(async () => { updateSettings({ autoUpdateCheck: false }); });
+    await act(async () => { vi.advanceTimersByTime(45_000); });
+    expect(updateServiceMock.checkForAppUpdate).toHaveBeenCalledTimes(2);
+  });
+
+  it('restarts a pending check after a locale change without applying its stale result', async () => {
+    let resolveCheck!: (result: UpdateCheckResult) => void;
+    updateServiceMock.checkForAppUpdate
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveCheck = resolve; }))
+      .mockResolvedValueOnce({ status: 'not-available' });
+    await act(async () => { root.render(<AppLayout />); });
+    await act(async () => { vi.advanceTimersByTime(2600); });
+    await act(async () => { updateSettings({ locale: 'en-US' }); });
+    await act(async () => { resolveCheck({ status: 'available', version: '0.9.0', update: {} as Update }); });
+    expect(updateServiceMock.downloadAppUpdate).not.toHaveBeenCalled();
+    await act(async () => { vi.advanceTimersByTime(2600); await flushPromises(); });
+    expect(updateServiceMock.checkForAppUpdate).toHaveBeenCalledTimes(2);
+    await act(async () => { vi.advanceTimersByTime(60_000); });
+    expect(updateServiceMock.checkForAppUpdate).toHaveBeenCalledTimes(2);
+  });
+
   // ISS-72：Rust 端抛网络错误应显示本地化文案（而非英文原文）。
   it('shows a localized error message when download throws a network error', async () => {
     const networkError = new Error('network unreachable');
@@ -431,15 +491,14 @@ describe('AppLayout update flow', () => {
 
     expect(updateServiceMock.checkForAppUpdate).toHaveBeenCalledTimes(1);
 
-    // useSettings 是真实 hook（默认 settings.autoUpdateCheck=true），无法在测试里改。
-    // 这里改为验证多次 advanceTimersByTime 不会触发第二次（state 已为 true），
-    // 这是 state 改动的关键保证——而非旧实现下 ref=true 永远不再触发。
-    await act(async () => {
-      vi.advanceTimersByTime(60_000);
-      await flushPromises();
-    });
-
+    await act(async () => { updateSettings({ autoUpdateCheck: false }); });
+    await act(async () => { vi.advanceTimersByTime(60_000); });
     expect(updateServiceMock.checkForAppUpdate).toHaveBeenCalledTimes(1);
+    await act(async () => { updateSettings({ autoUpdateCheck: true }); });
+    await act(async () => { vi.advanceTimersByTime(2600); await flushPromises(); });
+    expect(updateServiceMock.checkForAppUpdate).toHaveBeenCalledTimes(2);
+    await act(async () => { vi.advanceTimersByTime(60_000); });
+    expect(updateServiceMock.checkForAppUpdate).toHaveBeenCalledTimes(2);
   });
 
   it('opens a file path delivered by the desktop system open event', async () => {

@@ -30,11 +30,17 @@
 
 ## 待处理
 
+### ✅ 自动更新检查生命周期（ISS-227 审计补充，2026-10-20；PR #198 已合并 1c6a6eb）
+
+- **复现：** 自动检查的 `markStarted` 更新 effect 依赖中的 state，触发 cleanup；网络 Promise 真正晚返回时被 `cancelled` 丢弃，已可用更新不会下载、错误也不会安排 45 秒重试。此前即时 resolved mock 与独立 scheduler 单测未覆盖该消费者时序。
+- **修复：** 防重入标志改为 effect 局部变量，不引起自取消；设置关闭/重新开启自然清理与重建。新增真实 AppLayout 延迟结果、延迟失败重试、关闭后丢弃结果/取消重试测试，并将原有「切换开关」测试改为实际触发 false/true。
+- **边界：** 切换界面语言会清理旧请求并重新安排检查，以使用最新语言；新增回归覆盖旧结果丢弃与新检查仅触发一次。
+- **状态：** 2026-10-20 [PR #198](https://github.com/cat-xierluo/Folia/pull/198) squash 合入 `main`，合并提交 `1c6a6eb`，CI 三项全绿。独立复现（pristine main 上「延迟返回 available」下载 0 次、「延迟返回 error」不重试）与验收记录见 PR 评论。最小修复不改变更新源、下载/安装策略、权限或原生窗口行为；原生 macOS/WKWebView 未验证。
 ### 🔧 反馈 URL Unicode 截断（ISS-230 / Issue #187 审计补充，2026-10-20）
 
 - **复现：** 60 UTF-16 code unit 标题边界或 650 code unit 正文边界切开 emoji 代理对时，encodeURIComponent 抛 URIError，打开反馈页失败。新增两项边界回归在原实现均失败。
 - **修复：** 保持现有长度预算，仅在截断点落于完整代理对中间时退一个 code unit；不扩展 URL 预算、不更改完整 Markdown/剪贴板内容或增加权限。
-- **状态：** 独立 draft PR 待审；原生 macOS/WKWebView 未验证，完整验证结果见 PR。
+- **状态：** 经独立验收后随 [PR #197](https://github.com/cat-xierluo/Folia/pull/197) 合入（独立复现：pristine main 上标题 59 ASCII + emoji、正文切点落在描述索引 569 两处均抛 URIError）；原生 macOS/WKWebView 未验证，验证边界见 PR 评论。
 
 
 ### ✅ ISS-225 窗口状态记忆（Issue #178 / PR #181 已合并 8af3709；已随 v0.8.2 发布（2026-10-17），已安装版待自动更新）
