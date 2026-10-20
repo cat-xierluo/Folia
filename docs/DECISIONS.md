@@ -7,7 +7,12 @@
 - 检查开始的防重入状态只在该 effect 内使用，因此采用局部变量，避免 setState 触发自身 cleanup。设置 off/on 已会改变依赖并重建，无需额外状态驱动。
 - 回归使用分开的 React act 与受控 Promise，确保 start 标志提交后才返回网络结果；旧实现两个新增用例均失败，修复后通过。原有 off/on 测试曾仅推进时钟，本次改为实际调用 updateSettings。
 - 界面语言切换仍按 effect 依赖重建检查；回归固定此行为并确保旧语言请求结果被忽略，不改为跨语言常驻检查。
-- 保持 DEC-148 GitHub 单源/静默重试与诊断枚举，不涉及安装、发布或权限。draft 等待独立审查；原生 macOS 未运行。
+- 保持 DEC-148 GitHub 单源/静默重试与诊断枚举，不涉及安装、发布或权限。经独立审查后合入（PR #198）；原生 macOS/WKWebView 未运行，验证边界见 PR 评论。
+### 2026-10-20（dot 凌晨自动审计）：反馈 URL 保留 Unicode 字符边界
+
+- 不改为按 Unicode code point 放大截断上限：现有 60/650 是 UTF-16 长度预算。只在合法代理对中间截断时退一个 code unit，避免 encodeURIComponent 收到孤立高代理项。
+- 标题与正文各有一项负控回归，旧实现均抛 URIError，修复后保持编码预算并通过；完整 Markdown、剪贴板以及本地导出通道不变。
+- 不引入依赖/后端/权限，不自动提交 issue。经独立审查后合入（PR #197）；原生 macOS/WKWebView 未运行，验证边界见 PR 评论。
 
 
 ### [DEC-148] - 2026-10-19 - 停用 Gitee 镜像与更新兜底，收敛为 GitHub 单一更新源（ISS-227）
