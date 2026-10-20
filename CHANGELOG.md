@@ -4,6 +4,8 @@ All notable changes of this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.8.3] - 2026-10-20
+
 ### Added
 
 - **工具栏撤销/重做按钮（Issue #186）**：顶栏文件操作组右侧新增「撤销」「重做」按钮，tooltip 按平台标注快捷键（macOS ⌘Z / ⇧⌘Z，Windows Ctrl+Z / Ctrl+Y）。所见即所得与源码模式均可用；无活动编辑器（只读 Word 文档、HTML 演示态）时按钮置灰。撤销历史跨标签保留已单独立项跟进（见任务清单）。
@@ -13,7 +15,6 @@ All notable changes of this project will be documented in this file.
 
 - **自动检查更新**：修复发起检查后状态重渲染取消异步结果的问题——此前自动更新链路会丢弃自己刚发出的请求，可用更新不会下载、失败也不重试；保留首次失败后 45 秒静默重试，关闭自动检查会取消待返回结果/重试，再打开可重新检查。
 - **反馈页 Unicode 截断**：反馈标题或长正文的截断边界遇到 emoji/补充平面字符时，不再因切开代理对而导致 GitHub 反馈页打不开；原 URL 长度预算与完整剪贴板/本地 Markdown 内容保持不变。
-
 - **设置页诊断日志按钮布局（Issue #179 后续）**：「导出诊断日志 / 清除日志」两个按钮此前竖向堆叠且窄列下文字折行，现改为横排操作组贴右对齐，与「设为默认 Markdown 应用」行布局一致；导出失败的状态提示现以错误色显示。
 
 ### Changed
