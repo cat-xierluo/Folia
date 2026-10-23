@@ -102,7 +102,7 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
-      - name: Run rich-media + mermaid IR + theme guards + tab diagnostics + session restore e2e
+      - name: Run rich-media, session restore and inline marker e2e
         # 限定到富媒体 + 主 IR 矩阵 + 主题视觉守卫 + Issue #179 标签诊断回归，不跑全部 e2e。
         run: |
           npx playwright test \
@@ -115,6 +115,8 @@ jobs:
             e2e/theme-ui-visual-guards.spec.ts \
             e2e/tab-content-diagnostics.spec.ts \
             e2e/session-restore.spec.ts \
+            e2e/wysiwyg-bold-marker.spec.ts \
+            e2e/iss-204-ir-marker-click-collapse.spec.ts \
             --workers=1 \
             --reporter=list
 

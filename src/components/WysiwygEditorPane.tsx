@@ -159,6 +159,20 @@ function collapseExpandedMarkers(editor: import('vditor').default | null): void 
   });
 }
 
+const INLINE_MARKER_SELECTOR = [
+  '[data-type="strong"]',
+  '[data-type="em"]',
+  '[data-type="s"]',
+  '[data-type="code"]',
+].map((selector) => `${selector}.vditor-ir__node--expand`).join(', ');
+
+function collapseInlineMarkers(editor: import('vditor').default | null): void {
+  if (!editor) return;
+  getIrElement(editor)?.querySelectorAll(INLINE_MARKER_SELECTOR).forEach((node) => {
+    node.classList.remove('vditor-ir__node--expand');
+  });
+}
+
 /**
  * ISS-76：标题节点的 marker（`# `）位于文本之前；Vditor 在用户输入/方向键
  * 时给标题节点加 `vditor-ir__node--expand`，CSS 把 marker 从 0 宽渐变到
@@ -246,7 +260,7 @@ function scheduleImmediateHeadingCollapse(
  * 返回 disconnect 函数：init effect cleanup 调用，避免 editor.destroy 后操作
  * 已分离的 DOM。
  */
-function setupHeadingExpandGuard(ir: HTMLElement): () => void {
+function setupHeadingExpandGuard(ir: HTMLElement, onExpandAdded?: () => void): () => void {
   const HEADING_EXPAND_SELECTOR =
     'h1.vditor-ir__node--expand, h2.vditor-ir__node--expand, h3.vditor-ir__node--expand, '
     + 'h4.vditor-ir__node--expand, h5.vditor-ir__node--expand, h6.vditor-ir__node--expand';
@@ -255,9 +269,15 @@ function setupHeadingExpandGuard(ir: HTMLElement): () => void {
       if (mutation.type !== 'attributes' || mutation.attributeName !== 'class') continue;
       const el = mutation.target;
       if (!(el instanceof Element)) continue;
+      if (!el.classList.contains('vditor-ir__node--expand')) continue;
+      const isHeading = /^H[1-6]$/.test(el.tagName);
+      // Only inline decorations auto-collapse after a click. Block markers
+      // expose editable code/HTML/math source and must remain expanded.
+      if (onExpandAdded && el.matches(INLINE_MARKER_SELECTOR)) {
+        onExpandAdded();
+      }
       // 仅处理标题节点：tagName H1-H6 且当前带 --expand
-      if (!/^H[1-6]$/.test(el.tagName)) continue;
-      if (el.classList.contains('vditor-ir__node--expand')) {
+      if (isHeading) {
         el.classList.remove('vditor-ir__node--expand');
       }
     }
@@ -1436,7 +1456,18 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
       // ISS-106：标题方向键光标漂移根治——MutationObserver 守卫，覆盖 RAF
       // 无法稳定捕捉的异步 selectionchange 路径（见 setupHeadingExpandGuard）。
       const irEl = getIrElement(editor);
-      disconnectHeadingGuardRef.current = irEl ? setupHeadingExpandGuard(irEl) : null;
+      disconnectHeadingGuardRef.current = irEl
+        ? setupHeadingExpandGuard(irEl, () => {
+          // A stale inline timer must never close an editable block.
+          if (collapseTimerRef.current !== null) {
+            window.clearTimeout(collapseTimerRef.current);
+          }
+          collapseTimerRef.current = window.setTimeout(() => {
+            collapseTimerRef.current = null;
+            collapseInlineMarkers(editorRef.current);
+          }, IR_MARKER_COLLAPSE_DELAY_MS);
+        })
+        : null;
     }).catch((error) => {
       diagnosticLog.record('editor-error', { tabId: documentId, mode: 'wysiwyg' });
       console.error('[Folia] Vditor 初始化失败:', error);
