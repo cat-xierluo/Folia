@@ -30,27 +30,21 @@
 
 ## 待处理
 
-### 🔧 ISS-232 / GitHub Issue #204 IR marker 展开态在「点击进入已打开文件的行内格式」时不折叠——粗体看起来未生效（Issue #202 第 1 项；2026-10-23 独立验收定位根因）
+### GitHub Issue #202：恢复开关已合并，粗体反馈继续核验（2026-10-23）
 
-- **用户现象：** 报告者（Windows / Folia 0.8.3 / zh-CN）反馈「在正常阅读文件时出现 markdown 语法未生效的情况，应当加粗的文字未加粗，显示为 `**文字**`」。
-- **根因（已实证定位，非推断）：** IR 模式下 Vditor 用 `vditor-ir__node--expand` 表示「当前光标所在节点展开 marker」，CSS 靠该 class 把 `**` marker 从 0 宽展开到可见宽。Folia 只在三个回调里折叠它——`input`（`WysiwygEditorPane.tsx:1291`）、`keydown`（`:1414`）、`blur`（`:1425`），每次安排 220ms 定时器调用 `collapseExpandedMarkers`。**打开已有文件后，用户用鼠标点击进入某个行内格式块时，Vditor 是在异步 `selectionchange` 里给该节点加 `--expand`，而点击既不触发 `input` 也不触发 `keydown`**，于是没有任何定时器被安排，marker 永久展开——用户看到的是 `**文字**` 而不是加粗文字。点击后再按任意方向键（走 `keydown` 路径）marker 立刻收起，粗体恢复，与用户描述完全吻合。
-- **实证（Chromium 实跑，head `6d6032e`）：** 打开含 `**应当加粗的文字**` 的文档后点击该粗体块 → `--expand` 节点数 0→1、两个 `**` marker 宽度 0→14.47px、`strong` 元素始终存在（font-weight 700）；静置 3 秒仍为展开态；按一次 ArrowRight 后 `--expand` 归 0、marker 宽度归 0。展开态下 DOM 为 `<span class="vditor-ir__marker vditor-ir__marker--bi">**</span><strong data-newline="1">应当加粗的文字</strong><span class="vditor-ir__marker vditor-ir__marker--bi">**</span>`——即文字本身是加粗的，只是 marker 常驻可见遮蔽了观感。
-- **影响面：** 同一缺陷对**全部行内 marker 类型**成立，不止粗体——实跑确认 `strong` / `em` / `s`（删除线）/ `code`（行内代码）四类在点击后同样 `--expand=1`、2 个可见 marker。链接类 marker（`[](...)`）未在同轮确认。
-- **既有覆盖的缺口：** `e2e/wysiwyg-bold-marker.spec.ts`（ISS-151）只覆盖「输入 / 粘贴 / 退格 / 失焦」四条路径，全部会触发 `input` / `keydown` / `blur`；**没有一条覆盖「打开文件后点击进入行内格式块」**。这就是该缺陷能长期存在的原因。
-- **修复方向（待实施）：** 在 `selectionchange` 上监听 IR 内 `--expand` 的新增并安排同样的 220ms 折叠定时器（或在 `click`/`focus` 后安排一次折叠），使「点击进入」与「键盘进入」行为一致。需注意与既有 `setupHeadingExpandGuard`（`MutationObserver`，只处理 h1–h6 标题节点）的职责边界，避免重复折叠或与 ISS-76 标题即时折叠逻辑冲突。
-- **未验边界：** 上述全部结论来自 Chromium + vendored Lute，**Windows WebView2 / macOS WKWebView 原生桌面未实机验证**；报告者环境为 Windows 0.8.3，与本仓库 `main`（0.8.3）同版本，但原生 WebView 的 `selectionchange` 时序可能不同。报告者的诊断日志附件（`folia-diagnostics.md`）只有事件枚举、无正文与行号信息，不能定位到具体行——本条根因由独立构造的合成文档复现得到，与报告者的具体文档是否同一路径**未确认**。
-- **状态：** 已登记待实施。本条不与 PR #203（Issue #202 第 2 项「启动恢复开关」）耦合，第 2 项独立推进；Issue #202 因第 1 项未闭环保持开放。
+- **第 2 项已合并：** PR #203，候选 `6d6032e657c77870012c09a0ebc75958b2d03fa7`，于北京时间 2026-10-23 16:46 squash 合入 `main`，合并提交 `af309569cb05c6a60fdb35b301881baf4321aba2`。开关接入主窗口多标签启动入口，关闭后跳过已保存标签；未保存修改、无路径草稿和最近文件保留，运行中切换与独立窗口移交不受影响。
+- **验收证据：** 候选 head 的 typecheck / lint / build 通过；独立 Vitest 82 文件、886/886，Rust 90/90；新增 Chromium E2E 2/2，回退主窗口筛选后两个用例变红、恢复后转绿。最终 head 的 GitHub CI 三项通过（Chromium 22/22）。此前本地所谓“CI 完整组合 9/9”使用了不匹配文件名，仅为实际选中子集，不能当作完整 CI 覆盖证明。
+- **恢复语义：** 关闭后首次启动的持久化会替换旧标签集合；随后重新启用设置不会找回那批已保存标签，需从最近文件重开。与本次 PR 声明一致。
+- **后续验证：** 本轮本机全量验证出现超时失败，合成集成树为 15 项失败，复跑为 2 项失败；两项单跑 12/12 通过，干净 main `c1a9d87` 也有 2 项失败。该记录表明本机环境存在波动，不能据此宣称全部失败均无关；不替代上述精确候选 CI 与独立验收。未采用合成集成树。
+- **第 1 项继续开放：** 诊断附件只有事件枚举，未提供失败行。普通粗体的 marker 展开行为见下方 ISS-232；另有 Draft PR #207 处理精确样例 `**律师：**后果很严重。` 的中文标点兼容。两者原因不同，本轮未合并 #206 或 #207，不关闭 Issue #202。
+- **NOT_VERIFIED：** Windows WebView2 / macOS WKWebView 原生退出、重启及真实中文输入法；合并不等于发布或安装。
 
-### ✅ PR #203 独立验收：启动恢复开关覆盖多标签会话（Issue #202 第 2 项；2026-10-23 独立验收）
+### ISS-232 / Issue #204：鼠标点击后的 IR marker 折叠候选（PR #206，待独立复核）
 
-- **验收对象：** head `6d6032e657c77870012c09a0ebc75958b2d03fa7`（分支 `fix/issue-202-session-restore`），merge-base 即当时 `main` tip `c1a9d87`，**零漂移**。
-- **独立实跑结果（隔离 worktree `/tmp/folia-accept-203`，非 PR 作者环境）：** `npm run typecheck` 退出码 0；`npm run lint` 退出码 0；`npm test` **82 文件 / 886 测试全通过**；`npm run build` 成功（仅既有 3 条 `INEFFECTIVE_DYNAMIC_IMPORT` 提示，无新增依赖或 chunk 超限）；`cargo test --locked` **90/90 通过**（含窗口状态 10 项几何/并发回归）。
-- **E2E 实跑（本地 Chromium 可用，PR 作者环境因 Playwright 浏览器缺失未能本地执行）：** 新增 `e2e/session-restore.spec.ts` **2/2 通过**；CI 覆盖的 6 个 spec（rich-media + mermaid-ir + theme guards ×2 + tab-content-diagnostics + session-restore）**9/9 通过**。
-- **变异验证：** 把 `bootstrapSessionForWindow` 的主窗口分支回退为旧实现（`return bootstrapSession(loaded)`，忽略 `reopenLastFile`），新增的两个 Playwright 用例**全部变红**（标签数 4 ≠ 2 预期）；恢复实现后复跑**重新转绿**。证明新用例确实锚定该缺陷，不是恒真断言。
-- **代码审查结论：无阻塞缺陷。** 关键点逐条核对——① `restorePreviousSession` 用 `useState` 惰性初始化在启动时取样，运行中切换不突然恢复旧文件（PR 自述与实现一致）；② `bootstrapSessionForWindow` 只在 `windowLabel === 'main'` 分支应用过滤，`tab-window` 显式 tabIds 移交不受影响；③ 草稿例外（`dirty` 或「无路径且非空」）在过滤后保留，activeTabId 回退到首个草稿；④ `reopenAttempted.current = true` 的新守卫确保关闭最后一个已恢复标签后不会重开旧单文件兜底；⑤ 最近文件 `recentFiles` 不被过滤删除；⑥ i18n 三语言同步更新且说明了生效时机与草稿例外。
-- **一项行为澄清（非缺陷，已确认符合 PR 声明）：** 关闭恢复后首次启动的 debounce 持久化会把**被过滤掉的已保存标签从 localStorage 中抹除**（实测：过滤后持久化的 `tabs` 只剩占位标签）。随后用户**重新打开**该开关并重启，**不会**恢复那批已保存标签——因为它们已被覆写，只能从「最近文件」重新打开。PR 描述中「关闭后已保存标签由最近文件入口重新打开」与实际行为一致；「重新开启后是否应恢复原会话」未被 PR 承诺，也未被现有测试覆盖。**这是可讨论的产品语义，不是本次合并的阻塞项**，但若产品预期是「关掉再打开就能恢复原会话」，则当前实现不满足，需要额外保留被过滤标签的机制。
-- **未验边界：** Windows WebView2 / macOS WKWebView 原生桌面**未实机验证**；原生退出/重启/撕出交互不由浏览器与单测替代。PR 自述的该限制在本次验收中确认属实。
-- **结论：** 代码、测试、变异验证、CI 一致，无阻塞项；可合入。原生桌面真机验收按项目惯例移交发版前人工验证。
+- **已观察事实：** 在合成普通粗体文档中点击文字后，`--expand` 为 1，两个 marker 宽约 14.47px；静置 3 秒仍可见，方向键后收起。`strong` 始终存在且 font-weight 700。因此只能证明 marker 可见度行为，不能证明“文字未加粗”，也不能确认其为 Issue #202 报告者的根因。
+- **范围与状态：** #206 候选 `acac905551309df3ef97a8741f867c0c90dc647b` 扩展现有 MutationObserver，为非标题展开节点安排 220ms 折叠；CI 通过。须独立核对 DEC-030 保留点击展开语法的意图，以及代码块、HTML、公式等节点的编辑路径，不能从四类行内格式扩大为所有节点均安全。本轮未合并。
+- **现有回归：** 新增 4 项 Chromium 测试，基线前 3 项失败、第 4 项通过，修复后 4/4。既有 ISS-151 spec 因欢迎页入口过期在基线 5 项失败，候选补新建步骤后通过。测试通过不代替产品语义或未覆盖节点审查。
+- **未验边界：** Windows WebView2 / macOS WKWebView 原生桌面及报告者原文。#207 的中文标点兼容候选另行评估，不与本项混称同一根因。
 
 ### ✅ 自动更新检查生命周期（ISS-227 审计补充，2026-10-20；PR #198 已合并 1c6a6eb；已随 v0.8.3 发布（2026-10-20））
 
