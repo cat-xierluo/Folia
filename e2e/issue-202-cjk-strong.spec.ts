@@ -23,12 +23,24 @@ async function openSample(page: Page, source = SAMPLE, waitForSuppression = true
   })).toBe(false);
 }
 
+async function focusFirstParagraphEnd(page: Page) {
+  await page.locator(editorSelector).evaluate((editor) => {
+    (editor as HTMLElement).focus();
+    // Vditor appends an empty final paragraph, so Ctrl+End is not the sample's end.
+    const range = document.createRange();
+    range.selectNodeContents(editor.querySelector('p')!);
+    range.collapse(false);
+    const selection = window.getSelection()!;
+    selection.removeAllRanges();
+    selection.addRange(range);
+  });
+}
+
 test('#202: the first real input immediately after initialization is not suppressed', async ({ page }) => {
   await openSample(page, SAMPLE, false);
   const editor = page.locator(editorSelector);
   await expect(editor.locator('strong')).toHaveText('律师：');
-  await editor.click();
-  await page.keyboard.press('ControlOrMeta+End');
+  await focusFirstParagraphEnd(page);
   await page.keyboard.insertText('首键');
   await expect.poll(() => persistedSource(page)).toBe(`${SAMPLE}首键\n`);
   await expect(page.locator('.tabbar-tab--active [data-dirty]')).toHaveCount(1);
@@ -64,8 +76,7 @@ test('#202: exact sample renders on opening, previews agree, source survives mod
 test('#202: editing, undo/redo and plain-text paste retain the original delimiters', async ({ page }) => {
   await openSample(page);
   const editor = page.locator(editorSelector);
-  await editor.click();
-  await page.keyboard.press('ControlOrMeta+End');
+  await focusFirstParagraphEnd(page);
   await page.keyboard.insertText('新增');
   await expect.poll(() => persistedSource(page)).toBe(`${SAMPLE}新增\n`);
   await expect(editor.locator('strong')).toHaveText('律师：');
@@ -74,8 +85,7 @@ test('#202: editing, undo/redo and plain-text paste retain the original delimite
   await expect(editor).not.toContainText('新增');
   await page.getByRole('button', { name: '重做', exact: true }).click();
   await expect(editor).toContainText('新增');
-  await editor.click();
-  await page.keyboard.press('ControlOrMeta+End');
+  await focusFirstParagraphEnd(page);
   await editor.evaluate((node) => {
     const data = new DataTransfer();
     data.setData('text/plain', '\n\n**警告：**立即处理。');
