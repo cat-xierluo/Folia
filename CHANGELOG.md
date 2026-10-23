@@ -4,6 +4,10 @@ All notable changes of this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **点击进入行内格式时 Markdown marker 不再永久展开（GitHub Issue #204，Issue #202 第 1 项反馈）**：在所见即所得模式下打开已有文件后，用鼠标点击进入粗体 / 斜体 / 删除线 / 行内代码等行内格式块时，Vditor 会在异步 `selectionchange` 中展开该节点的 Markdown marker，而原有的 220ms 自动折叠只挂在输入 / 按键 / 失焦三个回调上，点击不触发其中任何一个——marker 因此永久可见，文字看起来像「Markdown 没生效」（实际文字一直是加粗的）。现改为：任何行内格式节点被展开时都安排同样的折叠定时器，点击进入与键盘进入的观感一致。输入时短暂看到 `**` 的既有观感不变。
+
 ## [0.8.3] - 2026-10-20
 
 ### Added

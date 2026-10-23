@@ -246,7 +246,7 @@ function scheduleImmediateHeadingCollapse(
  * 返回 disconnect 函数：init effect cleanup 调用，避免 editor.destroy 后操作
  * 已分离的 DOM。
  */
-function setupHeadingExpandGuard(ir: HTMLElement): () => void {
+function setupHeadingExpandGuard(ir: HTMLElement, onExpandAdded?: () => void): () => void {
   const HEADING_EXPAND_SELECTOR =
     'h1.vditor-ir__node--expand, h2.vditor-ir__node--expand, h3.vditor-ir__node--expand, '
     + 'h4.vditor-ir__node--expand, h5.vditor-ir__node--expand, h6.vditor-ir__node--expand';
@@ -255,9 +255,19 @@ function setupHeadingExpandGuard(ir: HTMLElement): () => void {
       if (mutation.type !== 'attributes' || mutation.attributeName !== 'class') continue;
       const el = mutation.target;
       if (!(el instanceof Element)) continue;
+      if (!el.classList.contains('vditor-ir__node--expand')) continue;
+      const isHeading = /^H[1-6]$/.test(el.tagName);
+      // ISS-204：非标题节点（粗体 / 斜体 / 删除线 / 行内代码等）被加
+      // --expand 时，通知调用方安排折叠。鼠标点击进入已打开文件的行内格式块
+      // 时，Vditor 是在异步 selectionchange 里加 --expand 的——点击既不触发
+      // input 也不触发 keydown，原有 220ms 折叠定时器根本不会被安排，marker
+      // 于是永久展开，用户看到「**文字**」而不是加粗文字。
+      // 标题节点由本守卫立即移除 --expand（ISS-76），无需再排折叠定时器。
+      if (onExpandAdded && !isHeading) {
+        onExpandAdded();
+      }
       // 仅处理标题节点：tagName H1-H6 且当前带 --expand
-      if (!/^H[1-6]$/.test(el.tagName)) continue;
-      if (el.classList.contains('vditor-ir__node--expand')) {
+      if (isHeading) {
         el.classList.remove('vditor-ir__node--expand');
       }
     }
@@ -1436,7 +1446,19 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
       // ISS-106：标题方向键光标漂移根治——MutationObserver 守卫，覆盖 RAF
       // 无法稳定捕捉的异步 selectionchange 路径（见 setupHeadingExpandGuard）。
       const irEl = getIrElement(editor);
-      disconnectHeadingGuardRef.current = irEl ? setupHeadingExpandGuard(irEl) : null;
+      disconnectHeadingGuardRef.current = irEl
+        ? setupHeadingExpandGuard(irEl, () => {
+          // ISS-204：非标题节点被加 --expand（点击进入行内格式块）时，
+          // 安排与 input / keydown 相同的 220ms 折叠定时器。
+          if (collapseTimerRef.current !== null) {
+            window.clearTimeout(collapseTimerRef.current);
+          }
+          collapseTimerRef.current = window.setTimeout(() => {
+            collapseTimerRef.current = null;
+            collapseExpandedMarkers(editorRef.current);
+          }, IR_MARKER_COLLAPSE_DELAY_MS);
+        })
+        : null;
     }).catch((error) => {
       diagnosticLog.record('editor-error', { tabId: documentId, mode: 'wysiwyg' });
       console.error('[Folia] Vditor 初始化失败:', error);

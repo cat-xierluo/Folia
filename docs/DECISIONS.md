@@ -2,6 +2,15 @@
 
 ## 第一部分：决策记录
 
+### 2026-10-23（独立验收 + 修复，Codex）：IR marker 展开态不随「点击进入」折叠（ISS-232 / Issue #204）
+
+- **修复位置的选择：** 不新增独立的 `selectionchange` 监听器，而是扩展既有的 `setupHeadingExpandGuard`——它本就是监听 IR 内 `--expand` class 变更的 `MutationObserver`，原先只处理 h1–h6 标题节点（ISS-76 光标漂移）。复用同一观察点可避免第二个 DOM 观察器、避免与标题即时折叠逻辑产生两条互不知情的写入路径。回调只在**非标题**节点被加 `--expand` 时触发，因此与标题的立即移除互不干扰。
+- **行为边界：** 只在 `--expand` 被**加上**时安排 220ms 折叠定时器，与 `input` / `keydown` 共用同一个 `collapseTimerRef`（同一套「最近一次活动优先」的语义）。移除 `--expand` 不触发回调，避免自激循环。标题节点的立即移除行为、`input` / `keydown` / `blur` 三条既有路径、`IR_MARKER_COLLAPSE_DELAY_MS` 常量值全部不变。
+- **不改动的东西：** 不改 Markdown 解析（vendored Lute 的标准中文粗体 / CRLF / 表格内粗体等实跑均正常）、不改 CSS、不改 DEC-030 保留的「点击当前块显示 Markdown marker」意图、不改输入时短暂看到 `**` 的 220ms 观感。
+- **测试纪律：** 新回归必须在未修复时变红——基线实跑确认 3 项缺陷用例红（marker 宽度实测 14.47px）、1 项既有 UX 用例绿（确认未误伤），修复后 4/4 通过并连跑三轮稳定。断言用 `expect.poll` 等 marker 宽度归零，而非固定 sleep，避免时序抖动。
+- **顺带修复的既有缺陷：** `e2e/wysiwyg-bold-marker.spec.ts` 自 ISS-88 欢迎页与编辑器分离后未同步，5 项在基线全部失败，且该 spec 不在 CI 覆盖列表内，故长期无人察觉。补「欢迎页 → 新建」步骤后全绿，并把它与新 spec 一并纳入 CI Chromium job——否则同类缺陷仍会从「未覆盖的路径」逃逸。
+- **验证边界：** Chromium + vendored Lute 实跑；Windows WebView2 / macOS WKWebView 原生桌面 NOT_VERIFIED。
+
 ### 2026-10-20（dot 凌晨自动审计）：自动更新 effect 生命周期
 
 - 检查开始的防重入状态只在该 effect 内使用，因此采用局部变量，避免 setState 触发自身 cleanup。设置 off/on 已会改变依赖并重建，无需额外状态驱动。

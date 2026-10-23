@@ -2,8 +2,12 @@ import { expect, type Page, test } from '@playwright/test';
 
 async function openWysiwygEditor(page: Page) {
   await page.goto('/');
+  // 欢迎页没有编辑器——先经「新建」进入 WYSIWYG（ISS-88 起 TabBar「+」
+  // 只新增占位标签，从欢迎页进入编辑器要点欢迎页内的「新建」按钮）。
+  await expect(page.locator('.recent-page')).toBeVisible({ timeout: 30000 });
+  await page.locator('.recent-page-secondary').click();
   const editor = page.locator('.wysiwyg-editor-pane .vditor-ir .vditor-reset');
-  await expect(editor).toBeVisible();
+  await expect(editor).toBeVisible({ timeout: 30000 });
   await editor.click();
   await page.keyboard.press('Meta+A');
   await page.keyboard.press('Backspace');

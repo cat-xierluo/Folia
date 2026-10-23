@@ -30,6 +30,20 @@
 
 ## 待处理
 
+### 🔧 ISS-232 / GitHub Issue #204 IR marker 展开态在「点击进入已打开文件的行内格式」时不折叠——粗体看起来未生效（Issue #202 第 1 项；2026-10-23 独立验收定位根因，修复 PR 待合入）
+
+- **用户现象：** 报告者（Windows / Folia 0.8.3 / zh-CN）反馈「在正常阅读文件时出现 markdown 语法未生效的情况，应当加粗的文字未加粗，显示为 `**文字**`」。
+- **根因（已实证定位，非推断）：** IR 模式下 Vditor 用 `vditor-ir__node--expand` 表示「当前光标所在节点展开 marker」，CSS 靠该 class 把 `**` marker 从 0 宽展开到可见宽。Folia 只在三个回调里折叠它——`input`（`WysiwygEditorPane.tsx:1291`）、`keydown`（`:1414`）、`blur`（`:1425`），每次安排 220ms 定时器调用 `collapseExpandedMarkers`。**打开已有文件后，用户用鼠标点击进入某个行内格式块时，Vditor 是在异步 `selectionchange` 里给该节点加 `--expand`，而点击既不触发 `input` 也不触发 `keydown`**，于是没有任何定时器被安排，marker 永久展开——用户看到的是 `**文字**` 而不是加粗文字。点击后再按任意方向键（走 `keydown` 路径）marker 立刻收起，粗体恢复，与用户描述完全吻合。
+- **实证（Chromium 实跑）：** 打开含 `**应当加粗的文字**` 的文档后点击该粗体块 → `--expand` 节点数 0→1、两个 `**` marker 宽度 0→14.47px、`strong` 元素始终存在（font-weight 700）；静置 3 秒仍为展开态；按一次 ArrowRight 后 `--expand` 归 0、marker 宽度归 0。展开态下 DOM 为 `<span class="vditor-ir__marker vditor-ir__marker--bi">**</span><strong data-newline="1">应当加粗的文字</strong><span class="vditor-ir__marker vditor-ir__marker--bi">**</span>`——即文字本身是加粗的，只是 marker 常驻可见遮蔽了观感。
+- **影响面：** 同一缺陷对**全部行内 marker 类型**成立，不止粗体——实跑确认 `strong` / `em` / `s`（删除线）/ `code`（行内代码）四类在点击后同样 `--expand=1`、2 个可见 marker。链接类 marker（`[](...)`）未在同轮确认。
+- **既有覆盖的缺口：** `e2e/wysiwyg-bold-marker.spec.ts`（ISS-151）只覆盖「输入 / 粘贴 / 退格 / 失焦」四条路径，全部会触发 `input` / `keydown` / `blur`；**没有一条覆盖「打开文件后点击进入行内格式块」**。这就是该缺陷能长期存在的原因。
+- **修复：** 复用既有 `setupHeadingExpandGuard` 的 `MutationObserver`——它本就在监听 IR 内 `--expand` 的 class 变更，只是原先只对 h1–h6 标题节点做立即移除（ISS-76）。现扩展为：非标题节点被加 `--expand` 时，回调安排与 `input` / `keydown` 相同的 220ms 折叠定时器。标题节点的即时移除逻辑不变，两条路径不冲突。不改解析、不改 CSS、不改 `input` / `keydown` / `blur` 的既有行为。
+- **测试：** 新增 `e2e/iss-204-ir-marker-click-collapse.spec.ts`（4 项：粗体点击后 marker 收起且加粗真实生效、静置 3 秒不按任何键也不永久展开、斜体 / 删除线 / 行内代码同样适用、输入时短暂看到 marker 的既有 UX 不变）。**基线验证：未修复时前 3 项变红**（marker 宽度实测 14.47px 未收起）、第 4 项绿（确认未误伤既有 UX）；修复后 4/4 通过，连跑三轮稳定。
+- **顺带修复的既有缺陷：** `e2e/wysiwyg-bold-marker.spec.ts` 的 `openWysiwygEditor` 直接 `page.goto('/')` 后找编辑器，但欢迎页没有编辑器——该 spec 的 5 项在基线**全部失败**（与本缺陷无关，因 ISS-88 起欢迎页与编辑器分离）。补上「欢迎页 → 新建」步骤后 5/5 通过。该 spec 此前不在 CI 覆盖列表内，故此失败长期无人察觉。
+- **CI 接入：** `.github/workflows/ci.yml` 的 Chromium job 新增 `e2e/wysiwyg-bold-marker.spec.ts` 与 `e2e/iss-204-ir-marker-click-collapse.spec.ts`，使「点击进入」路径纳入 CI 门槛。
+- **未验边界：** 上述全部结论与验证来自 Chromium + vendored Lute，**Windows WebView2 / macOS WKWebView 原生桌面未实机验证**；报告者环境为 Windows 0.8.3，与本仓库同版本，但原生 WebView 的 `selectionchange` 时序可能不同。报告者的诊断日志附件（`folia-diagnostics.md`）只有事件枚举、无正文与行号信息，不能定位到具体行——本条根因由独立构造的合成文档复现得到，与报告者的具体文档是否同一路径**未确认**。已就此在 Issue #202 下留言请其补充失败行前后各一行的原始 Markdown 原文与现象发生时机。
+- **状态：** 修复与回归已就绪（待合入）。Issue #202 因本项未随发布闭环保持开放；第 2 项由 PR #203 独立推进，两项不耦合。
+
 ### ✅ 自动更新检查生命周期（ISS-227 审计补充，2026-10-20；PR #198 已合并 1c6a6eb；已随 v0.8.3 发布（2026-10-20））
 
 - **复现：** 自动检查的 `markStarted` 更新 effect 依赖中的 state，触发 cleanup；网络 Promise 真正晚返回时被 `cancelled` 丢弃，已可用更新不会下载、错误也不会安排 45 秒重试。此前即时 resolved mock 与独立 scheduler 单测未覆盖该消费者时序。
