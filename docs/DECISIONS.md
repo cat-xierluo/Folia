@@ -2,6 +2,22 @@
 
 ## 第一部分：决策记录
 
+### 2026-10-23（独立验收，Codex）：IR marker 展开态不随「点击进入」折叠——Issue #202 第 1 项根因定位
+
+- **定位结论：** Issue #202 第 1 项「应当加粗的文字未加粗，显示为 `**文字**`」的根因不是 Markdown 解析，而是 IR marker 的展开态没有在「鼠标点击进入已打开文件的行内格式块」后折叠。`vditor-ir__node--expand` 由 Vditor 在异步 `selectionchange` 中加到光标所在节点；Folia 只在 `input` / `keydown` / `blur` 三个回调里安排 220ms 折叠（`src/components/WysiwygEditorPane.tsx`），点击不触发其中任何一个，于是 `**` marker 永久展开，遮蔽了「文字其实已是 `<strong>`」的事实。
+- **不改动解析语义：** 标准中文粗体、CRLF、行内粗体、表格内粗体、引用块内粗体、嵌套粗体在 vendored Lute 的 IR/HTML 输出均正常（实跑逐项确认 `strong` 元素存在且 font-weight 700）。前端不引入新解析行为、不改 marker 展开的既有 UX 意图（DEC-030 保留「点击当前块显示 Markdown marker」）。
+- **既有测试缺口定位：** `e2e/wysiwyg-bold-marker.spec.ts`（ISS-151）覆盖输入/粘贴/退格/失焦四条路径，全部命中会触发折叠的回调；**缺少「打开文件后点击进入行内格式块」这一条**，这解释了缺陷为何长期存在而 CI 一直绿。
+- **排除的假设：** ① 不是 Lute 解析问题（多种行内格式实跑均产出正确 `strong`/`em`/`s`/`code`）；② 不是 CSS 永久展开缺陷（`keydown` 一次即收起，证明 CSS 与折叠函数本身正常）；③ 不是竞态导致的「strong 缺失」（展开态下 `strong` 始终在 DOM 内，`--expand` 只控制 marker 可见度）；④ 报告者诊断日志附件只含事件枚举、无正文与行号，无法定位其具体文档行，故其个例与本合成复现是否同一路径**未确认**。
+- **登记为 ISS-232 / GitHub Issue #204**（`docs/TASKS.md`），与 PR #203（Issue #202 第 2 项）解耦，Issue #202 保持开放。
+- **验证边界：** 结论全部来自 Chromium + vendored Lute 实跑，Windows WebView2 / macOS WKWebView 原生桌面 NOT_VERIFIED。
+
+### 2026-10-23（独立验收，Codex）：PR #203 启动恢复开关覆盖多标签会话
+
+- **范围：** 独立验收 Issue #202 第 2 项的 PR #203（head `6d6032e`，merge-base 即 `main` tip，零漂移），不复用 PR 作者的执行结论。
+- **实跑：** typecheck / lint / build 通过；Vitest 82 文件 886/886；`cargo test --locked` 90/90；本地 Chromium 跑新增 Playwright 2/2 与 CI 覆盖的 6 个 spec 9/9。变异验证确认新用例锚定真实缺陷（旧实现下 2/2 变红）。
+- **审查结论：** 无阻塞缺陷。记录一项**非阻塞**的产品语义澄清：关闭恢复后首次启动的持久化会覆写掉被过滤的已保存标签，因此「关掉再打开开关并重启」不会恢复原会话（只能从最近文件重开）。当前实现与 PR 声明一致，但若产品预期相反则需另行补机制。
+- **不做的动作：** 不代为合并、不发布、不安装；原生桌面真机验收按项目惯例移交发版前人工验证。Issue #202 保持开放（第 1 项见 ISS-232 / GitHub Issue #204）。
+
 ### 2026-10-20（dot 凌晨自动审计）：自动更新 effect 生命周期
 
 - 检查开始的防重入状态只在该 effect 内使用，因此采用局部变量，避免 setState 触发自身 cleanup。设置 off/on 已会改变依赖并重建，无需额外状态驱动。
