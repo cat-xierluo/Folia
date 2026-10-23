@@ -4,6 +4,10 @@ All notable changes of this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **中文标点粗体兼容（Issue #202）**：普通文本中的 `**律师：**后果很严重。` 可直接显示粗体，编辑器、HTML 预览与 Word 纸张预览一致；不向原文补空格或改写星号。仅扩展同一纯文本片段，代码、转义、链接、HTML、脚注和嵌套格式继续使用原解析规则。
+
 ## [0.8.3] - 2026-10-20
 
 ### Added

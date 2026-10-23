@@ -114,6 +114,7 @@ jobs:
             e2e/theme-system-guards.spec.ts \
             e2e/theme-ui-visual-guards.spec.ts \
             e2e/tab-content-diagnostics.spec.ts \
+            e2e/issue-202-cjk-strong.spec.ts \
             --workers=1 \
             --reporter=list
 

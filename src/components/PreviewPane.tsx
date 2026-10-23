@@ -9,6 +9,7 @@ import { createHtmlReadingPreviewHtml } from '../services/htmlReadingPreviewServ
 import { resolveLocalImages } from '../services/localImageResolver';
 import { openExternalUrl } from '../services/urlOpener';
 import { prepareMarkdownForVditorPreview } from '../services/markdownSvgPreviewService';
+import { CJK_STRONG_PREVIEW_RENDERERS } from '../services/cjkStrongCompatibility';
 
 type PreviewPaneProps = {
   source: string;
@@ -95,7 +96,10 @@ export function PreviewPane({ source, tocIds, wideTables = false, renderMode = '
         },
         markdown: {
           sanitize: false,
+          autoSpace: false,
+          fixTermTypo: false,
         },
+        renderers: CJK_STRONG_PREVIEW_RENDERERS,
         transform: markdownPreviewInput.transform,
         after() {
           if (cancelled) return;

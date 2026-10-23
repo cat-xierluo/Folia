@@ -32,6 +32,7 @@ import { prepareMarkdownForVditorPreview } from './markdownSvgPreviewService';
 import { sanitizeForVditor } from './sanitizeService';
 import { stripVditorPreviewChrome } from './vditorPreviewChromeService';
 import { VDITOR_PREVIEW_I18N } from './vditorPreviewConfig';
+import { CJK_STRONG_PREVIEW_RENDERERS } from './cjkStrongCompatibility';
 
 export type Surface =
   | 'html-preview'
@@ -317,7 +318,8 @@ export function createRenderCoordinator(): RenderCoordinator {
                   enable: renderFeatures.hasHighlightableCode,
                   lineNumber: false,
                 },
-                markdown: { sanitize: false },
+                markdown: { sanitize: false, autoSpace: false, fixTermTypo: false },
+                renderers: CJK_STRONG_PREVIEW_RENDERERS,
                 transform: markdownPreviewInput.transform,
                 after: () => {
                   // after() only signals "Lute initial HTML written". Async

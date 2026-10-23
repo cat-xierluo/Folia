@@ -2,6 +2,14 @@
 
 ## 第一部分：决策记录
 
+### 2026-10-23（北京时间，dot 受用户明确委托）：Issue #202 中文标点粗体兼容
+
+- 报告者新增最小文本 `**律师：**后果很严重。` 已由真实 Lute 复现：CommonMark 的结束分隔符标点边界使其成为普通文本；这不是 #204 / PR #206 的点击 marker 展开问题。本次是有意限定的兼容扩展，不宣称修正 CommonMark 标准。
+- 不全局开启 `SetProtyleWYSIWYG`：虽能识别此样例，真实测试发现 `<br>` 的 IR 往返会产生 `not found render function...NodeBr`，不能接受。也不修改 vendored Lute、不做源文件正则替换、不插入隐形字符。
+- 在 Lute 已解析的普通正文 token / IR 文本节点上扩展「含汉字、以标点结尾、双星后紧接字母或数字」的纯文本粗体。IR 生成与 Spin 使用原生 strong/marker 结构，保留所有 wbr 光标边界；预览走官方 renderText hook，保持原 autoSpace/fixTermTypo=false。转换使用惰性 template，不提前激活未清洗 HTML。
+- 代码、转义、实体、链接文字/地址/标题、内嵌 HTML 所在块、脚注、既有嵌套强调和跨节点格式保守不扩展。Lute 1.7.6 的 AST 类型和节点接口由真实引擎回归固定，升级时必须复核。Markdown 仍是唯一真值，既有 LF/末尾换行规范化没有扩大。
+- 与 #203 的启动恢复开关、#205 的验收文档、#206 的 marker 折叠独立；Refs #202，不自动关闭问题、不合并或发布。验证矩阵与环境限制见 [专项说明](./issue-202-cjk-strong.md)。
+
 ### 2026-10-20（dot 凌晨自动审计）：自动更新 effect 生命周期
 
 - 检查开始的防重入状态只在该 effect 内使用，因此采用局部变量，避免 setState 触发自身 cleanup。设置 off/on 已会改变依赖并重建，无需额外状态驱动。
