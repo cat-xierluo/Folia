@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppLayout } from './AppLayout';
 import { loadSession, saveSession } from '../services/sessionStore';
-import { updateSettings } from '../services/settingsService';
+import { setLastOpenedPath, updateSettings } from '../services/settingsService';
 import type { OpenedFile } from '../types/document';
 import type { Update } from '@tauri-apps/plugin-updater';
 import type { UpdateCheckResult, UpdateProgress } from '../services/updateService';
@@ -137,6 +137,65 @@ describe('AppLayout update flow', () => {
     delete (window as typeof window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
     vi.useRealTimers();
     vi.clearAllMocks();
+  });
+
+  // #202：通过真实 AppLayout → useSession → reducer 启动入口验证偏好，不 mock 会话。
+  it('#202: disabled restore skips saved tabs, preserves recent files and blocks legacy reopen', async () => {
+    updateSettings({ reopenLastFile: false });
+    const saved: OpenedFile = { path: '/synthetic/saved.md', name: 'saved.md', content: '# Saved', lastSavedContent: '# Saved', dirty: false, fileType: 'markdown' };
+    const recentFiles = [{ path: saved.path, name: saved.name, openedAt: 123 }];
+    saveSession({ tabs: [{ id: 'saved', file: saved, editorMode: 'source', rightPanelMode: 'none', draftPersisted: true, isPlaceholder: false }], activeTabId: 'saved', recentFiles });
+    setLastOpenedPath(saved.path);
+    await act(async () => { root.render(<AppLayout />); });
+    await act(async () => { vi.advanceTimersByTime(2000); });
+    expect(host.querySelector('.recent-page')).not.toBeNull();
+    expect(loadSession().tabs.every((tab) => tab.isPlaceholder)).toBe(true);
+    expect(loadSession().recentFiles).toEqual(recentFiles);
+    expect(fileServiceMock.openPath).not.toHaveBeenCalled();
+    // 重新打开开关只影响下次启动，不能在当前欢迎页突然打开旧文件。
+    await act(async () => { updateSettings({ reopenLastFile: true }); });
+    await act(async () => { vi.advanceTimersByTime(2000); });
+    expect(fileServiceMock.openPath).not.toHaveBeenCalled();
+    expect(host.querySelector('.recent-page')).not.toBeNull();
+  });
+
+  it('#202: default restore keeps tabs and disabling it does not close the current session', async () => {
+    const saved: OpenedFile = { path: '/synthetic/default.md', name: 'default.md', content: '# Default', lastSavedContent: '# Default', dirty: false, fileType: 'markdown' };
+    saveSession({ tabs: [{ id: 'default', file: saved, editorMode: 'source', rightPanelMode: 'none', draftPersisted: true, isPlaceholder: false }], activeTabId: 'default', recentFiles: [] });
+    await act(async () => { root.render(<AppLayout />); });
+    expect(editorPaneMock.source).toBe(saved.content);
+    await act(async () => { updateSettings({ reopenLastFile: false }); });
+    await act(async () => { vi.advanceTimersByTime(1000); });
+    expect(editorPaneMock.source).toBe(saved.content);
+    expect(loadSession().tabs[0].file).toEqual(saved);
+  });
+
+  it('#202: legacy single-file recovery still works when enabled', async () => {
+    setLastOpenedPath('/synthetic/legacy.md');
+    await act(async () => { root.render(<AppLayout />); });
+    await act(async () => { vi.advanceTimersByTime(2000); });
+    expect(fileServiceMock.openPath).toHaveBeenCalledWith('/synthetic/legacy.md', 'UTF-8');
+  });
+
+  it('#202: closing the last restored tab does not reopen the legacy path', async () => {
+    const saved: OpenedFile = { path: '/synthetic/closed.md', name: 'closed.md', content: '# Closed', lastSavedContent: '# Closed', dirty: false, fileType: 'markdown' };
+    saveSession({ tabs: [{ id: 'closed', file: saved, editorMode: 'source', rightPanelMode: 'none', draftPersisted: true, isPlaceholder: false }], activeTabId: 'closed', recentFiles: [] });
+    setLastOpenedPath(saved.path);
+    await act(async () => { root.render(<AppLayout />); });
+    await act(async () => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'w', ctrlKey: true, bubbles: true })); });
+    await act(async () => { vi.advanceTimersByTime(2000); });
+    expect(host.querySelector('.recent-page')).not.toBeNull();
+    expect(fileServiceMock.openPath).not.toHaveBeenCalled();
+  });
+
+  it('#202: disabled restore does not block an explicit system-open path', async () => {
+    updateSettings({ reopenLastFile: false });
+    setLastOpenedPath('/synthetic/old.md');
+    tauriCoreMock.invoke.mockImplementation(async (command: string) => command === 'pending_opened_paths' ? ['/synthetic/requested.md'] : []);
+    await act(async () => { root.render(<AppLayout />); });
+    await act(async () => { vi.advanceTimersByTime(2000); });
+    expect(fileServiceMock.openPath).toHaveBeenCalledTimes(1);
+    expect(fileServiceMock.openPath).toHaveBeenCalledWith('/synthetic/requested.md', 'UTF-8');
   });
 
   // #179：真实 useSession/reducer；只延迟 IO，验证晚返回不会替换新打开的标签。
