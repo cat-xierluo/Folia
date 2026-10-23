@@ -26,13 +26,20 @@ export function bootstrapSessionForWindow(
   loaded: SessionState,
   windowLabel = 'main',
   initialTabIds: string[] = [],
+  reopenLastFile = true,
 ): SessionState {
-  // 主窗口始终按完整 session 恢复。tab-window 必须显式传入 tabIds；空数组
+  // 重启偏好只作用于主窗口。tab-window 是运行中的显式移交，必须保留目标标签。
+  // tab-window 必须显式传入 tabIds；空数组
   // 或全部失配都走占位 tab 分支（下方 `tabs.length === 0` 处理），不泄漏
   // 主 session 到独立窗口（ISS-170 review follow-up：tab-window URL 缺
   // tabIds 时不能让独立窗口意外展示主窗口整套标签）。
   if (windowLabel === 'main') {
-    return bootstrapSession(loaded);
+    // 关闭恢复时仍保留未保存内容，不能因下一次 debounce 持久化而丢掉草稿。
+    // 无路径但有内容的旧会话也保留，即便旧数据未正确标 dirty。
+    const tabs = reopenLastFile ? loaded.tabs : loaded.tabs.filter(
+      (tab) => tab.file.dirty || (!tab.file.path && tab.file.content.length > 0),
+    );
+    return bootstrapSession({ ...loaded, tabs });
   }
 
   const wanted = new Set(initialTabIds);

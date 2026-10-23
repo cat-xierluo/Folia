@@ -69,7 +69,7 @@ test.describe('ISS-204: 点击进入已打开文件的行内格式块后 IR mark
     expect(await expandedNodeCount(page)).toBe(0);
     expect(await visibleMarkerWidths(page)).toEqual([]);
 
-    // 鼠标点击进入粗体块——这正是报告者的操作路径。
+    // Exercise mouse selection independently of the reporter's unknown input.
     await strong.click();
     await page.waitForTimeout(400);
 
@@ -110,15 +110,47 @@ test.describe('ISS-204: 点击进入已打开文件的行内格式块后 IR mark
       { selector: '.vditor-ir code', text: '行内代码' },
     ];
 
+    await expect(page.locator('.vditor-ir em')).toBeVisible({ timeout: 20_000 });
+    // Record transient expansion in-page; polling can miss a 220ms state.
+    await page.locator('.wysiwyg-editor-pane').evaluate((pane) => {
+      new MutationObserver((records) => {
+        for (const { target } of records) {
+          if (target instanceof Element && target.classList.contains('vditor-ir__node--expand')) {
+            pane.setAttribute('data-observed-expansions',
+              `${pane.getAttribute('data-observed-expansions') ?? ''} ${target.getAttribute('data-type')}`);
+          }
+        }
+      }).observe(pane, { subtree: true, attributes: true, attributeFilter: ['class'] });
+    });
+
     for (const c of cases) {
       const target = page.locator(`.wysiwyg-editor-pane ${c.selector}`).first();
       await expect(target).toBeVisible({ timeout: 20_000 });
+      await expect(target).toHaveText(c.text);
       await target.click();
+      const type = c.selector.split(' ').at(-1)!;
+      await expect(page.locator('.wysiwyg-editor-pane')).toHaveAttribute(
+        'data-observed-expansions', new RegExp(`\\b${type}\\b`),
+      );
       await expect
         .poll(() => visibleMarkerWidths(page), { timeout: 3_000 })
         .toEqual([]);
       expect(await expandedNodeCount(page)).toBe(0);
     }
+  });
+
+  test('clicking a fenced code block keeps its source editable after idle', async ({ page }) => {
+    await seedOpenedDocument(page, '**前文**\n\n```js\nconst value = 1;\n```\n');
+    await page.goto('/');
+    const block = page.locator('.vditor-ir [data-type="code-block"]').first();
+    await expect(block.locator('.vditor-ir__preview')).toBeVisible({ timeout: 20_000 });
+    // Leave an inline collapse timer pending before entering block source.
+    await page.locator('.vditor-ir strong').first().click();
+    await block.locator('.vditor-ir__preview').click();
+    await expect(block).toHaveClass(/vditor-ir__node--expand/);
+    await page.waitForTimeout(600);
+    await expect(block).toHaveClass(/vditor-ir__node--expand/);
+    await expect(block.locator('.vditor-ir__marker--pre')).toBeVisible();
   });
 
   test('既有 UX 不变：输入 `**foo**` 时仍短暂看到 marker 后自动折叠', async ({ page }) => {
