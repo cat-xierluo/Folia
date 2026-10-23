@@ -114,6 +114,7 @@ jobs:
             e2e/theme-system-guards.spec.ts \
             e2e/theme-ui-visual-guards.spec.ts \
             e2e/tab-content-diagnostics.spec.ts \
+            e2e/issue-202-cjk-strong.spec.ts \
             e2e/session-restore.spec.ts \
             e2e/wysiwyg-bold-marker.spec.ts \
             e2e/iss-204-ir-marker-click-collapse.spec.ts \

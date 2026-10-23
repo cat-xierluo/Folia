@@ -26,6 +26,7 @@ import {
 } from '../services/mediaInsertionService';
 import { applyWithSuppression } from '../services/dirtySuppression';
 import type { EditorHistoryApi } from '../types/editor';
+import { installCjkStrongIrCompatibility, renderCjkStrongInIr } from '../services/cjkStrongCompatibility';
 
 type WysiwygEditorPaneProps = {
   source: string;
@@ -1212,6 +1213,19 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
         },
         after() {
           if (cancelled) return;
+
+          // #202: install on this instance only; never enable Protyle globally.
+          // Rebuild the initial undo baseline only if its ordinary text needs
+          // compatibility rendering. No source edit or dirty notification.
+          const lute = editor.vditor.lute;
+          if (lute && installCjkStrongIrCompatibility(lute)) {
+            const ir = getIrElement(editor);
+            if (ir && renderCjkStrongInIr(ir.innerHTML) !== ir.innerHTML) {
+              // Native setValue uses enableInput:false. Do not open a dirty
+              // suppression window here: it could swallow the user's first key.
+              editor.setValue(latestSource.current, true);
+            }
+          }
 
           const initial = classifyHtmlTableBlocks(latestSource.current);
           lastComplexBlocksRef.current = initial.complex;

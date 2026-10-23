@@ -42,6 +42,15 @@ function findDocxAttribute(node: unknown, name: string): unknown {
 }
 
 describe('createFormattedRuns', () => {
+  it('#202: existing DOCX formatting preserves the punctuation-inclusive label', () => {
+    const runs = createFormattedRuns('**律师：**后果很严重。', getPreset('legal'));
+    expect(runs).toHaveLength(2);
+    expect(hasDocxNode(runs[0], 'w:b')).toBe(true);
+    expect(hasDocxNode(runs[1], 'w:b')).toBe(false);
+    expect(JSON.stringify(runs[0])).toContain('律师：');
+    expect(JSON.stringify(runs[1])).toContain('后果很严重。');
+    expect(JSON.stringify(runs)).not.toContain('**');
+  });
   it('uses the inline code preset color as font color instead of background shading', () => {
     const [, codeRun] = createFormattedRuns('示例 `code`', getPreset('legal'));
     const colorNode = findDocxNode(codeRun, 'w:color');
