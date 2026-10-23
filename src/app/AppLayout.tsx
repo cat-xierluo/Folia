@@ -206,6 +206,8 @@ function toUpdateErrorMessage(
 
 export function AppLayout() {
   const settings = useSettings();
+  // #202：偏好在启动时取样；运行中开启不能突然恢复旧文件。
+  const [restorePreviousSession] = useState(() => settings.reopenLastFile);
   const isTauriRuntime = '__TAURI_INTERNALS__' in window;
   // ISS-72：t 加 useCallback 让 deps 引用稳定（避免 startBackgroundUpdateDownload /
   // handleRestartUpdate 的 useCallback deps 在每次 render 都变）。
@@ -248,7 +250,7 @@ export function AppLayout() {
       tocRefreshTimerRef.current = null;
     }
   }, []);
-  const session = useSession();
+  const session = useSession(restorePreviousSession);
   const {
     activeFile: file,
     activeTab,
@@ -1089,9 +1091,12 @@ export function AppLayout() {
   }, [isTauriRuntime, windowLabel, tabs, confirmCloseDirty, saveDirtyTabById]);
 
   useEffect(() => {
-    // session 已恢复持久化标签时，跳过旧的单文件重开逻辑（多标签会话已取代 reopenLastFile）。
-    if (session.tabs.some((t) => t.file.path || t.file.content)) return;
-    if (!systemOpenChecked || !settings.reopenLastFile || file.path || reopenAttempted.current) return;
+    // 已恢复/主动打开过文档后，关闭最后一个标签不能再次触发旧单文件兜底。
+    if (session.tabs.some((t) => t.file.path || t.file.content)) {
+      reopenAttempted.current = true;
+      return;
+    }
+    if (!systemOpenChecked || !restorePreviousSession || !settings.reopenLastFile || file.path || reopenAttempted.current) return;
     const lastPath = getLastOpenedPath();
     if (!lastPath) return;
     reopenAttempted.current = true;
@@ -1116,7 +1121,7 @@ export function AppLayout() {
         window.cancelIdleCallback(idleId);
       }
     };
-  }, [file.path, handleOpenPath, settings.reopenLastFile, systemOpenChecked, session.tabs]);
+  }, [file.path, handleOpenPath, restorePreviousSession, settings.reopenLastFile, systemOpenChecked, session.tabs]);
 
   useEffect(() => {
     // 防重入标志属于本次 effect 生命周期。用 state 会在请求刚发出时重跑

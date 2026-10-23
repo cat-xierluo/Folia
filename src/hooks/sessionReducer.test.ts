@@ -34,6 +34,43 @@ describe('bootstrapSession', () => {
 });
 
 describe('bootstrapSessionForWindow', () => {
+  it('#202：关闭启动恢复时只保留 dirty 与无路径非空草稿，最近文件和原会话不变', () => {
+    const saved = makeTabFromFile(file('saved.md', 'saved'));
+    const dirty = makeTabFromFile(file('dirty.md', 'draft', true));
+    const deletedContent = makeTabFromFile(file('empty-draft.md', '', true));
+    const untitled = makeTabFromFile({ ...createEmptyFile(), content: '未落盘内容' });
+    const placeholder = makeTabFromFile(createEmptyFile(), true);
+    const recentFiles = [{ path: saved.file.path, name: saved.file.name, openedAt: 123 }];
+    const loaded: SessionState = { tabs: [saved, dirty, deletedContent, untitled, placeholder], activeTabId: saved.id, recentFiles };
+    const snapshot = JSON.stringify(loaded);
+
+    const result = bootstrapSessionForWindow(loaded, 'main', [], false);
+
+    expect(result.tabs).toEqual([dirty, deletedContent, untitled]);
+    expect(result.activeTabId).toBe(dirty.id);
+    expect(result.recentFiles).toEqual(recentFiles);
+    expect(JSON.stringify(loaded)).toBe(snapshot);
+    expect(bootstrapSessionForWindow({ ...loaded, activeTabId: untitled.id }, 'main', [], false).activeTabId).toBe(untitled.id);
+  });
+
+  it('#202：关闭启动恢复且无草稿时回到最近文件首页', () => {
+    const saved = makeTabFromFile(file('saved.md', 'saved'));
+    const result = bootstrapSessionForWindow(stateWith([saved]), 'main', [], false);
+    expect(result.tabs).toHaveLength(1);
+    expect(result.tabs[0].isPlaceholder).toBe(true);
+    expect(result.tabs[0].file.content).toBe('');
+    expect(result.activeTabId).toBe(result.tabs[0].id);
+  });
+
+  it('#202：关闭启动恢复不影响运行中的独立窗口显式接收已保存标签', () => {
+    const main = makeTabFromFile(file('main.md', 'main'));
+    const detached = makeTabFromFile(file('detached.md', 'detached'));
+    const result = bootstrapSessionForWindow(stateWith([main, detached]), 'tab-window-202', [detached.id], false);
+    expect(result.tabs).toEqual([detached]);
+    expect(result.activeTabId).toBe(detached.id);
+    expect(bootstrapSessionForWindow(stateWith([main, detached]), 'tab-window-202', [], false).tabs[0].isPlaceholder).toBe(true);
+  });
+
   it('tab-window 启动时只恢复 URL 指定的 tab，避免独立窗口加载整套 session', () => {
     const t1 = makeTabFromFile(file('main.md', 'main'));
     const t2 = makeTabFromFile(file('detached.md', 'detached'));
