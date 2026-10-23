@@ -98,6 +98,9 @@ export function GeneralSection() {
           <div className="settings-desc">{t('reopenLastFileDesc')}</div>
         </div>
         <button
+          role="switch"
+          aria-label={t('reopenLastFileLabel')}
+          aria-checked={settings.reopenLastFile}
           className={`toggle-switch ${settings.reopenLastFile ? 'on' : ''}`}
           onClick={() => handleChange({ reopenLastFile: !settings.reopenLastFile })}
         />
