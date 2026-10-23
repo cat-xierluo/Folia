@@ -86,13 +86,16 @@ test('#202: editing, undo/redo and plain-text paste retain the original delimite
   await page.getByRole('button', { name: '重做', exact: true }).click();
   await expect(editor).toContainText('新增');
   await focusFirstParagraphEnd(page);
+  // Vditor strips leading blank lines from pasted Markdown and unwraps a single
+  // paragraph. Create the paragraph through real editing, not clipboard padding.
+  await page.keyboard.press('Enter');
   await editor.evaluate((node) => {
     const data = new DataTransfer();
-    data.setData('text/plain', '\n\n**警告：**立即处理。');
+    data.setData('text/plain', '**警告：**立即处理。');
     node.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: data }));
   });
   await expect(editor.locator('strong')).toHaveText(['律师：', '警告：']);
-  await expect.poll(() => persistedSource(page)).toContain('**警告：**立即处理。');
+  await expect.poll(() => persistedSource(page)).toBe(`${SAMPLE}新增\n\n**警告：**立即处理。\n`);
   await page.reload();
   await expect(editor.locator('strong')).toHaveText(['律师：', '警告：']);
 });

@@ -74,6 +74,31 @@ describe('CJK punctuation strong compatibility with real Lute', () => {
     }
   });
 
+  it('does not re-pair existing emphasis when two ambiguous labels share a paragraph', () => {
+    const { original, fixed } = engines();
+    const left = '**律师：**后果很严重。新增';
+    const right = '**警告：**立即处理。';
+    const source = left + right;
+    // CommonMark already pairs the middle delimiters. This extension operates on
+    // plain tokens only, not existing strong nodes, so this remains unsupported.
+    expect(original.Md2HTML(source)).toContain('<strong>后果很严重。新增</strong>');
+    expect(fixed.Md2HTML(source)).toBe(original.Md2HTML(source));
+    expect(fixed.Md2VditorIRDOM(source)).toBe(original.Md2VditorIRDOM(source));
+    // Model Vditor's single-paragraph paste: unwrap the new paragraph, insert its
+    // inline nodes, then Spin. Neither compatibility rendering nor paste loses text.
+    const block = document.createElement('div');
+    const pasted = document.createElement('div');
+    block.innerHTML = fixed.Md2VditorIRDOM(left);
+    pasted.innerHTML = fixed.Md2VditorIRDOM(right);
+    block.firstElementChild!.append(...Array.from(pasted.firstElementChild!.childNodes));
+    let html = block.innerHTML;
+    for (let iteration = 0; iteration < 3; iteration++) {
+      html = fixed.SpinVditorIRDOM(html);
+      expect(html).toBe(original.Md2VditorIRDOM(source));
+      expect(fixed.VditorIRDOM2Md(html)).toBe(source + '\n');
+    }
+  });
+
   it('keeps native no-op bytes, is idempotent, and survives renderer replacement during paste', () => {
     const { original, fixed } = engines();
     expect(installCjkStrongIrCompatibility(fixed)).toBe(false);
