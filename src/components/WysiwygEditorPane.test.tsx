@@ -1436,6 +1436,35 @@ describe('WysiwygEditorPane 标题光标漂移 + 复制残留 marker (ISS-106 / 
     expect(ir.firstElementChild!.classList.contains('vditor-ir__node--expand')).toBe(true);
   });
 
+  it('#211: 真实组件接入组合边界并在卸载时恢复属性和解除监听', async () => {
+    let root: Root | null = null;
+    const onChange = vi.fn();
+    await act(async () => {
+      root = createRoot(host);
+      root.render(renderWithProvider(React.createElement(WysiwygEditorPane, { source: '## 六、违规的代价', onChange })));
+      await flushMicrotasks();
+      await flushFrames();
+    });
+    const ir = vditorCalls[0].host.querySelector<HTMLElement>('.vditor-ir pre')!;
+    ir.innerHTML = '<h2><span class="vditor-ir__marker" data-type="heading-marker">## </span>六、违规的代价</h2>';
+    const marker = ir.querySelector('span')!;
+    const body = ir.querySelector('h2')!.lastChild!;
+    const range = document.createRange();
+    range.setStart(body, 0); range.collapse(true);
+    const selection = document.getSelection()!;
+    selection.removeAllRanges(); selection.addRange(range);
+    ir.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+    expect(marker.getAttribute('contenteditable')).toBe('false');
+    expect(selection.anchorNode).toBe(body);
+    expect(selection.anchorOffset).toBe(0);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(setValueCalls).toEqual([]);
+    await act(async () => { root?.unmount(); });
+    expect(marker.hasAttribute('contenteditable')).toBe(false);
+    ir.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+    expect(marker.hasAttribute('contenteditable')).toBe(false);
+  });
+
   it('#211: 新增跨 document 标题可折叠，非标题展开态与原行内延时保持', async () => {
     let root: Root | null = null;
     await act(async () => {

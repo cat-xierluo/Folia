@@ -2,12 +2,14 @@
 
 ## 第一部分：决策记录
 
-### 2026-10-24（北京时间，dot 按用户明确要求）：Issue #211 标题重建折叠守卫
+### 2026-10-24 至 25（北京时间，dot 按用户明确要求）：Issue #211 标题起点输入边界
 
-- **证据：** v0.8.4 报告者在 `## 六、违规的代价` 前部编辑时见输入位置跳动；公开录屏可见标题 marker 闪现和整段位移，但不能据视频确认真实字符偏移变化。真实 Lute 1.7.6 在含光标标题的 Spin 输出中直接附加 `vditor-ir__node--expand`；现有 observer 仅监听 class 属性，整块 `outerHTML` 替换不会触发该分支。此漏口在 #206/#207 前已存在，不回滚这些成果。
-- **最小改动：** 保留原属性监听、行内 220ms 定时与 disconnect；仅补 childList 对新增节点本身/子树内 h1–h6 的展开 class 清理。用 nodeType 接受跨 document 的 adopted Element。无 Selection 重设、composition 事件修改、正文重写、vendor 修改、依赖或权限变化。
-- **验证：** 新增挂载真实组件守卫并使用真实 Lute 的重建回归，原实现 13 项失败，候选 13 项通过；覆盖 H1–H6、自身/子树、跨 document、源码与选区不变、非标题块保护、旧行内定时及卸载断开。新增 Chromium 输入/合成 composition 回归纳入 CI，实际精确 head 结果见 PR。
-- **边界：** 本云环境 Chromium 启动受 socket 沙箱限制，允许的提升执行也在环境初始化失败；未把 jsdom 当浏览器或 Windows WebView2/真实候选窗口验收。compositionend 重建可解释该漏口，但不宣称已完整复现报告者实机；若实际字符偏移仍跳转，应另取真实输入事件/heading-marker 边界证据。Refs #211，保持问题开放，不自动合并或发布。
+- **两层证据：** 录屏只能证明标题标记闪现；真实 Lute Spin 已带展开 class 的新标题绕过 attributes-only observer。随后 [Chromium CI 对照](https://github.com/cat-xierluo/Folia/actions/runs/40113049810) 独立证明原零尺寸 inline-block marker 会收到正文首字，而 Selection 已落到正文下一字，Spin 按错误 wbr 位置丢掉新字；不是仅视觉位移，也不归因于已验收的 #202 修复。
+- **最小生产方案：** 保留原属性监听、行内 220ms 定时与 disconnect，补新增标题/子树折叠。仅 IR 标题直属 marker 改为零字号 inline，保留原 Markdown 文本、空标题与 Backspace 降级。非空标题正文起点的折叠选区开始组合时，临时令直属 marker 不可编辑；结束、失焦、卸载精确恢复旧属性。Home keyup 仅把 marker 内的折叠位置等价放到首个真实正文 Text，组合中不重复移动；跳过 marker 前/内部、空标题、非标题、中部与跨块选区。不取消/重放输入，不改正文、vendor、parser、全局 Selection 或输入法锁。失焦恢复属性不等于宣告组合结束。
+- **已否决：** 永久 display:none 破坏空标题与 Backspace；组合开始后临时 display:none 改变 Chromium 已缓存的文本偏移，首候选多跳三字；visibility:hidden 无效。零字号 inline 单独不足以显示组合候选，因此不把普通输入改善冒充完整方案。
+- **回归：** 原 childList 实现 13 项红、候选绿；新增生产生命周期与真实组件挂载测试。删除 E2E 中所有试验 CSS/处理器注入，用真正产品入口校验 Range/Home/click 首帧字序、引擎候选更新、提交/取消、实际历史的 Undo/Redo、降级、快捷键、复制及源码往返。精确最终 head 的检查结果以 PR 回执为准。
+- **既存边界：** 原 Vditor 首个 800ms undo 快照可被首次编辑防抖覆盖，正文中部基线同样无法首次 Undo；撤销测试用真实编辑建立历史而非睡眠绕过首键。空标题或 ArrowLeft 落入 marker 内时，预编辑仍可能不可见，本补丁保证不新增不可输入/提交丢字。活跃失焦对照 DOM 保留候选但持久化仍旧，正在核对 end 与既存 `input` 焦点门禁；不声称失焦自动保存已修。上述反例原始失败保留在 CI 历史，不靠删除目标字序/位置断言刷绿。
+- **环境/范围：** 本云环境浏览器启动受限，真实 Chromium 取证在 GitHub Actions；引擎 CDP 组合不等于 Windows WebView2 / 原生中文候选窗验收。仍需 Windows 实机复验。Refs #211，保持 Draft 与问题开放，不自动合并或发布。
 
 ### 2026-10-23（北京时间，dot 受用户明确委托）：Issue #202 中文标点粗体兼容
 
