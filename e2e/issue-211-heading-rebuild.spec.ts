@@ -29,13 +29,12 @@ async function openSample(page: Page, placement: 'range' | 'home' | 'click' = 'r
       fontSize: initialStyle.fontSize, display: initialStyle.display, transitionDuration: initialStyle.transitionDuration,
     }));
     if (markerStyle === 'composition-boundary') {
-      let active: { marker: HTMLElement; display: string; priority: string; hadStyle: boolean } | undefined;
+      let active: { marker: HTMLElement; editable: string | null } | undefined;
       const restore = () => {
         if (!active) return;
-        const { marker, display, priority, hadStyle } = active;
-        if (display) marker.style.setProperty('display', display, priority);
-        else marker.style.removeProperty('display');
-        if (!hadStyle && !marker.style.cssText) marker.removeAttribute('style');
+        const { marker, editable } = active;
+        if (editable === null) marker.removeAttribute('contenteditable');
+        else marker.setAttribute('contenteditable', editable);
         active = undefined;
         editor.setAttribute('data-heading-211-boundary-active', 'false');
       };
@@ -59,9 +58,8 @@ async function openSample(page: Page, placement: 'range' | 'home' | 'click' = 'r
         const fragment = prefix.cloneContents();
         fragment.querySelector('[data-type="heading-marker"]')?.remove();
         if (fragment.textContent) return;
-        active = { marker, display: marker.style.getPropertyValue('display'),
-          priority: marker.style.getPropertyPriority('display'), hadStyle: marker.hasAttribute('style') };
-        marker.style.setProperty('display', 'none');
+        active = { marker, editable: marker.getAttribute('contenteditable') };
+        marker.setAttribute('contenteditable', 'false');
         editor.setAttribute('data-heading-211-boundary-active', 'true');
       };
       editor.addEventListener('compositionstart', start, true);
@@ -242,9 +240,10 @@ for (const markerStyle of ['baseline', 'composition-boundary'] as const) {
           expect(ended.expanded).toBe(false);
           expect(ended.markerWidth).toBeLessThanOrEqual(0.5);
           await expect.poll(() => persistedSource(page)).toBe(`## ${prefix}六、违规的代价\n\n正文\n`);
-          await expect(page.locator(`${editorSelector} [data-type="heading-marker"][style*="display: none"]`)).toHaveCount(0);
+          await expect(page.locator(`${editorSelector} [data-type="heading-marker"][contenteditable="false"]`)).toHaveCount(0);
           if (finish === 'commit') {
             await page.getByRole('button', { name: '撤销', exact: true }).click();
+            console.log('#211 composition undo DOM', markerStyle, placement, await page.locator(editorSelector).innerHTML());
             await expect.poll(() => persistedSource(page)).toBe(SAMPLE);
             await page.getByRole('button', { name: '重做', exact: true }).click();
             await expect.poll(() => persistedSource(page)).toBe('## 五月六、违规的代价\n\n正文\n');
@@ -266,6 +265,19 @@ for (const markerStyle of ['baseline', 'composition-boundary'] as const) {
       await expect.poll(() => persistedSource(page)).toBe('## 中文标题\n');
     });
 
+    test('#211: first-composition undo away from the marker is a baseline control', async ({ page, context }) => {
+      await openSample(page, 'range', markerStyle);
+      await page.keyboard.press('ArrowRight');
+      const cdp = await context.newCDPSession(page);
+      await cdp.send('Input.imeSetComposition', { text: '五月', selectionStart: 2, selectionEnd: 2 });
+      await cdp.send('Input.insertText', { text: '五月' });
+      await expect.poll(() => persistedSource(page)).toBe('## 六五月、违规的代价\n\n正文\n');
+      await page.getByRole('button', { name: '撤销', exact: true }).click();
+      console.log('#211 nonboundary undo DOM', markerStyle, await page.locator(editorSelector).innerHTML());
+      await expect.poll(() => persistedSource(page)).toBe(SAMPLE);
+      await cdp.detach();
+    });
+
     test('#211: empty heading engine composition is not hidden by the temporary strategy', async ({ page, context }) => {
       await openSample(page, 'range', markerStyle);
       await page.keyboard.press('Control+a');
@@ -281,7 +293,7 @@ for (const markerStyle of ['baseline', 'composition-boundary'] as const) {
       expect.soft(composing.events.filter((event) => event.event === 'beforeinput' && event.isComposing).every((event) =>
         event.targetRanges.every((range) => range.parentType !== 'heading-marker'))).toBe(true);
       await expect(page.locator(editorSelector)).not.toHaveAttribute('data-heading-211-boundary-active', 'true');
-      await expect(page.locator(`${editorSelector} [data-type="heading-marker"][style*="display: none"]`)).toHaveCount(0);
+      await expect(page.locator(`${editorSelector} [data-type="heading-marker"][contenteditable="false"]`)).toHaveCount(0);
       await cdp.send('Input.insertText', { text: '中文标题' });
       await expect.poll(() => persistedSource(page)).toBe('## 中文标题\n');
       await cdp.detach();
@@ -307,15 +319,15 @@ for (const markerStyle of ['baseline', 'composition-boundary'] as const) {
       expect(await persistedSource(page)).toBe(SAMPLE);
     });
 
-    test('#211: blur and cleanup restore the marker display without changing source', async ({ page }) => {
+    test('#211: blur and cleanup restore marker editability without changing source', async ({ page }) => {
       await openSample(page, 'range', markerStyle);
       const editor = page.locator(editorSelector);
       const marker = page.locator(`${editorSelector} h2 > [data-type="heading-marker"]`);
-      const original = await marker.getAttribute('style');
+      const original = await marker.getAttribute('contenteditable');
       await editor.dispatchEvent('compositionstart', { data: '' });
-      if (markerStyle === 'composition-boundary') await expect(marker).toHaveCSS('display', 'none');
+      if (markerStyle === 'composition-boundary') await expect(marker).toHaveAttribute('contenteditable', 'false');
       await page.getByRole('button', { name: '源码模式', exact: true }).focus();
-      expect(await marker.getAttribute('style')).toBe(original);
+      expect(await marker.getAttribute('contenteditable')).toBe(original);
       await editor.dispatchEvent('compositionend', { data: '' });
       await editor.focus();
       await page.locator(`${editorSelector} h2`).evaluate((heading) => {
@@ -328,9 +340,9 @@ for (const markerStyle of ['baseline', 'composition-boundary'] as const) {
         selection.addRange(range);
       });
       await editor.dispatchEvent('compositionstart', { data: '' });
-      if (markerStyle === 'composition-boundary') await expect(marker).toHaveCSS('display', 'none');
+      if (markerStyle === 'composition-boundary') await expect(marker).toHaveAttribute('contenteditable', 'false');
       await editor.dispatchEvent('heading-211-cleanup');
-      expect(await marker.getAttribute('style')).toBe(original);
+      expect(await marker.getAttribute('contenteditable')).toBe(original);
       expect(await persistedSource(page)).toBe(SAMPLE);
     });
 
