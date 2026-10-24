@@ -1273,6 +1273,15 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   background: transparent !important;
 }
 
+/* #211：零尺寸 inline-block 会让 Chromium 把正文首字写入隐藏 marker。
+ * 保留 marker 文本与编辑能力（空标题、Backspace 降级），仅去掉原子行盒。 */
+.wysiwyg-editor-pane .vditor-ir :is(h1,h2,h3,h4,h5,h6) > .vditor-ir__marker--heading {
+  display: inline;
+  font-size: 0;
+  line-height: 0;
+  transition: none;
+}
+
 .wysiwyg-editor-pane .vditor-ir h1,
 .wysiwyg-editor-pane .vditor-ir h2,
 .wysiwyg-editor-pane .vditor-ir h3,
