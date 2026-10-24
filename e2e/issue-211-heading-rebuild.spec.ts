@@ -3,7 +3,9 @@ import { expect, test, type Page } from '@playwright/test';
 const editorSelector = '.wysiwyg-editor-pane .vditor-ir .vditor-reset';
 const SAMPLE = '## 六、违规的代价\n\n正文\n';
 
-async function openSample(page: Page, placement: 'range' | 'home' | 'click' = 'range', hideMarker = false) {
+type MarkerStyle = 'baseline' | 'inline-zero-font' | 'visibility-hidden';
+
+async function openSample(page: Page, placement: 'range' | 'home' | 'click' = 'range', markerStyle: MarkerStyle = 'baseline') {
   await page.addInitScript((content) => {
     localStorage.setItem('folia.session.v1', JSON.stringify({
       version: 1, activeTabId: 'heading-211', recentFiles: [], tabs: [{
@@ -14,9 +16,14 @@ async function openSample(page: Page, placement: 'range' | 'home' | 'click' = 'r
   }, SAMPLE);
   await page.goto('/');
   await expect(page.locator(`${editorSelector} h2`)).toBeVisible();
-  if (hideMarker) await page.addStyleTag({ content:
-    '.wysiwyg-editor-pane .vditor-ir :is(h1,h2,h3,h4,h5,h6) > .vditor-ir__marker--heading { display: none; }',
-  });
+  if (markerStyle !== 'baseline') {
+    const declaration = markerStyle === 'inline-zero-font'
+      ? 'display: inline; font-size: 0; line-height: 0;'
+      : 'visibility: hidden;';
+    await page.addStyleTag({ content:
+      `.wysiwyg-editor-pane .vditor-ir :is(h1,h2,h3,h4,h5,h6) > .vditor-ir__marker--heading { ${declaration} }`,
+    });
+  }
   await page.locator(editorSelector).evaluate((editor) => {
     (editor as HTMLElement).focus();
     for (const eventName of ['beforeinput', 'input', 'compositionstart', 'compositionend']) {
@@ -93,11 +100,11 @@ async function persistedSource(page: Page) {
   return page.evaluate(() => JSON.parse(localStorage.getItem('folia.session.v1') ?? '{}').tabs?.[0]?.file.content);
 }
 
-for (const hideMarker of [false, true]) {
-  test.describe(hideMarker ? 'isolated CSS trial' : 'current production CSS', () => {
+for (const markerStyle of ['baseline', 'inline-zero-font', 'visibility-hidden'] as const) {
+  test.describe(markerStyle, () => {
     for (const placement of ['range', 'home', 'click'] as const) {
       test(`#211: ${placement} heading-start input keeps character order and hides rebuilt markers before the next frame`, async ({ page }) => {
-        await openSample(page, placement, hideMarker);
+        await openSample(page, placement, markerStyle);
         // insertText deliberately has no keydown: exercise the rebuild guard, not the RAF fallback.
         for (const [input, prefix] of [['甲', '甲'], ['乙', '甲乙']]) {
           await armHeadingFrame(page, 'input');
@@ -119,7 +126,7 @@ for (const hideMarker of [false, true]) {
     }
 
     test('#211: synthetic composition end rebuild keeps the heading caret and committed source', async ({ page }) => {
-      await openSample(page, 'range', hideMarker);
+      await openSample(page, 'range', markerStyle);
       const editor = page.locator(editorSelector);
       await editor.dispatchEvent('compositionstart', { data: '' });
       await armHeadingFrame(page, 'input');
@@ -139,17 +146,18 @@ for (const hideMarker of [false, true]) {
     });
 
     test('#211: creating an empty heading and typing retains the level and text', async ({ page }) => {
-      await openSample(page, 'range', hideMarker);
+      await openSample(page, 'range', markerStyle);
       await page.keyboard.press('Control+a');
       await page.keyboard.press('Backspace');
       await page.keyboard.type('## ');
       await page.keyboard.insertText('中文标题');
+      console.log('#211 empty heading', markerStyle, await page.locator(editorSelector).innerHTML());
       await expect(page.locator(`${editorSelector} h2`)).toContainText('中文标题');
       await expect.poll(() => persistedSource(page)).toBe('## 中文标题\n');
     });
 
     test('#211: heading level shortcuts retain the complete Markdown', async ({ page }) => {
-      await openSample(page, 'range', hideMarker);
+      await openSample(page, 'range', markerStyle);
       await page.keyboard.press('End');
       await page.keyboard.press('Control+=');
       await expect(page.locator(`${editorSelector} h1`)).toContainText('六、违规的代价');
@@ -160,15 +168,16 @@ for (const hideMarker of [false, true]) {
     });
 
     test('#211: Backspace at heading start reduces the level without deleting text', async ({ page }) => {
-      await openSample(page, 'range', hideMarker);
+      await openSample(page, 'range', markerStyle);
       await page.keyboard.press('Backspace');
+      console.log('#211 heading downgrade', markerStyle, await page.locator(editorSelector).innerHTML());
       await expect(page.locator(`${editorSelector} h1`)).toContainText('六、违规的代价');
       await expect.poll(() => persistedSource(page)).toBe('# 六、违规的代价\n\n正文\n');
     });
 
     test('#211: heading selection copy and source-mode round trip retain the text', async ({ page, context }) => {
       await context.grantPermissions(['clipboard-read', 'clipboard-write']);
-      await openSample(page, 'range', hideMarker);
+      await openSample(page, 'range', markerStyle);
       await page.locator(`${editorSelector} h2`).evaluate((heading) => {
         const range = document.createRange();
         range.selectNodeContents(heading);
@@ -180,7 +189,7 @@ for (const hideMarker of [false, true]) {
       expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('六、违规的代价');
       expect(await persistedSource(page)).toBe(SAMPLE);
       await page.getByRole('button', { name: '源码模式', exact: true }).click();
-      await expect(page.locator('.cm-content')).toHaveText(SAMPLE);
+      await expect(page.locator('.cm-content .cm-line')).toHaveText(SAMPLE.split('\n'));
       await page.getByRole('button', { name: '源码模式', exact: true }).click();
       await expect(page.locator(`${editorSelector} h2`)).toContainText('六、违规的代价');
       expect(await persistedSource(page)).toBe(SAMPLE);
