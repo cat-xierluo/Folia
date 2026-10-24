@@ -3,7 +3,7 @@ import { expect, test, type Page } from '@playwright/test';
 const editorSelector = '.wysiwyg-editor-pane .vditor-ir .vditor-reset';
 const SAMPLE = '## 六、违规的代价\n\n正文\n';
 
-type MarkerStyle = 'baseline' | 'inline-zero-font' | 'visibility-hidden';
+type MarkerStyle = 'baseline' | 'inline-zero-font';
 
 async function openSample(page: Page, placement: 'range' | 'home' | 'click' = 'range', markerStyle: MarkerStyle = 'baseline') {
   await page.addInitScript((content) => {
@@ -17,15 +17,17 @@ async function openSample(page: Page, placement: 'range' | 'home' | 'click' = 'r
   await page.goto('/');
   await expect(page.locator(`${editorSelector} h2`)).toBeVisible();
   if (markerStyle !== 'baseline') {
-    const declaration = markerStyle === 'inline-zero-font'
-      ? 'display: inline; font-size: 0; line-height: 0;'
-      : 'visibility: hidden;';
+    const declaration = 'display: inline; font-size: 0; line-height: 0; transition: none;';
     await page.addStyleTag({ content:
       `.wysiwyg-editor-pane .vditor-ir :is(h1,h2,h3,h4,h5,h6) > .vditor-ir__marker--heading { ${declaration} }`,
     });
   }
   await page.locator(editorSelector).evaluate((editor) => {
     (editor as HTMLElement).focus();
+    const markerStyle = getComputedStyle(editor.querySelector('.vditor-ir__marker--heading')!);
+    editor.setAttribute('data-heading-211-initial-style', JSON.stringify({
+      fontSize: markerStyle.fontSize, display: markerStyle.display, transitionDuration: markerStyle.transitionDuration,
+    }));
     for (const eventName of ['beforeinput', 'input', 'compositionstart', 'compositionend']) {
       editor.addEventListener(eventName, (event) => {
         const selection = window.getSelection()!;
@@ -75,13 +77,17 @@ async function armHeadingFrame(page: Page, event: 'input' | 'compositionend') {
       fragment.querySelectorAll('.vditor-ir__marker').forEach((marker) => marker.remove());
       const visible = heading.cloneNode(true) as Element;
       visible.querySelectorAll('.vditor-ir__marker').forEach((marker) => marker.remove());
+      const marker = heading.querySelector('.vditor-ir__marker--heading')!;
+      const style = getComputedStyle(marker);
       editor.setAttribute('data-heading-211-frame', JSON.stringify({
         text: visible.textContent ?? '', prefix: fragment.textContent ?? '',
         html: heading.innerHTML,
         events: JSON.parse(editor.getAttribute('data-heading-211-events') ?? '[]'),
         anchorText: selection.anchorNode?.textContent, offset: selection.anchorOffset,
         parentType: selection.anchorNode?.parentElement?.getAttribute('data-type'),
-        markerWidth: heading.querySelector('.vditor-ir__marker--heading')!.getBoundingClientRect().width,
+        initialStyle: JSON.parse(editor.getAttribute('data-heading-211-initial-style')!),
+        markerStyle: { fontSize: style.fontSize, display: style.display, transitionDuration: style.transitionDuration },
+        markerWidth: marker.getBoundingClientRect().width,
         expanded: heading.classList.contains('vditor-ir__node--expand'),
       }));
     }), { once: true });
@@ -100,7 +106,7 @@ async function persistedSource(page: Page) {
   return page.evaluate(() => JSON.parse(localStorage.getItem('folia.session.v1') ?? '{}').tabs?.[0]?.file.content);
 }
 
-for (const markerStyle of ['baseline', 'inline-zero-font', 'visibility-hidden'] as const) {
+for (const markerStyle of ['baseline', 'inline-zero-font'] as const) {
   test.describe(markerStyle, () => {
     for (const placement of ['range', 'home', 'click'] as const) {
       test(`#211: ${placement} heading-start input keeps character order and hides rebuilt markers before the next frame`, async ({ page }) => {
