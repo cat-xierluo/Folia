@@ -30,7 +30,9 @@ async function openSample(page: Page, placement: 'range' | 'home' | 'click' = 'r
     }));
     if (markerStyle === 'composition-boundary') {
       let active: { marker: HTMLElement; editable: string | null } | undefined;
+      let composing = false;
       const restore = () => {
+        composing = false;
         if (!active) return;
         const { marker, editable } = active;
         if (editable === null) marker.removeAttribute('contenteditable');
@@ -40,6 +42,7 @@ async function openSample(page: Page, placement: 'range' | 'home' | 'click' = 'r
       };
       const start = () => {
         restore();
+        composing = true;
         const selection = window.getSelection();
         if (!selection?.rangeCount || !selection.isCollapsed) return;
         const range = selection.getRangeAt(0);
@@ -49,6 +52,9 @@ async function openSample(page: Page, placement: 'range' | 'home' | 'click' = 'r
         if (!heading || !editor.contains(heading)) return;
         const marker = heading.querySelector<HTMLElement>(':scope > [data-type="heading-marker"]');
         if (!marker) return;
+        // Do not make the current selection itself non-editable. Home is
+        // normalized before composition; other marker-internal positions stay native.
+        if (marker.contains(range.startContainer)) return;
         const body = heading.cloneNode(true) as Element;
         body.querySelector(':scope > [data-type="heading-marker"]')?.remove();
         if (!body.textContent) return;
@@ -62,6 +68,31 @@ async function openSample(page: Page, placement: 'range' | 'home' | 'click' = 'r
         marker.setAttribute('contenteditable', 'false');
         editor.setAttribute('data-heading-211-boundary-active', 'true');
       };
+      const normalizeMarkerCaret = () => {
+        const selection = window.getSelection();
+        if (composing || !selection?.rangeCount || !selection.isCollapsed) return;
+        const node = selection.anchorNode!;
+        const element = node.nodeType === Node.ELEMENT_NODE ? node as Element : node.parentElement;
+        const marker = element?.closest('[data-type="heading-marker"]');
+        const heading = marker?.parentElement;
+        if (!heading || !/^H[1-6]$/.test(heading.tagName) || !editor.contains(heading)) return;
+        const walker = document.createTreeWalker(heading, NodeFilter.SHOW_TEXT, {
+          acceptNode: (text) => text.textContent && !text.parentElement?.closest('.vditor-ir__marker, [contenteditable="false"]')
+            ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP,
+        });
+        const body = walker.nextNode();
+        if (!body) return;
+        const range = document.createRange();
+        range.setStart(body, 0);
+        range.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(range);
+      };
+      const onKeyUp = (event: Event) => {
+        const key = event as KeyboardEvent;
+        if (key.key === 'Home' && !key.isComposing) normalizeMarkerCaret();
+      };
+      editor.addEventListener('keyup', onKeyUp);
       editor.addEventListener('compositionstart', start, true);
       editor.addEventListener('compositionend', restore, true);
       editor.addEventListener('blur', restore, true);
@@ -70,6 +101,7 @@ async function openSample(page: Page, placement: 'range' | 'home' | 'click' = 'r
         editor.removeEventListener('compositionstart', start, true);
         editor.removeEventListener('compositionend', restore, true);
         editor.removeEventListener('blur', restore, true);
+        editor.removeEventListener('keyup', onKeyUp);
       }, { once: true });
     }
     for (const eventName of ['beforeinput', 'input', 'compositionstart', 'compositionupdate', 'compositionend']) {
@@ -87,6 +119,13 @@ async function openSample(page: Page, placement: 'range' | 'home' | 'click' = 'r
         editor.setAttribute('data-heading-211-events', JSON.stringify(events.slice(-12)));
       }, true);
     }
+  }, markerStyle);
+  await placeHeadingCaret(page, placement);
+}
+
+async function placeHeadingCaret(page: Page, placement: 'range' | 'home' | 'click') {
+  await page.locator(editorSelector).evaluate((editor) => {
+    (editor as HTMLElement).focus();
     const heading = editor.querySelector('h2')!;
     const text = Array.from(heading.childNodes).find((node) => node.nodeType === Node.TEXT_NODE)!;
     const range = document.createRange();
@@ -95,7 +134,7 @@ async function openSample(page: Page, placement: 'range' | 'home' | 'click' = 'r
     const selection = window.getSelection()!;
     selection.removeAllRanges();
     selection.addRange(range);
-  }, markerStyle);
+  });
   if (placement === 'home') {
     await page.keyboard.press('End');
     await page.keyboard.press('Home');
@@ -201,6 +240,16 @@ for (const markerStyle of ['baseline', 'composition-boundary'] as const) {
       for (const finish of ['commit', 'cancel'] as const) {
         test(`#211: ${placement} Chromium engine composition ${finish} preserves heading source`, async ({ page, context }) => {
           await openSample(page, placement, markerStyle);
+          if (finish === 'commit') {
+            // Establish actual undo history through edits, not a sleep: the
+            // existing initial 800ms snapshot can otherwise be replaced by the first edit.
+            await page.keyboard.press('End');
+            await page.keyboard.insertText('暂');
+            await expect.poll(() => persistedSource(page)).toBe('## 六、违规的代价暂\n\n正文\n');
+            await page.keyboard.press('Backspace');
+            await expect.poll(() => persistedSource(page)).toBe(SAMPLE);
+            await placeHeadingCaret(page, placement);
+          }
           const cdp = await context.newCDPSession(page);
           await armHeadingFrame(page, 'input');
           await cdp.send('Input.imeSetComposition', { text: '五', selectionStart: 1, selectionEnd: 1 });
@@ -275,6 +324,46 @@ for (const markerStyle of ['baseline', 'composition-boundary'] as const) {
       await page.getByRole('button', { name: '撤销', exact: true }).click();
       console.log('#211 nonboundary undo DOM', markerStyle, await page.locator(editorSelector).innerHTML());
       await expect.poll(() => persistedSource(page)).toBe(SAMPLE);
+      await cdp.detach();
+    });
+
+    test('#211: ArrowLeft marker-internal composition remains editable without strategy intervention', async ({ page, context }) => {
+      await openSample(page, 'range', markerStyle);
+      await page.keyboard.press('ArrowLeft');
+      console.log('#211 ArrowLeft position', markerStyle, await page.evaluate(() => {
+        const selection = window.getSelection()!;
+        return { text: selection.anchorNode?.textContent, offset: selection.anchorOffset,
+          parent: selection.anchorNode?.parentElement?.getAttribute('data-type') };
+      }));
+      const cdp = await context.newCDPSession(page);
+      await armHeadingFrame(page, 'input');
+      await cdp.send('Input.imeSetComposition', { text: '五', selectionStart: 1, selectionEnd: 1 });
+      const composing = await headingFrame(page);
+      console.log('#211 ArrowLeft composing', markerStyle, JSON.stringify(composing));
+      await expect(page.locator(editorSelector)).not.toHaveAttribute('data-heading-211-boundary-active', 'true');
+      expect(composing.events).toEqual(expect.arrayContaining([
+        expect.objectContaining({ event: 'input', inputType: 'insertCompositionText', isComposing: true }),
+      ]));
+      await cdp.send('Input.insertText', { text: '五' });
+      await expect.poll(() => persistedSource(page)).toBe('## 五六、违规的代价\n\n正文\n');
+      await cdp.detach();
+    });
+
+    test('#211: real blur during engine composition retains committed text and restores marker editing', async ({ page, context }) => {
+      await openSample(page, 'range', markerStyle);
+      const cdp = await context.newCDPSession(page);
+      await armHeadingFrame(page, 'input');
+      await cdp.send('Input.imeSetComposition', { text: '五', selectionStart: 1, selectionEnd: 1 });
+      const composing = await headingFrame(page);
+      expect.soft(composing.text, JSON.stringify(composing)).toBe('五六、违规的代价');
+      expect.soft(composing.prefix).toBe('五');
+      await page.getByRole('button', { name: '源码模式', exact: true }).focus();
+      console.log('#211 active composition blur', markerStyle, await page.locator(editorSelector).innerHTML());
+      await expect(page.locator(`${editorSelector} [data-type="heading-marker"][contenteditable="false"]`)).toHaveCount(0);
+      await expect.poll(() => persistedSource(page)).toBe('## 五六、违规的代价\n\n正文\n');
+      await placeHeadingCaret(page, 'range');
+      await page.keyboard.press('Backspace');
+      await expect.poll(() => persistedSource(page)).toBe('# 五六、违规的代价\n\n正文\n');
       await cdp.detach();
     });
 
