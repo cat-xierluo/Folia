@@ -267,6 +267,22 @@ function setupHeadingExpandGuard(ir: HTMLElement, onExpandAdded?: () => void): (
     + 'h4.vditor-ir__node--expand, h5.vditor-ir__node--expand, h6.vditor-ir__node--expand';
   const observer = new MutationObserver((mutations) => {
     for (const mutation of mutations) {
+      // #211: Spin can replace a heading with a new, already-expanded node.
+      // That is a childList mutation, not a later class attribute change.
+      if (mutation.type === 'childList') {
+        for (const node of mutation.addedNodes) {
+          // Adopted nodes may come from another document/realm.
+          if (node.nodeType !== Node.ELEMENT_NODE) continue;
+          const added = node as Element;
+          if (added.matches(HEADING_EXPAND_SELECTOR)) {
+            added.classList.remove('vditor-ir__node--expand');
+          }
+          added.querySelectorAll(HEADING_EXPAND_SELECTOR).forEach((heading) => {
+            heading.classList.remove('vditor-ir__node--expand');
+          });
+        }
+        continue;
+      }
       if (mutation.type !== 'attributes' || mutation.attributeName !== 'class') continue;
       const el = mutation.target;
       if (!(el instanceof Element)) continue;
@@ -283,7 +299,7 @@ function setupHeadingExpandGuard(ir: HTMLElement, onExpandAdded?: () => void): (
       }
     }
   });
-  observer.observe(ir, { subtree: true, attributes: true, attributeFilter: ['class'] });
+  observer.observe(ir, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
   // 挂载时同步清理一次已有 --expand（防御性，覆盖编辑器重建时残留的展开态）
   ir.querySelectorAll(HEADING_EXPAND_SELECTOR).forEach((node) => {
     node.classList.remove('vditor-ir__node--expand');

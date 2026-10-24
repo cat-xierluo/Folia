@@ -4,6 +4,10 @@ All notable changes of this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **标题编辑时语法标记闪现（Issue #211）**：补齐标题整块重建时的折叠守卫，新增标题即使已带展开状态也及时收起 `#` 标记；不改正文、光标设置或输入法组合逻辑。Windows 原生输入法仍需实机复验。
+
 ## [0.8.4] - 2026-10-24
 
 ### Fixed

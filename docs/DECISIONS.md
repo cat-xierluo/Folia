@@ -2,6 +2,13 @@
 
 ## 第一部分：决策记录
 
+### 2026-10-24（北京时间，dot 按用户明确要求）：Issue #211 标题重建折叠守卫
+
+- **证据：** v0.8.4 报告者在 `## 六、违规的代价` 前部编辑时见输入位置跳动；公开录屏可见标题 marker 闪现和整段位移，但不能据视频确认真实字符偏移变化。真实 Lute 1.7.6 在含光标标题的 Spin 输出中直接附加 `vditor-ir__node--expand`；现有 observer 仅监听 class 属性，整块 `outerHTML` 替换不会触发该分支。此漏口在 #206/#207 前已存在，不回滚这些成果。
+- **最小改动：** 保留原属性监听、行内 220ms 定时与 disconnect；仅补 childList 对新增节点本身/子树内 h1–h6 的展开 class 清理。用 nodeType 接受跨 document 的 adopted Element。无 Selection 重设、composition 事件修改、正文重写、vendor 修改、依赖或权限变化。
+- **验证：** 新增挂载真实组件守卫并使用真实 Lute 的重建回归，原实现 13 项失败，候选 13 项通过；覆盖 H1–H6、自身/子树、跨 document、源码与选区不变、非标题块保护、旧行内定时及卸载断开。新增 Chromium 输入/合成 composition 回归纳入 CI，实际精确 head 结果见 PR。
+- **边界：** 本云环境 Chromium 启动受 socket 沙箱限制，允许的提升执行也在环境初始化失败；未把 jsdom 当浏览器或 Windows WebView2/真实候选窗口验收。compositionend 重建可解释该漏口，但不宣称已完整复现报告者实机；若实际字符偏移仍跳转，应另取真实输入事件/heading-marker 边界证据。Refs #211，保持问题开放，不自动合并或发布。
+
 ### 2026-10-23（北京时间，dot 受用户明确委托）：Issue #202 中文标点粗体兼容
 
 - 报告者新增最小文本 `**律师：**后果很严重。` 已由真实 Lute 复现：CommonMark 的结束分隔符标点边界使其成为普通文本；这不是 #204 / PR #206 的点击 marker 展开问题。本次是有意限定的兼容扩展，不宣称修正 CommonMark 标准。
