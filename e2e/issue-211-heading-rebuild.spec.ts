@@ -28,12 +28,12 @@ async function openSample(page: Page, placement: 'range' | 'home' | 'click' = 'r
     editor.setAttribute('data-heading-211-initial-style', JSON.stringify({
       fontSize: markerStyle.fontSize, display: markerStyle.display, transitionDuration: markerStyle.transitionDuration,
     }));
-    for (const eventName of ['beforeinput', 'input', 'compositionstart', 'compositionend']) {
+    for (const eventName of ['beforeinput', 'input', 'compositionstart', 'compositionupdate', 'compositionend']) {
       editor.addEventListener(eventName, (event) => {
         const selection = window.getSelection()!;
         const events = JSON.parse(editor.getAttribute('data-heading-211-events') ?? '[]');
         const input = event as InputEvent;
-        events.push({ event: event.type, inputType: input.inputType, data: input.data, isComposing: input.isComposing,
+        events.push({ event: event.type, isTrusted: event.isTrusted, inputType: input.inputType, data: input.data, isComposing: input.isComposing,
           targetRanges: Array.from(input.getTargetRanges?.() ?? []).map((range) => ({
             text: range.startContainer.textContent, offset: range.startOffset,
             parentType: range.startContainer.parentElement?.getAttribute('data-type'),
@@ -99,6 +99,7 @@ async function headingFrame(page: Page) {
   await expect(editor).toHaveAttribute('data-heading-211-frame', /.+/);
   return JSON.parse((await editor.getAttribute('data-heading-211-frame'))!) as {
     text: string; prefix: string; markerWidth: number; expanded: boolean;
+    events: { event: string; isTrusted: boolean; isComposing?: boolean; inputType?: string }[];
   };
 }
 
@@ -138,11 +139,12 @@ for (const markerStyle of ['baseline', 'inline-zero-font'] as const) {
       await armHeadingFrame(page, 'input');
       await page.keyboard.insertText('五');
       const composing = await headingFrame(page);
-      expect(composing.text, JSON.stringify(composing)).toBe('五六、违规的代价');
-      expect(composing.prefix).toBe('五');
+      expect.soft(composing.text, JSON.stringify(composing)).toBe('五六、违规的代价');
+      expect.soft(composing.prefix).toBe('五');
       await armHeadingFrame(page, 'compositionend');
       await editor.dispatchEvent('compositionend', { data: '五' });
       const committed = await headingFrame(page);
+      console.log('#211 synthetic committed', markerStyle, JSON.stringify(committed));
       expect(committed.text, JSON.stringify(committed)).toBe('五六、违规的代价');
       expect(committed.prefix).toBe('五');
       expect(committed.expanded).toBe(false);
@@ -150,6 +152,44 @@ for (const markerStyle of ['baseline', 'inline-zero-font'] as const) {
       await expect.poll(() => persistedSource(page)).toBe('## 五六、违规的代价\n\n正文\n');
       // Synthetic events cover the browser integration, not a Windows/native IME candidate window.
     });
+
+    for (const finish of ['commit', 'cancel'] as const) {
+      test(`#211: Chromium engine composition ${finish} preserves heading source`, async ({ page, context }) => {
+        await openSample(page, 'range', markerStyle);
+        const cdp = await context.newCDPSession(page);
+        await armHeadingFrame(page, 'input');
+        await cdp.send('Input.imeSetComposition', { text: '五', selectionStart: 1, selectionEnd: 1 });
+        const composing = await headingFrame(page);
+        console.log('#211 CDP composing', markerStyle, finish, JSON.stringify(composing));
+        expect(composing.events).toEqual(expect.arrayContaining([
+          expect.objectContaining({ event: 'compositionstart', isTrusted: true }),
+          expect.objectContaining({ event: 'compositionupdate', isTrusted: true }),
+          expect.objectContaining({ event: 'input', inputType: 'insertCompositionText', isComposing: true, isTrusted: true }),
+        ]));
+        expect.soft(composing.text, JSON.stringify(composing)).toBe('五六、违规的代价');
+        expect.soft(composing.prefix).toBe('五');
+        await armHeadingFrame(page, 'compositionend');
+        if (finish === 'commit') {
+          // Chromium's Input.insertText calls ImeCommitText; verify the resulting end event below.
+          await cdp.send('Input.insertText', { text: '五' });
+        } else {
+          await cdp.send('Input.imeSetComposition', { text: '', selectionStart: 0, selectionEnd: 0 });
+        }
+        const ended = await headingFrame(page);
+        console.log('#211 CDP ended', markerStyle, finish, JSON.stringify(ended));
+        expect(ended.events).toEqual(expect.arrayContaining([
+          expect.objectContaining({ event: 'compositionend', isTrusted: true }),
+        ]));
+        const prefix = finish === 'commit' ? '五' : '';
+        expect(ended.text, JSON.stringify(ended)).toBe(`${prefix}六、违规的代价`);
+        expect(ended.prefix).toBe(prefix);
+        expect(ended.expanded).toBe(false);
+        expect(ended.markerWidth).toBeLessThanOrEqual(0.5);
+        await expect.poll(() => persistedSource(page)).toBe(`## ${prefix}六、违规的代价\n\n正文\n`);
+        await cdp.detach();
+        // Browser-engine emulation is still not Windows/WebView2 native IME certification.
+      });
+    }
 
     test('#211: creating an empty heading and typing retains the level and text', async ({ page }) => {
       await openSample(page, 'range', markerStyle);
