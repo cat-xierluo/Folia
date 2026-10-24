@@ -3,7 +3,7 @@ import { expect, test, type Page } from '@playwright/test';
 const editorSelector = '.wysiwyg-editor-pane .vditor-ir .vditor-reset';
 const SAMPLE = '## 六、违规的代价\n\n正文\n';
 
-async function openSample(page: Page) {
+async function openSample(page: Page, placement: 'range' | 'home' | 'click' = 'range') {
   await page.addInitScript((content) => {
     localStorage.setItem('folia.session.v1', JSON.stringify({
       version: 1, activeTabId: 'heading-211', recentFiles: [], tabs: [{
@@ -16,6 +16,21 @@ async function openSample(page: Page) {
   await expect(page.locator(`${editorSelector} h2`)).toBeVisible();
   await page.locator(editorSelector).evaluate((editor) => {
     (editor as HTMLElement).focus();
+    for (const eventName of ['beforeinput', 'input', 'compositionstart', 'compositionend']) {
+      editor.addEventListener(eventName, (event) => {
+        const selection = window.getSelection()!;
+        const events = JSON.parse(editor.getAttribute('data-heading-211-events') ?? '[]');
+        const input = event as InputEvent;
+        events.push({ event: event.type, inputType: input.inputType, data: input.data, isComposing: input.isComposing,
+          targetRanges: Array.from(input.getTargetRanges?.() ?? []).map((range) => ({
+            text: range.startContainer.textContent, offset: range.startOffset,
+            parentType: range.startContainer.parentElement?.getAttribute('data-type'),
+          })), html: editor.querySelector('h2')?.innerHTML,
+          anchorText: selection.anchorNode?.textContent, offset: selection.anchorOffset,
+          parentType: selection.anchorNode?.parentElement?.getAttribute('data-type') });
+        editor.setAttribute('data-heading-211-events', JSON.stringify(events.slice(-12)));
+      }, true);
+    }
     const heading = editor.querySelector('h2')!;
     const text = Array.from(heading.childNodes).find((node) => node.nodeType === Node.TEXT_NODE)!;
     const range = document.createRange();
@@ -25,6 +40,14 @@ async function openSample(page: Page) {
     selection.removeAllRanges();
     selection.addRange(range);
   });
+  if (placement === 'home') {
+    await page.keyboard.press('End');
+    await page.keyboard.press('Home');
+  } else if (placement === 'click') {
+    const heading = page.locator(`${editorSelector} h2`);
+    const box = await heading.boundingBox();
+    await heading.click({ position: { x: 1, y: box!.height / 2 } });
+  }
 }
 
 async function armHeadingFrame(page: Page, event: 'input' | 'compositionend') {
@@ -44,6 +67,10 @@ async function armHeadingFrame(page: Page, event: 'input' | 'compositionend') {
       visible.querySelectorAll('.vditor-ir__marker').forEach((marker) => marker.remove());
       editor.setAttribute('data-heading-211-frame', JSON.stringify({
         text: visible.textContent ?? '', prefix: fragment.textContent ?? '',
+        html: heading.innerHTML,
+        events: JSON.parse(editor.getAttribute('data-heading-211-events') ?? '[]'),
+        anchorText: selection.anchorNode?.textContent, offset: selection.anchorOffset,
+        parentType: selection.anchorNode?.parentElement?.getAttribute('data-type'),
         markerWidth: heading.querySelector('.vditor-ir__marker--heading')!.getBoundingClientRect().width,
         expanded: heading.classList.contains('vditor-ir__node--expand'),
       }));
@@ -63,26 +90,28 @@ async function persistedSource(page: Page) {
   return page.evaluate(() => JSON.parse(localStorage.getItem('folia.session.v1') ?? '{}').tabs?.[0]?.file.content);
 }
 
-test('#211: heading-start input keeps character order and hides rebuilt markers before the next frame', async ({ page }) => {
-  await openSample(page);
-  // insertText deliberately has no keydown: exercise the rebuild guard, not the RAF fallback.
-  for (const [input, prefix] of [['甲', '甲'], ['乙', '甲乙']]) {
-    await armHeadingFrame(page, 'input');
-    await page.keyboard.insertText(input);
-    const state = await headingFrame(page);
-    expect(state.text).toBe(`${prefix}六、违规的代价`);
-    expect(state.prefix).toBe(prefix);
-    expect(state.expanded).toBe(false);
-    expect(state.markerWidth).toBeLessThanOrEqual(0.5);
-  }
-  await expect.poll(() => persistedSource(page)).toBe('## 甲乙六、违规的代价\n\n正文\n');
-  await page.keyboard.press('Backspace');
-  await expect.poll(() => persistedSource(page)).toBe('## 甲六、违规的代价\n\n正文\n');
-  await page.getByRole('button', { name: '撤销', exact: true }).click();
-  await expect(page.locator(`${editorSelector} h2`)).toContainText('甲乙六、违规的代价');
-  await page.getByRole('button', { name: '重做', exact: true }).click();
-  await expect(page.locator(`${editorSelector} h2`)).toContainText('甲六、违规的代价');
-});
+for (const placement of ['range', 'home', 'click'] as const) {
+  test(`#211: ${placement} heading-start input keeps character order and hides rebuilt markers before the next frame`, async ({ page }) => {
+    await openSample(page, placement);
+    // insertText deliberately has no keydown: exercise the rebuild guard, not the RAF fallback.
+    for (const [input, prefix] of [['甲', '甲'], ['乙', '甲乙']]) {
+      await armHeadingFrame(page, 'input');
+      await page.keyboard.insertText(input);
+      const state = await headingFrame(page);
+      expect(state.text, JSON.stringify(state)).toBe(`${prefix}六、违规的代价`);
+      expect(state.prefix).toBe(prefix);
+      expect(state.expanded).toBe(false);
+      expect(state.markerWidth).toBeLessThanOrEqual(0.5);
+    }
+    await expect.poll(() => persistedSource(page)).toBe('## 甲乙六、违规的代价\n\n正文\n');
+    await page.keyboard.press('Backspace');
+    await expect.poll(() => persistedSource(page)).toBe('## 甲六、违规的代价\n\n正文\n');
+    await page.getByRole('button', { name: '撤销', exact: true }).click();
+    await expect(page.locator(`${editorSelector} h2`)).toContainText('甲乙六、违规的代价');
+    await page.getByRole('button', { name: '重做', exact: true }).click();
+    await expect(page.locator(`${editorSelector} h2`)).toContainText('甲六、违规的代价');
+  });
+}
 
 test('#211: synthetic composition end rebuild keeps the heading caret and committed source', async ({ page }) => {
   await openSample(page);
@@ -91,12 +120,12 @@ test('#211: synthetic composition end rebuild keeps the heading caret and commit
   await armHeadingFrame(page, 'input');
   await page.keyboard.insertText('五');
   const composing = await headingFrame(page);
-  expect(composing.text).toBe('五六、违规的代价');
+  expect(composing.text, JSON.stringify(composing)).toBe('五六、违规的代价');
   expect(composing.prefix).toBe('五');
   await armHeadingFrame(page, 'compositionend');
   await editor.dispatchEvent('compositionend', { data: '五' });
   const committed = await headingFrame(page);
-  expect(committed.text).toBe('五六、违规的代价');
+  expect(committed.text, JSON.stringify(committed)).toBe('五六、违规的代价');
   expect(committed.prefix).toBe('五');
   expect(committed.expanded).toBe(false);
   expect(committed.markerWidth).toBeLessThanOrEqual(0.5);
