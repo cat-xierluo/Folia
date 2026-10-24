@@ -3,7 +3,7 @@ import { expect, test, type Page } from '@playwright/test';
 const editorSelector = '.wysiwyg-editor-pane .vditor-ir .vditor-reset';
 const SAMPLE = '## 六、违规的代价\n\n正文\n';
 
-type MarkerStyle = 'baseline' | 'inline-zero-font';
+type MarkerStyle = 'baseline' | 'composition-boundary';
 
 async function openSample(page: Page, placement: 'range' | 'home' | 'click' = 'range', markerStyle: MarkerStyle = 'baseline') {
   await page.addInitScript((content) => {
@@ -22,12 +22,58 @@ async function openSample(page: Page, placement: 'range' | 'home' | 'click' = 'r
       `.wysiwyg-editor-pane .vditor-ir :is(h1,h2,h3,h4,h5,h6) > .vditor-ir__marker--heading { ${declaration} }`,
     });
   }
-  await page.locator(editorSelector).evaluate((editor) => {
+  await page.locator(editorSelector).evaluate((editor, markerStyle) => {
     (editor as HTMLElement).focus();
-    const markerStyle = getComputedStyle(editor.querySelector('.vditor-ir__marker--heading')!);
+    const initialStyle = getComputedStyle(editor.querySelector('.vditor-ir__marker--heading')!);
     editor.setAttribute('data-heading-211-initial-style', JSON.stringify({
-      fontSize: markerStyle.fontSize, display: markerStyle.display, transitionDuration: markerStyle.transitionDuration,
+      fontSize: initialStyle.fontSize, display: initialStyle.display, transitionDuration: initialStyle.transitionDuration,
     }));
+    if (markerStyle === 'composition-boundary') {
+      let active: { marker: HTMLElement; display: string; priority: string; hadStyle: boolean } | undefined;
+      const restore = () => {
+        if (!active) return;
+        const { marker, display, priority, hadStyle } = active;
+        if (display) marker.style.setProperty('display', display, priority);
+        else marker.style.removeProperty('display');
+        if (!hadStyle && !marker.style.cssText) marker.removeAttribute('style');
+        active = undefined;
+        editor.setAttribute('data-heading-211-boundary-active', 'false');
+      };
+      const start = () => {
+        restore();
+        const selection = window.getSelection();
+        if (!selection?.rangeCount || !selection.isCollapsed) return;
+        const range = selection.getRangeAt(0);
+        const node = range.startContainer;
+        const element = node.nodeType === Node.ELEMENT_NODE ? node as Element : node.parentElement;
+        const heading = element?.closest('h1,h2,h3,h4,h5,h6');
+        if (!heading || !editor.contains(heading)) return;
+        const marker = heading.querySelector<HTMLElement>(':scope > [data-type="heading-marker"]');
+        if (!marker) return;
+        const body = heading.cloneNode(true) as Element;
+        body.querySelector(':scope > [data-type="heading-marker"]')?.remove();
+        if (!body.textContent) return;
+        const prefix = document.createRange();
+        prefix.selectNodeContents(heading);
+        prefix.setEnd(range.startContainer, range.startOffset);
+        const fragment = prefix.cloneContents();
+        fragment.querySelector('[data-type="heading-marker"]')?.remove();
+        if (fragment.textContent) return;
+        active = { marker, display: marker.style.getPropertyValue('display'),
+          priority: marker.style.getPropertyPriority('display'), hadStyle: marker.hasAttribute('style') };
+        marker.style.setProperty('display', 'none');
+        editor.setAttribute('data-heading-211-boundary-active', 'true');
+      };
+      editor.addEventListener('compositionstart', start, true);
+      editor.addEventListener('compositionend', restore, true);
+      editor.addEventListener('blur', restore, true);
+      editor.addEventListener('heading-211-cleanup', () => {
+        restore();
+        editor.removeEventListener('compositionstart', start, true);
+        editor.removeEventListener('compositionend', restore, true);
+        editor.removeEventListener('blur', restore, true);
+      }, { once: true });
+    }
     for (const eventName of ['beforeinput', 'input', 'compositionstart', 'compositionupdate', 'compositionend']) {
       editor.addEventListener(eventName, (event) => {
         const selection = window.getSelection()!;
@@ -51,7 +97,7 @@ async function openSample(page: Page, placement: 'range' | 'home' | 'click' = 'r
     const selection = window.getSelection()!;
     selection.removeAllRanges();
     selection.addRange(range);
-  });
+  }, markerStyle);
   if (placement === 'home') {
     await page.keyboard.press('End');
     await page.keyboard.press('Home');
@@ -99,7 +145,7 @@ async function headingFrame(page: Page) {
   await expect(editor).toHaveAttribute('data-heading-211-frame', /.+/);
   return JSON.parse((await editor.getAttribute('data-heading-211-frame'))!) as {
     text: string; prefix: string; markerWidth: number; expanded: boolean;
-    events: { event: string; isTrusted: boolean; isComposing?: boolean; inputType?: string }[];
+    events: { event: string; isTrusted: boolean; data?: string | null; isComposing?: boolean; inputType?: string; targetRanges: { parentType: string | null }[] }[];
   };
 }
 
@@ -107,7 +153,7 @@ async function persistedSource(page: Page) {
   return page.evaluate(() => JSON.parse(localStorage.getItem('folia.session.v1') ?? '{}').tabs?.[0]?.file.content);
 }
 
-for (const markerStyle of ['baseline', 'inline-zero-font'] as const) {
+for (const markerStyle of ['baseline', 'composition-boundary'] as const) {
   test.describe(markerStyle, () => {
     for (const placement of ['range', 'home', 'click'] as const) {
       test(`#211: ${placement} heading-start input keeps character order and hides rebuilt markers before the next frame`, async ({ page }) => {
@@ -153,42 +199,60 @@ for (const markerStyle of ['baseline', 'inline-zero-font'] as const) {
       // Synthetic events cover the browser integration, not a Windows/native IME candidate window.
     });
 
-    for (const finish of ['commit', 'cancel'] as const) {
-      test(`#211: Chromium engine composition ${finish} preserves heading source`, async ({ page, context }) => {
-        await openSample(page, 'range', markerStyle);
-        const cdp = await context.newCDPSession(page);
-        await armHeadingFrame(page, 'input');
-        await cdp.send('Input.imeSetComposition', { text: '五', selectionStart: 1, selectionEnd: 1 });
-        const composing = await headingFrame(page);
-        console.log('#211 CDP composing', markerStyle, finish, JSON.stringify(composing));
-        expect(composing.events).toEqual(expect.arrayContaining([
-          expect.objectContaining({ event: 'compositionstart', isTrusted: true }),
-          expect.objectContaining({ event: 'compositionupdate', isTrusted: true }),
-          expect.objectContaining({ event: 'input', inputType: 'insertCompositionText', isComposing: true, isTrusted: true }),
-        ]));
-        expect.soft(composing.text, JSON.stringify(composing)).toBe('五六、违规的代价');
-        expect.soft(composing.prefix).toBe('五');
-        await armHeadingFrame(page, 'compositionend');
-        if (finish === 'commit') {
-          // Chromium's Input.insertText calls ImeCommitText; verify the resulting end event below.
-          await cdp.send('Input.insertText', { text: '五' });
-        } else {
-          await cdp.send('Input.imeSetComposition', { text: '', selectionStart: 0, selectionEnd: 0 });
-        }
-        const ended = await headingFrame(page);
-        console.log('#211 CDP ended', markerStyle, finish, JSON.stringify(ended));
-        expect(ended.events).toEqual(expect.arrayContaining([
-          expect.objectContaining({ event: 'compositionend', isTrusted: true }),
-        ]));
-        const prefix = finish === 'commit' ? '五' : '';
-        expect(ended.text, JSON.stringify(ended)).toBe(`${prefix}六、违规的代价`);
-        expect(ended.prefix).toBe(prefix);
-        expect(ended.expanded).toBe(false);
-        expect(ended.markerWidth).toBeLessThanOrEqual(0.5);
-        await expect.poll(() => persistedSource(page)).toBe(`## ${prefix}六、违规的代价\n\n正文\n`);
-        await cdp.detach();
-        // Browser-engine emulation is still not Windows/WebView2 native IME certification.
-      });
+    for (const placement of ['range', 'home', 'click'] as const) {
+      for (const finish of ['commit', 'cancel'] as const) {
+        test(`#211: ${placement} Chromium engine composition ${finish} preserves heading source`, async ({ page, context }) => {
+          await openSample(page, placement, markerStyle);
+          const cdp = await context.newCDPSession(page);
+          await armHeadingFrame(page, 'input');
+          await cdp.send('Input.imeSetComposition', { text: '五', selectionStart: 1, selectionEnd: 1 });
+          const composing = await headingFrame(page);
+          console.log('#211 CDP composing', markerStyle, finish, JSON.stringify(composing));
+          expect(composing.events).toEqual(expect.arrayContaining([
+            expect.objectContaining({ event: 'compositionstart', isTrusted: true }),
+            expect.objectContaining({ event: 'compositionupdate', isTrusted: true }),
+            expect.objectContaining({ event: 'input', inputType: 'insertCompositionText', isComposing: true, isTrusted: true }),
+          ]));
+          expect.soft(composing.text, JSON.stringify(composing)).toBe('五六、违规的代价');
+          expect.soft(composing.prefix).toBe('五');
+          expect.soft(composing.events.filter((event) => event.event === 'beforeinput').every((event) =>
+            event.targetRanges.every((range) => range.parentType !== 'heading-marker'))).toBe(true);
+          await armHeadingFrame(page, 'input');
+          await cdp.send('Input.imeSetComposition', { text: '五月', selectionStart: 2, selectionEnd: 2 });
+          const updated = await headingFrame(page);
+          console.log('#211 CDP updated', markerStyle, placement, finish, JSON.stringify(updated));
+          expect.soft(updated.text, JSON.stringify(updated)).toBe('五月六、违规的代价');
+          expect.soft(updated.prefix).toBe('五月');
+          await armHeadingFrame(page, 'compositionend');
+          if (finish === 'commit') {
+            // Chromium's Input.insertText calls ImeCommitText; verify the resulting end event below.
+            await cdp.send('Input.insertText', { text: '五月' });
+          } else {
+            await cdp.send('Input.imeSetComposition', { text: '', selectionStart: 0, selectionEnd: 0 });
+          }
+          const ended = await headingFrame(page);
+          console.log('#211 CDP ended', markerStyle, finish, JSON.stringify(ended));
+          expect(ended.events).toEqual(expect.arrayContaining([
+            // Chromium dispatches its queued end event without SetTrusted(true).
+            expect.objectContaining({ event: 'compositionend', data: finish === 'commit' ? '五月' : '' }),
+          ]));
+          const prefix = finish === 'commit' ? '五月' : '';
+          expect(ended.text, JSON.stringify(ended)).toBe(`${prefix}六、违规的代价`);
+          expect(ended.prefix).toBe(prefix);
+          expect(ended.expanded).toBe(false);
+          expect(ended.markerWidth).toBeLessThanOrEqual(0.5);
+          await expect.poll(() => persistedSource(page)).toBe(`## ${prefix}六、违规的代价\n\n正文\n`);
+          await expect(page.locator(`${editorSelector} [data-type="heading-marker"][style*="display: none"]`)).toHaveCount(0);
+          if (finish === 'commit') {
+            await page.getByRole('button', { name: '撤销', exact: true }).click();
+            await expect.poll(() => persistedSource(page)).toBe(SAMPLE);
+            await page.getByRole('button', { name: '重做', exact: true }).click();
+            await expect.poll(() => persistedSource(page)).toBe('## 五月六、违规的代价\n\n正文\n');
+          }
+          await cdp.detach();
+          // Browser-engine emulation is still not Windows/WebView2 native IME certification.
+        });
+      }
     }
 
     test('#211: creating an empty heading and typing retains the level and text', async ({ page }) => {
@@ -200,6 +264,74 @@ for (const markerStyle of ['baseline', 'inline-zero-font'] as const) {
       console.log('#211 empty heading', markerStyle, await page.locator(editorSelector).innerHTML());
       await expect(page.locator(`${editorSelector} h2`)).toContainText('中文标题');
       await expect.poll(() => persistedSource(page)).toBe('## 中文标题\n');
+    });
+
+    test('#211: empty heading engine composition is not hidden by the temporary strategy', async ({ page, context }) => {
+      await openSample(page, 'range', markerStyle);
+      await page.keyboard.press('Control+a');
+      await page.keyboard.press('Backspace');
+      await page.keyboard.type('## ');
+      const cdp = await context.newCDPSession(page);
+      await armHeadingFrame(page, 'input');
+      await cdp.send('Input.imeSetComposition', { text: '中文标题', selectionStart: 4, selectionEnd: 4 });
+      const composing = await headingFrame(page);
+      console.log('#211 empty composition', markerStyle, JSON.stringify(composing));
+      expect.soft(composing.text, JSON.stringify(composing)).toBe('中文标题');
+      expect.soft(composing.prefix).toBe('中文标题');
+      expect.soft(composing.events.filter((event) => event.event === 'beforeinput' && event.isComposing).every((event) =>
+        event.targetRanges.every((range) => range.parentType !== 'heading-marker'))).toBe(true);
+      await expect(page.locator(editorSelector)).not.toHaveAttribute('data-heading-211-boundary-active', 'true');
+      await expect(page.locator(`${editorSelector} [data-type="heading-marker"][style*="display: none"]`)).toHaveCount(0);
+      await cdp.send('Input.insertText', { text: '中文标题' });
+      await expect.poll(() => persistedSource(page)).toBe('## 中文标题\n');
+      await cdp.detach();
+    });
+
+    test('#211: noncollapsed cross-block selection is not altered by the temporary strategy', async ({ page }) => {
+      await openSample(page, 'range', markerStyle);
+      const before = await page.locator(editorSelector).evaluate((editor) => {
+        const heading = editor.querySelector('h2')!;
+        const text = Array.from(heading.childNodes).find((node) => node.nodeType === Node.TEXT_NODE)!;
+        const range = document.createRange();
+        range.setStart(text, 0);
+        range.setEnd(editor.querySelector('p')!.firstChild!, 2);
+        const selection = window.getSelection()!;
+        selection.removeAllRanges();
+        selection.addRange(range);
+        return { html: editor.innerHTML, text: selection.toString() };
+      });
+      await page.locator(editorSelector).dispatchEvent('compositionstart', { data: '' });
+      expect(await page.locator(editorSelector).innerHTML()).toBe(before.html);
+      expect(await page.evaluate(() => window.getSelection()!.toString())).toBe(before.text);
+      await expect(page.locator(editorSelector)).not.toHaveAttribute('data-heading-211-boundary-active', 'true');
+      expect(await persistedSource(page)).toBe(SAMPLE);
+    });
+
+    test('#211: blur and cleanup restore the marker display without changing source', async ({ page }) => {
+      await openSample(page, 'range', markerStyle);
+      const editor = page.locator(editorSelector);
+      const marker = page.locator(`${editorSelector} h2 > [data-type="heading-marker"]`);
+      const original = await marker.getAttribute('style');
+      await editor.dispatchEvent('compositionstart', { data: '' });
+      if (markerStyle === 'composition-boundary') await expect(marker).toHaveCSS('display', 'none');
+      await page.getByRole('button', { name: '源码模式', exact: true }).focus();
+      expect(await marker.getAttribute('style')).toBe(original);
+      await editor.dispatchEvent('compositionend', { data: '' });
+      await editor.focus();
+      await page.locator(`${editorSelector} h2`).evaluate((heading) => {
+        const text = Array.from(heading.childNodes).find((node) => node.nodeType === Node.TEXT_NODE)!;
+        const range = document.createRange();
+        range.setStart(text, 0);
+        range.collapse(true);
+        const selection = window.getSelection()!;
+        selection.removeAllRanges();
+        selection.addRange(range);
+      });
+      await editor.dispatchEvent('compositionstart', { data: '' });
+      if (markerStyle === 'composition-boundary') await expect(marker).toHaveCSS('display', 'none');
+      await editor.dispatchEvent('heading-211-cleanup');
+      expect(await marker.getAttribute('style')).toBe(original);
+      expect(await persistedSource(page)).toBe(SAMPLE);
     });
 
     test('#211: heading level shortcuts retain the complete Markdown', async ({ page }) => {
