@@ -3,7 +3,7 @@ import { expect, test, type Page } from '@playwright/test';
 const editorSelector = '.wysiwyg-editor-pane .vditor-ir .vditor-reset';
 const SAMPLE = '## 六、违规的代价\n\n正文\n';
 
-async function openSample(page: Page, placement: 'range' | 'home' | 'click' = 'range') {
+async function openSample(page: Page, placement: 'range' | 'home' | 'click' = 'range', hideMarker = false) {
   await page.addInitScript((content) => {
     localStorage.setItem('folia.session.v1', JSON.stringify({
       version: 1, activeTabId: 'heading-211', recentFiles: [], tabs: [{
@@ -14,6 +14,9 @@ async function openSample(page: Page, placement: 'range' | 'home' | 'click' = 'r
   }, SAMPLE);
   await page.goto('/');
   await expect(page.locator(`${editorSelector} h2`)).toBeVisible();
+  if (hideMarker) await page.addStyleTag({ content:
+    '.wysiwyg-editor-pane .vditor-ir :is(h1,h2,h3,h4,h5,h6) > .vditor-ir__marker--heading { display: none; }',
+  });
   await page.locator(editorSelector).evaluate((editor) => {
     (editor as HTMLElement).focus();
     for (const eventName of ['beforeinput', 'input', 'compositionstart', 'compositionend']) {
@@ -90,45 +93,98 @@ async function persistedSource(page: Page) {
   return page.evaluate(() => JSON.parse(localStorage.getItem('folia.session.v1') ?? '{}').tabs?.[0]?.file.content);
 }
 
-for (const placement of ['range', 'home', 'click'] as const) {
-  test(`#211: ${placement} heading-start input keeps character order and hides rebuilt markers before the next frame`, async ({ page }) => {
-    await openSample(page, placement);
-    // insertText deliberately has no keydown: exercise the rebuild guard, not the RAF fallback.
-    for (const [input, prefix] of [['甲', '甲'], ['乙', '甲乙']]) {
-      await armHeadingFrame(page, 'input');
-      await page.keyboard.insertText(input);
-      const state = await headingFrame(page);
-      expect(state.text, JSON.stringify(state)).toBe(`${prefix}六、违规的代价`);
-      expect(state.prefix).toBe(prefix);
-      expect(state.expanded).toBe(false);
-      expect(state.markerWidth).toBeLessThanOrEqual(0.5);
+for (const hideMarker of [false, true]) {
+  test.describe(hideMarker ? 'isolated CSS trial' : 'current production CSS', () => {
+    for (const placement of ['range', 'home', 'click'] as const) {
+      test(`#211: ${placement} heading-start input keeps character order and hides rebuilt markers before the next frame`, async ({ page }) => {
+        await openSample(page, placement, hideMarker);
+        // insertText deliberately has no keydown: exercise the rebuild guard, not the RAF fallback.
+        for (const [input, prefix] of [['甲', '甲'], ['乙', '甲乙']]) {
+          await armHeadingFrame(page, 'input');
+          await page.keyboard.insertText(input);
+          const state = await headingFrame(page);
+          expect(state.text, JSON.stringify(state)).toBe(`${prefix}六、违规的代价`);
+          expect(state.prefix).toBe(prefix);
+          expect(state.expanded).toBe(false);
+          expect(state.markerWidth).toBeLessThanOrEqual(0.5);
+        }
+        await expect.poll(() => persistedSource(page)).toBe('## 甲乙六、违规的代价\n\n正文\n');
+        await page.keyboard.press('Backspace');
+        await expect.poll(() => persistedSource(page)).toBe('## 甲六、违规的代价\n\n正文\n');
+        await page.getByRole('button', { name: '撤销', exact: true }).click();
+        await expect(page.locator(`${editorSelector} h2`)).toContainText('甲乙六、违规的代价');
+        await page.getByRole('button', { name: '重做', exact: true }).click();
+        await expect(page.locator(`${editorSelector} h2`)).toContainText('甲六、违规的代价');
+      });
     }
-    await expect.poll(() => persistedSource(page)).toBe('## 甲乙六、违规的代价\n\n正文\n');
-    await page.keyboard.press('Backspace');
-    await expect.poll(() => persistedSource(page)).toBe('## 甲六、违规的代价\n\n正文\n');
-    await page.getByRole('button', { name: '撤销', exact: true }).click();
-    await expect(page.locator(`${editorSelector} h2`)).toContainText('甲乙六、违规的代价');
-    await page.getByRole('button', { name: '重做', exact: true }).click();
-    await expect(page.locator(`${editorSelector} h2`)).toContainText('甲六、违规的代价');
+
+    test('#211: synthetic composition end rebuild keeps the heading caret and committed source', async ({ page }) => {
+      await openSample(page, 'range', hideMarker);
+      const editor = page.locator(editorSelector);
+      await editor.dispatchEvent('compositionstart', { data: '' });
+      await armHeadingFrame(page, 'input');
+      await page.keyboard.insertText('五');
+      const composing = await headingFrame(page);
+      expect(composing.text, JSON.stringify(composing)).toBe('五六、违规的代价');
+      expect(composing.prefix).toBe('五');
+      await armHeadingFrame(page, 'compositionend');
+      await editor.dispatchEvent('compositionend', { data: '五' });
+      const committed = await headingFrame(page);
+      expect(committed.text, JSON.stringify(committed)).toBe('五六、违规的代价');
+      expect(committed.prefix).toBe('五');
+      expect(committed.expanded).toBe(false);
+      expect(committed.markerWidth).toBeLessThanOrEqual(0.5);
+      await expect.poll(() => persistedSource(page)).toBe('## 五六、违规的代价\n\n正文\n');
+      // Synthetic events cover the browser integration, not a Windows/native IME candidate window.
+    });
+
+    test('#211: creating an empty heading and typing retains the level and text', async ({ page }) => {
+      await openSample(page, 'range', hideMarker);
+      await page.keyboard.press('Control+a');
+      await page.keyboard.press('Backspace');
+      await page.keyboard.type('## ');
+      await page.keyboard.insertText('中文标题');
+      await expect(page.locator(`${editorSelector} h2`)).toContainText('中文标题');
+      await expect.poll(() => persistedSource(page)).toBe('## 中文标题\n');
+    });
+
+    test('#211: heading level shortcuts retain the complete Markdown', async ({ page }) => {
+      await openSample(page, 'range', hideMarker);
+      await page.keyboard.press('End');
+      await page.keyboard.press('Control+=');
+      await expect(page.locator(`${editorSelector} h1`)).toContainText('六、违规的代价');
+      await expect.poll(() => persistedSource(page)).toBe('# 六、违规的代价\n\n正文\n');
+      await page.keyboard.press('Control+-');
+      await expect(page.locator(`${editorSelector} h2`)).toContainText('六、违规的代价');
+      await expect.poll(() => persistedSource(page)).toBe(SAMPLE);
+    });
+
+    test('#211: Backspace at heading start reduces the level without deleting text', async ({ page }) => {
+      await openSample(page, 'range', hideMarker);
+      await page.keyboard.press('Backspace');
+      await expect(page.locator(`${editorSelector} h1`)).toContainText('六、违规的代价');
+      await expect.poll(() => persistedSource(page)).toBe('# 六、违规的代价\n\n正文\n');
+    });
+
+    test('#211: heading selection copy and source-mode round trip retain the text', async ({ page, context }) => {
+      await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+      await openSample(page, 'range', hideMarker);
+      await page.locator(`${editorSelector} h2`).evaluate((heading) => {
+        const range = document.createRange();
+        range.selectNodeContents(heading);
+        const selection = window.getSelection()!;
+        selection.removeAllRanges();
+        selection.addRange(range);
+      });
+      await page.keyboard.press('Control+c');
+      expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('六、违规的代价');
+      expect(await persistedSource(page)).toBe(SAMPLE);
+      await page.getByRole('button', { name: '源码模式', exact: true }).click();
+      await expect(page.locator('.cm-content')).toHaveText(SAMPLE);
+      await page.getByRole('button', { name: '源码模式', exact: true }).click();
+      await expect(page.locator(`${editorSelector} h2`)).toContainText('六、违规的代价');
+      expect(await persistedSource(page)).toBe(SAMPLE);
+    });
+
   });
 }
-
-test('#211: synthetic composition end rebuild keeps the heading caret and committed source', async ({ page }) => {
-  await openSample(page);
-  const editor = page.locator(editorSelector);
-  await editor.dispatchEvent('compositionstart', { data: '' });
-  await armHeadingFrame(page, 'input');
-  await page.keyboard.insertText('五');
-  const composing = await headingFrame(page);
-  expect(composing.text, JSON.stringify(composing)).toBe('五六、违规的代价');
-  expect(composing.prefix).toBe('五');
-  await armHeadingFrame(page, 'compositionend');
-  await editor.dispatchEvent('compositionend', { data: '五' });
-  const committed = await headingFrame(page);
-  expect(committed.text, JSON.stringify(committed)).toBe('五六、违规的代价');
-  expect(committed.prefix).toBe('五');
-  expect(committed.expanded).toBe(false);
-  expect(committed.markerWidth).toBeLessThanOrEqual(0.5);
-  await expect.poll(() => persistedSource(page)).toBe('## 五六、违规的代价\n\n正文\n');
-  // Synthetic events cover the browser integration, not a Windows/native IME candidate window.
-});
