@@ -4,6 +4,10 @@ All notable changes of this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **标题起点编辑（Issue #211）**：补齐标题重建时的标记折叠，修复隐藏标题标记边界导致的首字丢失/位置后跳；只在非空标题起点隔开组合输入与标记，保留原文及标题降级。空标题预编辑可见性、首次撤销历史窗口和失焦保存仍有既存限制，Windows 原生输入法仍需实机复验。
+
 ## [0.8.4] - 2026-10-24
 
 ### Fixed

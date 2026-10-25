@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import React, { act } from 'react';
+import 'vditor/dist/js/lute/lute.min.js';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WysiwygEditorPane } from './WysiwygEditorPane';
@@ -1376,6 +1377,133 @@ describe('WysiwygEditorPane 标题光标漂移 + 复制残留 marker (ISS-106 / 
     await act(async () => {
       root?.unmount();
     });
+  });
+
+  it.each([1, 2, 3, 4, 5, 6].flatMap((level) =>
+    [false, true].map((nested) => ({ level, nested })),
+  ))('#211: 折叠重建时已展开的 H$level（新增子树=$nested），不改正文或选区', async ({ level, nested }) => {
+    const source = '#'.repeat(level) + ' 六、违规的代价';
+    const onChange = vi.fn();
+    let root: Root | null = null;
+    await act(async () => {
+      root = createRoot(host);
+      root.render(renderWithProvider(React.createElement(WysiwygEditorPane, { source, onChange })));
+      await flushMicrotasks();
+      await flushFrames();
+    });
+    const ir = vditorCalls[0].host.querySelector<HTMLElement>('.vditor-ir pre')!;
+    const lute = (globalThis as unknown as { Lute: { New(): {
+      SetVditorIR(value: boolean): void;
+      Md2VditorIRDOM(markdown: string): string;
+      SpinVditorIRDOM(html: string): string;
+      VditorIRDOM2Md(html: string): string;
+    } } }).Lute.New();
+    lute.SetVditorIR(true);
+    ir.innerHTML = lute.Md2VditorIRDOM(source);
+    await flushMicrotasks();
+    const oldHeading = ir.firstElementChild!;
+    const range = document.createRange();
+    range.setStart(oldHeading.lastChild!, 1);
+    range.insertNode(document.createElement('wbr'));
+    const spun = lute.SpinVditorIRDOM(oldHeading.outerHTML);
+    expect(spun).toContain('vditor-ir__node--expand');
+    // No classList.add: Lute's newly inserted heading is expanded already.
+    oldHeading.outerHTML = nested ? `<blockquote>${spun}</blockquote>` : spun;
+    const heading = ir.querySelector(`h${level}`)!;
+    const wbr = heading.querySelector('wbr')!;
+    const caretText = wbr.nextSibling!;
+    range.setStart(caretText, 0);
+    range.collapse(true);
+    wbr.remove();
+    const selection = window.getSelection()!;
+    selection.removeAllRanges();
+    selection.addRange(range);
+    const originalText = heading.textContent;
+    const originalMarkdown = lute.VditorIRDOM2Md(ir.innerHTML);
+    await act(async () => { await flushMicrotasks(); });
+    expect(heading.classList.contains('vditor-ir__node--expand')).toBe(false);
+    expect(heading.textContent).toBe(originalText);
+    expect(lute.VditorIRDOM2Md(ir.innerHTML)).toBe(originalMarkdown);
+    expect(selection.anchorNode).toBe(caretText);
+    expect(selection.anchorOffset).toBe(0);
+    expect(selection.isCollapsed).toBe(true);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(setValueCalls).toEqual([]);
+    await act(async () => { root?.unmount(); });
+    // The disconnected observer must not touch a retained, detached editor.
+    ir.innerHTML = spun;
+    await flushMicrotasks();
+    expect(ir.firstElementChild!.classList.contains('vditor-ir__node--expand')).toBe(true);
+  });
+
+  it('#211: 真实组件接入组合边界并在卸载时恢复属性和解除监听', async () => {
+    let root: Root | null = null;
+    const onChange = vi.fn();
+    await act(async () => {
+      root = createRoot(host);
+      root.render(renderWithProvider(React.createElement(WysiwygEditorPane, { source: '## 六、违规的代价', onChange })));
+      await flushMicrotasks();
+      await flushFrames();
+    });
+    const ir = vditorCalls[0].host.querySelector<HTMLElement>('.vditor-ir pre')!;
+    ir.innerHTML = '<h2><span class="vditor-ir__marker" data-type="heading-marker">## </span>六、违规的代价</h2>';
+    const marker = ir.querySelector('span')!;
+    const body = ir.querySelector('h2')!.lastChild!;
+    const range = document.createRange();
+    range.setStart(body, 0); range.collapse(true);
+    const selection = document.getSelection()!;
+    selection.removeAllRanges(); selection.addRange(range);
+    ir.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+    expect(marker.getAttribute('contenteditable')).toBe('false');
+    expect(selection.anchorNode).toBe(body);
+    expect(selection.anchorOffset).toBe(0);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(setValueCalls).toEqual([]);
+    await act(async () => { root?.unmount(); });
+    expect(marker.hasAttribute('contenteditable')).toBe(false);
+    ir.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+    expect(marker.hasAttribute('contenteditable')).toBe(false);
+  });
+
+  it('#211: 新增跨 document 标题可折叠，非标题展开态与原行内延时保持', async () => {
+    let root: Root | null = null;
+    await act(async () => {
+      root = createRoot(host);
+      root.render(renderWithProvider(React.createElement(WysiwygEditorPane, { source: '## 标题', onChange: () => undefined })));
+      await flushMicrotasks();
+      await flushFrames();
+    });
+    const ir = vditorCalls[0].host.querySelector<HTMLElement>('.vditor-ir pre')!;
+    const frame = document.createElement('iframe');
+    document.body.append(frame);
+    try {
+      const foreignHeading = frame.contentDocument!.createElement('h2');
+      foreignHeading.className = 'vditor-ir__node--expand';
+      foreignHeading.textContent = '标题';
+      expect(foreignHeading instanceof Element).toBe(false);
+      ir.append(foreignHeading, document.createTextNode('text'));
+      const other = document.createElement('div');
+      other.innerHTML = '<span data-type="strong" class="vditor-ir__node--expand">bold</span>'
+        + '<div data-type="code-block" class="vditor-ir__node--expand">code</div>'
+        + '<div data-type="html-block" class="vditor-ir__node--expand">html</div>'
+        + '<div data-type="math-block" class="vditor-ir__node--expand">math</div>';
+      ir.append(other);
+      await act(async () => { await flushMicrotasks(); });
+      expect(foreignHeading.classList.contains('vditor-ir__node--expand')).toBe(false);
+      expect(other.querySelectorAll('.vditor-ir__node--expand')).toHaveLength(4);
+      // Existing attribute-triggered inline timer still fires, without folding blocks.
+      const inline = other.querySelector('span')!;
+      inline.classList.remove('vditor-ir__node--expand');
+      inline.classList.add('vditor-ir__node--expand');
+      await act(async () => { await flushMicrotasks(); });
+      expect(inline.classList.contains('vditor-ir__node--expand')).toBe(true);
+      await act(async () => { await new Promise((resolve) => window.setTimeout(resolve, 280)); });
+      expect(inline.classList.contains('vditor-ir__node--expand')).toBe(false);
+      expect(other.querySelectorAll('div.vditor-ir__node--expand')).toHaveLength(3);
+    } finally {
+      frame.remove();
+      await act(async () => { root?.unmount(); });
+    }
   });
 
   it('ISS-107: 复制加粗文本时 text/plain 剔除 ** 残留，text/html 保留 strong 语义', async () => {
