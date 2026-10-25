@@ -223,7 +223,7 @@ test.describe('production heading boundary', () => {
 
   test('#211: creating an empty heading and typing retains the level and text', async ({ page }) => {
     await openSample(page, 'range');
-    await page.keyboard.press('Control+a');
+    await page.keyboard.press('ControlOrMeta+a');
     await page.keyboard.press('Backspace');
     await page.keyboard.type('## ');
     await page.keyboard.insertText('中文标题');
@@ -298,7 +298,7 @@ test.describe('production heading boundary', () => {
   for (const check of ['preedit-visibility', 'committed-source'] as const) {
     test(`#211: empty heading ${check} boundary`, async ({ page, context }) => {
       await openSample(page);
-      await page.keyboard.press('Control+a');
+      await page.keyboard.press('ControlOrMeta+a');
       await page.keyboard.press('Backspace');
       await page.keyboard.type('## ');
       const cdp = await context.newCDPSession(page);
@@ -372,10 +372,10 @@ test.describe('production heading boundary', () => {
   test('#211: heading level shortcuts retain the complete Markdown', async ({ page }) => {
     await openSample(page, 'range');
     await page.keyboard.press('End');
-    await page.keyboard.press('Control+=');
+    await page.keyboard.press('ControlOrMeta+=');
     await expect(page.locator(`${editorSelector} h1`)).toContainText('六、违规的代价');
     await expect.poll(() => persistedSource(page)).toBe('# 六、违规的代价\n\n正文\n');
-    await page.keyboard.press('Control+-');
+    await page.keyboard.press('ControlOrMeta+-');
     await expect(page.locator(`${editorSelector} h2`)).toContainText('六、违规的代价');
     await expect.poll(() => persistedSource(page)).toBe(SAMPLE);
   });
@@ -398,7 +398,7 @@ test.describe('production heading boundary', () => {
       selection.removeAllRanges();
       selection.addRange(range);
     });
-    await page.keyboard.press('Control+c');
+    await page.keyboard.press('ControlOrMeta+c');
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('六、违规的代价');
     expect(await persistedSource(page)).toBe(SAMPLE);
     await page.getByRole('button', { name: '源码模式', exact: true }).click();
