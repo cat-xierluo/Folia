@@ -36,16 +36,22 @@
 - [x] Chromium 基线复现 Range/Home/click 首字进入隐藏 marker 且光标错位；候选隔离矩阵覆盖首候选、更新、提交/取消与原文。
 - [x] 收敛为标题直属 marker inline 样式、局部组合编辑边界、组合前 Home 等价定位；不重写正文或全局输入法/Selection。
 - [x] 生产代码检查与无测试注入的 Chromium 回归已核：原生产 head `ff3f33a` CI 三项通过；维护者本地生产构建的专项回归 18 项正常通过、3 项预期失败。最终提交的 CI 与合并回执以 PR #212 为准。
+- [x] 标题起点选区归一化修复以 v0.8.6 安装包交付，报告者可直接升级复验，无需自行编译。
 - [ ] Windows WebView2 真实中文输入法复验：标题首部连续输入/删除、候选提交/取消、字序与字符偏移、撤销重做；CDP 不替代实机。
 - **报告者复验（2026-10-26）：** v0.8.5 中鼠标点击或 Home 进入标题最前方后，输入内容可正常落到最前方，但光标不可见。维护者 Chromium 复现：单击最终落在标题直属 marker 末端，Range 高度为 0；Home 修正到正文后，Chromium 约 200ms 又可能把首个正文 Text 拆出零高度空文本锚点并移入其中。
 - **选区归一化修复（2026-10-27）：** 仅处理普通主键单击最终得到的折叠选区、Home keyup 等价边界，以及“直属 heading marker 后紧跟空文本锚点”的 selectionchange 精确形态；且仅在直属 marker 后紧跟非空纯文本时移动，粗体、链接、图片、公式等结构化标题起点不擅自改写选区。组合期间不移动 Selection，不介入非折叠选区、修饰键/多击、ArrowLeft marker 内组合和 Backspace 标题降级。新增 click/Home 静置后 Chromium caret Range 高度、空文本锚点恢复、内联格式/图片/公式开头不越界、修饰/多击/拖选不接管、真实标题拖选不被折叠的回归。Windows WebView2 的实际插入符绘制仍 NOT_VERIFIED。
 - **合并回执（2026-10-28）：** PR #215 最终 head `51e35e1478b8d3fa16efb62d5d742bdcc520a710` 三项 CI 全绿后 squash 合入 `main`，合并提交 `191c550ef41a7ae8f3164a5e2f98ec1dddf3235d`；main CI run `40614268321` 成功。已在 #211 评论合并进展（`6458147675`），Issue 保持开放等待下一版发布后的 Windows 实机复验。
+- **发布回执（2026-10-28）：** 已随 v0.8.6 发布（tag `v0.8.6` → 定版提交 `50dca93b4b394a9da872fc51b95db688d6e6894c`，PR #217 的 head `fd03e1e128468c48c8ab8b9f7d6cdc36f68a1e7f` 三项 CI 全绿，run `40624742379`）。Release workflow run `40625330424` 的 macOS aarch64、macOS x64、Windows x64 与 publish 全绿；Release 已公开且非预发布，9 项资产齐全，无 .msi。下载首轮出现 HTTP/2 `PROTOCOL_ERROR`，仅 macOS x64 updater 包未完整，HTTP/1.1 续传后全部 9 项大小和 SHA-256 均与 GitHub 资产记录一致。以 v0.8.5 公钥运行标准 minisign，三平台原包退出 0、篡改 1 字节反例退出 1；manifest 签名与 `.sig` 完全一致，两架构 macOS 更新包内版本均为 0.8.6。Windows WebView2 / macOS WKWebView 原生插入符与真实输入法、应用内安装重启全链路仍 NOT_VERIFIED。
+- **发布后验与通知（2026-10-28）：** 未认证 `releases/latest` 返回 200 并指向 v0.8.6，公开 `latest.json` 为 0.8.6 且与 Release 资产逐字节一致；两种 DMG 校验和有效。发布说明已补齐并回读核对，9 项资产 ID 和摘要保持不变。#211 评论 `6460154342` 已给出 Windows x64 安装包直链、版本确认和点击 / Home / 真实中文输入法复验步骤，无需报告者自行编译；Issue 继续开放。
+- **发布文档验收（2026-10-28）：** 初次默认扫描退出 1，4 hard / 0 adaptive（缺项目配置、两处 CHANGELOG 坏链接、故意缺图夹具）；修正失效的历史 memory 引用和决策记录相对链接，保留用于 not-found 回归的缺图夹具。使用本次显式配置恢复默认计数规则、启用文档与 TASKS 同步检查，仅精确排除该夹具，复跑退出 0，0 hard / 0 adaptive / 8 soft / 5 ok；独立复核 APPROVE。配置与原始失败记录只保留在本地发布证据中，未宣称全项目文档协议均已验证。
+- **先前发布（2026-10-26）：** v0.8.5 的 tag、构建、资产、验签与报告者通知回执见下文；该版已解决标题首字输入路径，报告者随后反馈光标不可见，故由 v0.8.6 继续交付选区归一化修复。
+- **发布回执（2026-10-26）：** 已随 v0.8.5 发布（tag `v0.8.5` → 定版提交 `e183c8429ea230d98418605b162ce7b5b7c1480e`，PR #213 CI 三项全绿）。Release workflow run `40255131207` 三平台构建与 publish 全绿；9 项产物齐全（两架构 dmg、Windows exe、两个 updater tar.gz 与对应 .sig、exe.sig、latest.json）。三平台标准 minisign 验签正例通过、篡改 1 字节反例失败；`latest.json` 内三平台签名与上传 `.sig` 完全一致；`releases/latest` 指向 v0.8.5 且 manifest 版本为 0.8.5。已在 #211 通知报告者升级复验，Issue 保持开放。本机未安装该版本，Windows WebView2 与 macOS WKWebView 真实输入法仍未实机复验。
 - **最终候选验证（2026-10-27）：** typecheck、lint 0 warning、生产 build 通过；全量 Vitest 84 文件 / 969 项通过；#211 专项 Chromium 24/24、first-selection 回归 4/4、仓库 CI 实际 Playwright 子集 60/60、Rust 90/90 通过；生产 preview 中 click/Home 静置 600ms 后 Selection 均为正文 Text:0 且 caret Range 高度 26px。本地非 CI 全量 Playwright 曾以 5 workers 得 125/146，失败集中在任务源既有记录的旧布局/非法 Mermaid/本地并发时序，未作为本候选门禁。
 - **独立既存边界：** 空标题/marker 内预编辑不可见、初始化首次撤销快照窗口、失焦时延迟 input 保存门禁；记录对照，不顺带扩修。
 - **维护者验收接续：** 用户已明确要求验收并合并 PR #212、推进 #211 和同步本地。原 head `ff3f33a` 的三项 CI 通过（run `40115666269`）：单测 963 项，Chromium 54 项正常通过、3 项预期失败；3 项预期失败不作为功能通过。原生审查代理因 429 退出，本机 M Code 又因 Token Plan 上限（2067）退出，均未给出 verdict。原实现由 dot 完成，当前 Codex 维护者独立逐行审查原生产 diff 及输入边界单测，未发现新增阻塞缺陷；本轮未改产品代码，未把代理执行失败当作 APPROVE。
 - **本地对照：** 原候选全量 962/963，HTML 源码入口 1 项超时；干净 `main` 全量 922/924，同类 HTML 源码入口 2 项超时；候选与基线隔离重跑均 2/2 通过，保留全量失败事实。原候选的专项浏览器测试在 macOS 有 5 项额外失败，同一测试在基线有 18 项失败；固定 Control 快捷键在 macOS 不代表全选、标题层级切换和复制，本轮改用 ControlOrMeta 后重验。
 - **本轮修订与验证：** 仅将专项 E2E 的 5 处固定 Control 快捷键改为 ControlOrMeta，并同步任务状态。生产构建通过；在该 build 的 preview 上专项 21 项终态符合预期（18 项正常通过、3 项预期失败、0 跳过），完整源文、候选提交/取消、撤销/重做、标题降级、剪贴板与源码往返继续检查。旧的 962/963 全量失败记录保留，不扩大为本地全量通过。
-- **交付限制：** Refs #211，验收和最终 CI 满足后按用户授权转 Ready 合并；问题保持开放，等待发布后 Windows 真实输入法复验。本轮不发布新版本。
+- **原 PR #212 验收边界：** 该轮只验收和合并，未发布；后续 v0.8.5、v0.8.6 发布回执见上。Refs #211，问题保持开放，等待安装版的 Windows 真实输入法和插入符显示复验。
 
 ### Issue #202：中文标点粗体兼容（已随 v0.8.4 发布，报告者复验通过，Issue 已关闭）
 
@@ -53,7 +59,6 @@
 - **实现范围：** 仅对 Lute 已解析的同一普通文本片段扩展 CJK 标点闭合边界；不改原双星、冒号，不全局开启 Protyle，不扩展代码、链接、HTML、转义和既有嵌套结构。
 - **验证与状态：** 原 head `fe9dac0` CI 三项通过；同步 main 与独立复核后的候选另跑真实入口、源文往返、预览、编辑/撤销/重做、粘贴及合成 composition。本机开发入口 CJK/会话恢复 6/6；组合候选 `0843f17` 的生产 build preview 共 16/16，覆盖 CJK、行内 marker、块级源码保护、输入回归和会话恢复。lint / typecheck / build 通过；本地全量 922/924，两项 HTML 源码测试 5000ms 超时，隔离 2/2 通过；最终 CI 见下方合并回执，不覆盖本地失败记录。详见 [专项说明](./issue-202-cjk-strong.md)。
 - **合并回执（2026-10-23）：** 最终 head `0bd442b161f59da6c64be49a3ca7a0e91c255d54` 的 typecheck / lint / test、Chromium E2E、cargo test 三项 CI 全部通过（run `39937774264`）。独立审查对原实现 `fe9dac0` 及组合候选 `a65ca31` 均为 APPROVE；逐文件比对确认最终 head 与 `a65ca31` 仅 TASKS 记录有差异，产品代码与 CI 配置 blob 一致。北京时间 18:24 squash 合入 `main`，合并提交 `0ff139a793fa4c3ffb105377e53aa9a516f49336`；回读服务端为 MERGED，交付树与最终 head 完全一致。#203、#205、#206 的实现与有效记录均保留。
-- **发布回执（2026-10-26）：** 已随 v0.8.5 发布（tag `v0.8.5` → 定版提交 `e183c8429ea230d98418605b162ce7b5b7c1480e`，PR #213 CI 三项全绿）。Release workflow run `40255131207` 三平台构建与 publish 全绿；9 项产物齐全（两架构 dmg、Windows exe、两个 updater tar.gz 与对应 .sig、exe.sig、latest.json）。三平台标准 minisign 验签正例通过、篡改 1 字节反例失败；`latest.json` 内三平台签名与上传 `.sig` 完全一致；`releases/latest` 指向 v0.8.5 且 manifest 版本为 0.8.5。已在 #211 通知报告者升级复验，Issue 保持开放。本机未安装该版本，Windows WebView2 与 macOS WKWebView 真实输入法仍未实机复验。
 - **发布回执（2026-10-24）：** 已随 v0.8.4 发布（tag `v0.8.4` → 定版提交 `f7b39559788719938e796b8268c1950ab66b1984`）。Release 流水线 run `40055559431` 三平台构建与 publish 全绿；9 项产物齐全（两架构 dmg、Windows exe、两个 updater tar.gz 与对应 .sig、exe.sig、latest.json），无 .msi。三平台标准 minisign 验签正例通过、篡改 1 字节的反例失败；`releases/latest` 与 `releases/latest/download/latest.json` 未认证可达且版本为 0.8.4。定版 PR #209 独立审查 APPROVE。本机未安装该版本。
 - **反馈闭环：** 报告者 WHeathcliff 在 2026-10-24 确认首次打开粗体正常、行内标记自动收起、关闭恢复开关后重启不再恢复旧标签（评论 `6382607999`）。2026-10-25 按用户指令关闭 #202；相关输入位置新反馈由 #211 单独跟进。
 - **NOT_VERIFIED：** 维护者尚未在 Windows WebView2、macOS WKWebView、真实中文输入法与原生保存对话框下独立复验；报告者的使用确认不扩大为全平台认证。
