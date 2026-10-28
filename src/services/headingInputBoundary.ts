@@ -54,22 +54,38 @@ export function installHeadingInputBoundary(ir: HTMLElement): () => void {
     marker.setAttribute('contenteditable', 'false');
   };
 
-  const onKeyUp = (event: KeyboardEvent) => {
-    // 原生 Home 可落入不可见的 ## 内。只在组合开始前规范这一等价位置。
-    if (event.key !== 'Home' || event.isComposing || composing) return;
+  const markerCaretNormalizer = () => {
+    if (composing) return;
     const selection = doc.getSelection();
     if (!selection?.rangeCount || !selection.isCollapsed) return;
-    const node = selection.anchorNode!;
+    const node = selection.anchorNode;
+    if (!node) return;
     const element = node.nodeType === 1 ? node as Element : node.parentElement;
-    const marker = element?.closest(MARKER_SELECTOR);
-    const heading = marker?.parentElement;
+    let marker = element?.closest(MARKER_SELECTOR);
+    // Vditor's undo snapshot inserts/removes a span through Range.insertNode.
+    // At Text:0 Chromium leaves an empty text anchor without a line box.
+    if (
+      !marker
+      && node.nodeType === 3
+      && node.textContent === ''
+      && node.previousSibling?.nodeType === 1
+      && (node.previousSibling as Element).matches(MARKER_SELECTOR)
+    ) {
+      marker = node.previousSibling as HTMLElement;
+    }
+    if (!marker) return;
+    const heading = marker.parentElement;
     if (!heading || !/^H[1-6]$/.test(heading.tagName) || !ir.contains(heading)) return;
-    const walker = doc.createTreeWalker(heading, NodeFilter.SHOW_TEXT, {
-      acceptNode: (text) => text.textContent && !text.parentElement?.closest('.vditor-ir__marker, [contenteditable="false"]')
-        ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP,
-    });
-    const body = walker.nextNode();
-    if (!body) return;
+    let body = marker.nextSibling;
+    if (body?.nodeType === Node.TEXT_NODE && !body.textContent) {
+      // Skip only the empty fragment of that direct text, never inline content.
+      const followingText = body.nextSibling;
+      if (followingText?.nodeType !== Node.TEXT_NODE || !followingText.textContent) return;
+      body = followingText;
+    }
+    // Only the reported plain-text shape can be mapped without changing inline
+    // formatting or stepping over an image/formula at the heading start.
+    if (body?.nodeType !== Node.TEXT_NODE || !body.textContent) return;
     const range = doc.createRange();
     range.setStart(body, 0);
     range.collapse(true);
@@ -77,13 +93,54 @@ export function installHeadingInputBoundary(ir: HTMLElement): () => void {
     selection.addRange(range);
   };
 
+  const onKeyUp = (event: KeyboardEvent) => {
+    // 原生 Home 可落入不可见的 ## 内。只在组合开始前规范这一等价位置。
+    if (event.key !== 'Home' || event.isComposing) return;
+    markerCaretNormalizer();
+  };
+
+  const onSelectionChange = () => {
+    const activeElement = doc.activeElement;
+    if (activeElement && activeElement !== doc.body && !ir.contains(activeElement)) return;
+    const selection = doc.getSelection();
+    const node = selection?.anchorNode;
+    if (
+      composing
+      || !selection?.rangeCount
+      || !selection.isCollapsed
+      || node?.nodeType !== 3
+      || node.textContent !== ''
+      || node.previousSibling?.nodeType !== 1
+      || !(node.previousSibling as Element).matches(MARKER_SELECTOR)
+    ) return;
+    markerCaretNormalizer();
+  };
+
+  const onClick = (event: MouseEvent) => {
+    // Vditor's bubble-phase click can leave a primary click in the zero-height marker.
+    // This listener is installed after Vditor's own IR click handler, so its selection is final.
+    if (
+      event.button !== 0
+      || event.detail !== 1
+      || event.altKey
+      || event.ctrlKey
+      || event.metaKey
+      || event.shiftKey
+    ) return;
+    markerCaretNormalizer();
+  };
+
   ir.addEventListener('keyup', onKeyUp);
+  ir.addEventListener('click', onClick);
+  doc.addEventListener('selectionchange', onSelectionChange);
   ir.addEventListener('compositionstart', start, true);
   ir.addEventListener('compositionend', end, true);
   ir.addEventListener('blur', restore, true);
   return () => {
     end();
     ir.removeEventListener('keyup', onKeyUp);
+    ir.removeEventListener('click', onClick);
+    doc.removeEventListener('selectionchange', onSelectionChange);
     ir.removeEventListener('compositionstart', start, true);
     ir.removeEventListener('compositionend', end, true);
     ir.removeEventListener('blur', restore, true);

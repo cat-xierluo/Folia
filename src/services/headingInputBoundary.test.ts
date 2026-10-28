@@ -124,12 +124,73 @@ describe('#211 标题输入边界生命周期', () => {
     expect(ir.innerHTML).toBe(html);
   });
 
-  it('Home 找到内联格式中的真实首字，不跳过正文或落到格式 marker', () => {
+  it('普通主键单击最终落在 marker 内时，把折叠光标移到正文首字', () => {
+    const selection = caret(marker().firstChild!, marker().firstChild!.textContent!.length);
+    ir.dispatchEvent(new MouseEvent('click', { bubbles: true, button: 0, detail: 1 }));
+    expect(selection.anchorNode).toBe(heading().lastChild);
+    expect(selection.anchorOffset).toBe(0);
+  });
+
+  it('Chromium 把正文首字拆成空文本锚点时，selectionchange 恢复可见光标', () => {
+    const emptyAnchor = document.createTextNode('');
+    marker().after(emptyAnchor);
+    ir.focus();
+    const selection = caret(emptyAnchor);
+    document.dispatchEvent(new Event('selectionchange'));
+    expect(selection.anchorNode).toBe(heading().lastChild);
+    expect(selection.anchorOffset).toBe(0);
+  });
+
+  it.each(['img', 'math'])('标题正文以原子 %s 开头时不越过它寻找后续文字', (type) => {
+    const markerHtml = marker().outerHTML;
+    const atomic = type === 'img'
+      ? '<span data-type="img"><img alt="图"></span>'
+      : '<span data-type="math"><span class="language-math">x</span></span>';
+    heading().innerHTML = `${markerHtml}${atomic}后续文字`;
+    const markerText = marker().firstChild!;
+    const selection = caret(markerText, markerText.textContent!.length);
+    ir.dispatchEvent(new MouseEvent('click', { bubbles: true, button: 0, detail: 1 }));
+    expect(selection.anchorNode).toBe(markerText);
+    expect(selection.anchorOffset).toBe(markerText.textContent!.length);
+  });
+
+  it('焦点已移到编辑器外时不处理空文本锚点的 selectionchange', () => {
+    const emptyAnchor = document.createTextNode('');
+    marker().after(emptyAnchor);
+    const outside = document.createElement('button');
+    document.body.append(outside);
+    outside.focus();
+    const selection = caret(emptyAnchor);
+    document.dispatchEvent(new Event('selectionchange'));
+    expect(selection.anchorNode).toBe(emptyAnchor);
+    outside.remove();
+  });
+
+  it('修饰键、多击、非主键和拖选不触发单击光标规范化', () => {
+    const text = marker().firstChild!;
+    const cases = [
+      { bubbles: true, button: 0, detail: 1, shiftKey: true },
+      { bubbles: true, button: 0, detail: 2 },
+      { bubbles: true, button: 2, detail: 1 },
+    ] as const;
+    for (const caseInit of cases) {
+      const selection = caret(text, text.textContent!.length);
+      ir.dispatchEvent(new MouseEvent('click', caseInit));
+      expect(selection.anchorNode).toBe(text);
+      expect(selection.anchorOffset).toBe(text.textContent!.length);
+    }
+    const selection = caret(text, 0);
+    selection.getRangeAt(0).setEnd(heading().lastChild!, 1);
+    ir.dispatchEvent(new MouseEvent('click', { bubbles: true, button: 0, detail: 1 }));
+    expect(selection.isCollapsed).toBe(false);
+  });
+
+  it('Home 不把 marker 内光标跳入内联格式，避免改变输入格式', () => {
     ir.innerHTML = markup(2, '<em><span class="vditor-ir__marker">**</span><strong>六</strong><span class="vditor-ir__marker">**</span></em>、正文');
     const selection = caret(marker().firstChild!, 1);
     home();
-    expect(selection.anchorNode).toBe(ir.querySelector('strong')!.firstChild);
-    expect(selection.anchorOffset).toBe(0);
+    expect(selection.anchorNode).toBe(marker().firstChild);
+    expect(selection.anchorOffset).toBe(1);
   });
 
   it('Home 不移动空标题、非折叠选区或 isComposing 事件', () => {
