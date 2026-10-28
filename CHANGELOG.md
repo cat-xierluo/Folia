@@ -4,6 +4,10 @@ All notable changes of this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **标题起点选区归一化（Issue #211）**：单击标题最左侧或按 Home 后，折叠选区不再停留在隐藏 `##` 标记或 Chromium 生成的零高度空文本锚点里；仅处理直属 marker 后紧跟非空纯文本的安全形态，caret Range 高度恢复正常。粗体、链接、图片、公式等结构化标题起点不擅自改写选区，组合输入、非折叠选区、双击选词和 Backspace 标题降级保持原语义。Windows WebView2 的实际插入符绘制和真实输入法仍待报告者复验。
+
 ## [0.8.5] - 2026-10-26
 
 ### Fixed

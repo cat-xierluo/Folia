@@ -106,7 +106,59 @@ async function persistedSource(page: Page) {
   return page.evaluate(() => JSON.parse(localStorage.getItem('folia.session.v1') ?? '{}').tabs?.[0]?.file.content);
 }
 
+async function headingSelectionGeometryState(page: Page) {
+  return page.locator(editorSelector).evaluate((editor) => {
+    const heading = editor.querySelector('h2')!;
+    const marker = heading.querySelector('[data-type="heading-marker"]')!;
+    const selection = document.getSelection()!;
+    const range = selection.rangeCount ? selection.getRangeAt(0) : null;
+    const caretRect = range?.getClientRects()[0];
+    return {
+      anchorText: selection.anchorNode?.textContent ?? '',
+      anchorOffset: selection.anchorOffset,
+      parentType: selection.anchorNode?.parentElement?.getAttribute('data-type') ?? null,
+      caretHeight: caretRect?.height ?? 0,
+      markerWidth: marker.getBoundingClientRect().width,
+    };
+  });
+}
+
 test.describe('production heading boundary', () => {
+  for (const placement of ['click', 'home'] as const) {
+    test(`#211: ${placement} heading-start caret geometry remains visible in Chromium`, async ({ page }) => {
+      await openSample(page, placement);
+      // Vditor's click handler can replace the browser caret after the click event.
+      await page.waitForTimeout(500);
+      const state = await headingSelectionGeometryState(page);
+      expect(state).toEqual({
+        anchorText: '六、违规的代价',
+        anchorOffset: 0,
+        parentType: null,
+        caretHeight: expect.any(Number),
+        markerWidth: expect.any(Number),
+      });
+      expect(state.caretHeight).toBeGreaterThan(10);
+      expect(state.markerWidth).toBeLessThanOrEqual(0.5);
+    });
+  }
+
+  test('#211: heading drag selection is not collapsed by click caret normalization', async ({ page }) => {
+    await openSample(page, 'range');
+    const heading = page.locator(`${editorSelector} h2`);
+    const box = (await heading.boundingBox())!;
+    await page.mouse.move(box.x + 1, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + 45, box.y + box.height / 2, { steps: 5 });
+    await page.mouse.up();
+    const selection = await page.locator(editorSelector).evaluate(() => {
+      const current = document.getSelection()!;
+      return { collapsed: current.isCollapsed, text: current.toString() };
+    });
+    expect(selection.collapsed).toBe(false);
+    expect(selection.text.length).toBeGreaterThan(0);
+    expect(await persistedSource(page)).toBe(SAMPLE);
+  });
+
   for (const placement of ['range', 'home', 'click'] as const) {
     test(`#211: ${placement} heading-start input keeps character order and hides rebuilt markers before the next frame`, async ({ page }) => {
       await openSample(page, placement);
