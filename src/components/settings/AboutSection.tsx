@@ -2,12 +2,6 @@ import { RefreshCw } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useSettings } from '../../hooks/useSettings';
 import { translate } from '../../services/i18n';
-import {
-  buildFeedbackMarkdown,
-  collectFeedbackEnvironment,
-  exportFeedbackMarkdown,
-  openFeedbackIssue,
-} from '../../services/feedbackService';
 import { updateSettings } from '../../services/settingsService';
 import {
   categorizeUpdateError,
@@ -35,12 +29,6 @@ type AboutSectionProps = {
 
 type CheckState = 'idle' | 'checking' | 'latest' | 'available' | 'unsupported' | 'error';
 
-/** ISS-230（Issue #187 轻量版）：反馈卡片的状态机。 */
-type FeedbackState =
-  | { kind: 'idle' }
-  | { kind: 'busy' }
-  | { kind: 'message'; text: string; isError?: boolean };
-
 const appIconUrl = new URL('../../assets/folia-icon.png', import.meta.url).href;
 const wechatQrUrl = new URL('../../../docs/wechat-qr.png', import.meta.url).href;
 
@@ -51,8 +39,6 @@ export function AboutSection({ onUpdateAvailable, updateSnapshot, onRetryUpdate 
   const [version, setVersion] = useState(FALLBACK_APP_VERSION);
   const [checkState, setCheckState] = useState<CheckState>('idle');
   const [message, setMessage] = useState<string | null>(null);
-  const [feedbackText, setFeedbackText] = useState('');
-  const [feedbackState, setFeedbackState] = useState<FeedbackState>({ kind: 'idle' });
 
   // ISS-72：displayMessage 响应真实 phase。优先级：
   //   1. 用户点击「检查更新」中 → checking
@@ -120,49 +106,6 @@ export function AboutSection({ onUpdateAvailable, updateSnapshot, onRetryUpdate 
       category === 'network' || category === 'timeout'
         ? t('updateCheckFailedNetwork')
         : t('updateCheckFailed'),
-    );
-  };
-
-  // ISS-230：主路径——完整反馈 Markdown 复制到剪贴板 + 打开预填 issue 页；
-  // 剪贴板不可用时如实提示（issue 正文已预填，不阻塞）。
-  const handleOpenFeedback = async () => {
-    if (!feedbackText.trim()) {
-      setFeedbackState({ kind: 'message', text: t('feedbackEmptyDescription'), isError: true });
-      return;
-    }
-    setFeedbackState({ kind: 'busy' });
-    try {
-      const { clipboardCopied } = await openFeedbackIssue(
-        feedbackText,
-        collectFeedbackEnvironment(settings.locale, version),
-      );
-      setFeedbackState({
-        kind: 'message',
-        text: clipboardCopied ? t('feedbackOpenedCopied') : t('feedbackOpenedNoClipboard'),
-      });
-    } catch {
-      setFeedbackState({ kind: 'message', text: t('feedbackOpenFailed'), isError: true });
-    }
-  };
-
-  // ISS-230：无网络 / 无 GitHub 账号兜底——反馈另存为本地 Markdown（受控文本导出）。
-  const handleSaveFeedback = async () => {
-    if (!feedbackText.trim()) {
-      setFeedbackState({ kind: 'message', text: t('feedbackEmptyDescription'), isError: true });
-      return;
-    }
-    setFeedbackState({ kind: 'busy' });
-    const markdown = buildFeedbackMarkdown(
-      feedbackText,
-      collectFeedbackEnvironment(settings.locale, version),
-    );
-    const result = await exportFeedbackMarkdown(markdown);
-    setFeedbackState(
-      result === 'saved'
-        ? { kind: 'message', text: t('feedbackSavedLocal') }
-        : result === 'cancelled'
-          ? { kind: 'idle' }
-          : { kind: 'message', text: t('feedbackSaveFailed'), isError: true },
     );
   };
 
@@ -241,48 +184,6 @@ export function AboutSection({ onUpdateAvailable, updateSnapshot, onRetryUpdate 
             github.com/cat-xierluo/Folia
           </a>
         </div>
-      </div>
-
-      {/* ISS-230（Issue #187 轻量版）：应用内反馈指引——不做后端收件箱。
-          主路径：描述 + 环境 → 复制完整 Markdown + 打开预填 GitHub issue 页；
-          兜底：另存本地 Markdown（无网络 / 无 GitHub 账号）。 */}
-      <div className="about-feedback-card">
-        <div className="settings-label">{t('feedbackTitle')}</div>
-        <div className="settings-desc">{t('feedbackDesc')}</div>
-        <textarea
-          className="settings-textarea"
-          value={feedbackText}
-          placeholder={t('feedbackPlaceholder')}
-          onChange={(event) => setFeedbackText(event.target.value)}
-          aria-label={t('feedbackTitle')}
-        />
-        {feedbackState.kind === 'message' && (
-          <div
-            className={`settings-desc settings-row-message${feedbackState.isError ? ' error' : ''}`}
-            role="status"
-          >
-            {feedbackState.text}
-          </div>
-        )}
-        <div className="settings-action-group">
-          <button
-            type="button"
-            className="primary-action-button"
-            onClick={() => void handleOpenFeedback()}
-            disabled={feedbackState.kind === 'busy'}
-          >
-            {t('feedbackOpenGithub')}
-          </button>
-          <button
-            type="button"
-            className="settings-action-button"
-            onClick={() => void handleSaveFeedback()}
-            disabled={feedbackState.kind === 'busy'}
-          >
-            {t('feedbackSaveLocal')}
-          </button>
-        </div>
-        <div className="settings-desc feedback-log-hint">{t('feedbackLogHint')}</div>
       </div>
 
       <div className="about-author-card">

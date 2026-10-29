@@ -139,6 +139,7 @@ word/table-handler.ts 输出 docx Table；Markdown 管道表格使用专用 pars
 | `wordPreviewStyle.ts` | 将 Word 导出 `PresetConfig` 映射为 A4 纸张预览 CSS 变量 |
 | `updateService.ts` | 封装 Tauri updater 检查、下载、安装和重启；浏览器预览下返回 unsupported |
 | `settingsService.ts` | 管理 localStorage 设置、旧配置迁移、Word / HTML 导出预设启用停用、自定义预设、语言设置、设置变更广播、上次打开文件路径 |
+| `feedbackService.ts` | 组装完整反馈 Markdown 与 GitHub 预填链接；诊断日志由独立反馈页在用户点击时采集快照，预填超限整段省略日志并返回状态，完整文件导出不截断；不直接提交或自动上传 |
 | `i18n.ts` | 轻量多语言字典，提供中文、英文、日文，第一阶段覆盖设置导航、关于页、顶部栏和 Word 预览核心文案 |
 | `licenseService.ts` | 额外槽位授权抽象层：本地内测码验证、本地授权缓存、未来在线激活、在线校验、撤销/停用均通过该层封装 |
 | `sanitizeService.ts` | DOMPurify HTML 清洗；当前用于 Word 纸张预览和 docx 预览 HTML 安全边界 |

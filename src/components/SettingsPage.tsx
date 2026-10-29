@@ -4,6 +4,7 @@ import { useSettings } from '../hooks/useSettings';
 import { translate } from '../services/i18n';
 import {
   preloadAboutSection,
+  preloadFeedbackSection,
   preloadAppearanceSection,
   preloadEditorSection,
   preloadExportSection,
@@ -12,6 +13,7 @@ import {
   preloadPreviewSection,
 } from './settings/preloadSections';
 import { GeneralSection } from './settings/GeneralSection';
+import type { FeedbackDraft } from './settings/FeedbackSection';
 import type { UpdateSnapshot } from './settings/AboutSection';
 
 type AvailableUpdate = Extract<UpdateCheckResult, { status: 'available' }>;
@@ -23,7 +25,8 @@ type SettingsSection =
   | 'export'
   | 'htmlExport'
   | 'license'
-  | 'about';
+  | 'about'
+  | 'feedback';
 
 // Each section becomes its own chunk so opening the modal only downloads
 // the default tab, and switching tabs pulls in the corresponding chunk on
@@ -43,6 +46,7 @@ const ExportSection = lazy(preloadExportSection);
 const HtmlExportSection = lazy(preloadHtmlExportSection);
 const LicenseSection = lazy(preloadLicenseSection);
 const AboutSection = lazy(preloadAboutSection);
+const FeedbackSection = lazy(preloadFeedbackSection);
 
 interface SettingsPageProps {
   onClose: () => void;
@@ -61,6 +65,7 @@ const NAV_ITEMS: { id: SettingsSection; labelKey: Parameters<typeof translate>[1
   { id: 'export', labelKey: 'navExport' },
   { id: 'htmlExport', labelKey: 'navHtmlExport' },
   { id: 'license', labelKey: 'navLicense' },
+  { id: 'feedback', labelKey: 'navFeedback' },
   { id: 'about', labelKey: 'navAbout' },
 ];
 
@@ -72,6 +77,7 @@ const SECTION_PRELOADERS: Partial<Record<SettingsSection, () => Promise<unknown>
   htmlExport: preloadHtmlExportSection,
   license: preloadLicenseSection,
   about: preloadAboutSection,
+  feedback: preloadFeedbackSection,
 };
 
 function SectionFallback() {
@@ -86,8 +92,13 @@ function SectionFallback() {
 }
 
 export function SettingsPage({ onClose, onUpdateAvailable, updateSnapshot, onRetryUpdate }: SettingsPageProps) {
-  const [selectedSection, setSelectedSection] = useState<SettingsSection>('general');
-  const activeSection = useDeferredValue(selectedSection);
+  const [feedbackDraft, setFeedbackDraft] = useState<FeedbackDraft>({ description: '' });
+  const [navigation, setNavigation] = useState<{ section: SettingsSection; feedbackVisited: boolean }>({
+    section: 'general', feedbackVisited: false,
+  });
+  const activeNavigation = useDeferredValue(navigation);
+  const selectedSection = navigation.section;
+  const activeSection = activeNavigation.section;
   const isSectionPending = selectedSection !== activeSection;
   const settings = useSettings();
   const t = (key: Parameters<typeof translate>[1]) => translate(settings.locale, key);
@@ -98,7 +109,9 @@ export function SettingsPage({ onClose, onUpdateAvailable, updateSnapshot, onRet
 
   const handleSectionSelect = (section: SettingsSection) => {
     preloadSection(section);
-    setSelectedSection(section);
+    setNavigation((current) => ({
+      section, feedbackVisited: current.feedbackVisited || section === 'feedback',
+    }));
   };
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
@@ -153,6 +166,12 @@ export function SettingsPage({ onClose, onUpdateAvailable, updateSnapshot, onRet
             {activeSection === 'export' && <ExportSection onOpenLicense={() => handleSectionSelect('license')} />}
             {activeSection === 'htmlExport' && <HtmlExportSection onOpenLicense={() => handleSectionSelect('license')} />}
             {activeSection === 'license' && <LicenseSection />}
+            {/* 保持已访问的反馈页挂载，切换栏目时异步操作的锁与结果提示仍然有效。 */}
+            {activeNavigation.feedbackVisited && (
+              <div hidden={activeSection !== 'feedback'}>
+                <FeedbackSection draft={feedbackDraft} onDraftChange={setFeedbackDraft} />
+              </div>
+            )}
             {activeSection === 'about' && (
               <AboutSection
                 onUpdateAvailable={onUpdateAvailable}
