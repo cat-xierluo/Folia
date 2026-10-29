@@ -29,3 +29,6 @@ export const preloadLicenseSection = () =>
 
 export const preloadAboutSection = () =>
   import('./AboutSection').then((module) => ({ default: module.AboutSection }));
+
+export const preloadFeedbackSection = () =>
+  import('./FeedbackSection').then((module) => ({ default: module.FeedbackSection }));

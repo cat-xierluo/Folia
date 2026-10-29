@@ -303,8 +303,10 @@ transition: background 0.15s;
 - 左侧导航固定 204px，右侧内容滚动；切换二级菜单时弹窗外框不随内容高度跳动
 - Select 使用自定义平面样式，禁止 macOS 原生渐变光泽；交互反馈仅使用 border / outline / accent
 - Word 导出预设不做复杂编辑器；用户新增样式通过空槽位导入 JSON 文件，JSON 示例页只展示可选中复制的示例文本；启用/停用、删除自定义预设、选择当前预设、槽位状态和单页纸预览保留。预览纸张可点击放大查看，放大层尺寸不超过设置弹窗尺度。槽位展示只表达本地容量状态。
-- 导航 8 个 Tab（通用 / 编辑器 / 预览 / 外观 / Word 导出 / HTML 导出 / 授权 / 关于），不设独立的"快捷键"Tab：快捷键应在用户实际操作工具时随时看到，hover Toolbar 按钮的 `title` 后缀已经承载（详见下方"快捷键展示规范"）。
-- 模态按 Tab 懒加载子 section：`SettingsPage` 模块本身只 import 导航框架和 preload helper；每个 section 通过 `React.lazy` 单独 chunk。`preloadSettingsPage` 在挂载时并行预热默认的 `GeneralSection` chunk；切换到其他 Tab 才下载对应 section。`ExportSection` / `WechatSection` 因为依赖 `word/config` / `wechatPreviewService` / `htmlExportPresets` 等较重模块，分包收益最明显。骨架屏行数与导航数一致（当前 8 行）。
+- 导航 9 个 Tab（通用 / 编辑器 / 预览 / 外观 / Word 导出 / HTML 导出 / 授权 / 问题与反馈 / 关于），不设独立的"快捷键"Tab：快捷键应在用户实际操作工具时随时看到，hover Toolbar 按钮的 `title` 后缀已经承载（详见下方"快捷键展示规范"）。
+- 模态按 Tab 懒加载子 section：`SettingsPage` 模块本身只 import 导航框架和 preload helper；每个 section 通过 `React.lazy` 单独 chunk。`preloadSettingsPage` 在挂载时并行预热默认的 `GeneralSection` chunk；切换到其他 Tab 才下载对应 section。`ExportSection` / `WechatSection` 因为依赖 `word/config` / `wechatPreviewService` / `htmlExportPresets` 等较重模块，分包收益最明显。反馈页按需懒加载，草稿由设置页持有，在设置栏目间切换时保留。
+
+- 问题与反馈独立于关于，提供可选诊断日志的一键填入、只读预览、重新生成和移除。仅采集用户点击时本窗口保留的事件快照；反馈 Markdown 保存全部已选择日志，GitHub 预填放不下时整段省略日志并明确提示附上完整文件，不能以剪贴板成功代替完整传递。
 
 ### 快捷键展示规范
 

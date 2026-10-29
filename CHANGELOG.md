@@ -4,6 +4,10 @@ All notable changes of this project will be documented in this file.
 
 ## [Unreleased]
 
+### Improved
+
+- **问题与反馈（#219）**：设置新增独立页面；诊断日志可一键填入、预览、重新生成和移除，切换设置栏目保留草稿。保存反馈时包含全部所选日志；GitHub 预填放不下时明确提示保存完整 Markdown 并作为附件提交。
+
 ## [0.8.6] - 2026-10-28
 
 ### Fixed
