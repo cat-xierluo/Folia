@@ -29,6 +29,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Verify release candidate
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          EXPECTED_COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-list -n1 "refs/tags/$RELEASE_TAG")" = "$EXPECTED_COMMIT"
+          test "$RELEASE_TAG" = "v$(node -p "require('./package.json').version")"
+
       - uses: pnpm/action-setup@v4
         with:
           version: 10
@@ -74,10 +83,13 @@ jobs:
       - name: Generate latest.json
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_VERSION: ${{ steps.version.outputs.VERSION }}
+          RELEASE_REPO: ${{ github.repository }}
         run: |
-          TAG="${{ github.ref_name }}"
-          VERSION="${{ steps.version.outputs.VERSION }}"
-          REPO="${{ github.repository }}"
+          TAG="$RELEASE_TAG"
+          VERSION="$RELEASE_VERSION"
+          REPO="$RELEASE_REPO"
 
           # Download all signature files from draft release
           mkdir -p sigs
@@ -92,12 +104,18 @@ jobs:
           FOLIA_REQUIRE_PLATFORMS="darwin-aarch64,darwin-x86_64,windows-x86_64" \
           npm run updater:manifest
 
-      - name: Upload latest.json and publish release
+      - name: Upload latest.json to draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          EXPECTED_COMMIT: ${{ github.sha }}
+          RELEASE_REPO: ${{ github.repository }}
         run: |
-          gh release upload "${{ github.ref_name }}" latest.json \
-            --repo "${{ github.repository }}" --clobber
-          gh release edit "${{ github.ref_name }}" \
-            --draft=false --repo "${{ github.repository }}"
+          set -euo pipefail
+          test "$(git rev-list -n1 "refs/tags/$RELEASE_TAG")" = "$EXPECTED_COMMIT"
+          test "$(gh release view "$RELEASE_TAG" \
+            --repo "$RELEASE_REPO" --json isDraft --jq .isDraft)" = "true"
+          gh release upload "$RELEASE_TAG" latest.json \
+            --repo "$RELEASE_REPO" --clobber
+          # Keep the release private until its assets and signatures are verified.
 
