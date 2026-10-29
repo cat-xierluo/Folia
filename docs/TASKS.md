@@ -30,18 +30,11 @@
 
 ## 待处理
 
-### 动态 SVG 的公众号预览与导出（PR #226，2026-10-30）
+### 主编辑器 mpath 外链边界（P3，PR #226 独审后续）
 
-- **来源与范围：** 用户要求检查文稿中的动态 SVG，确认后授权公众号 HTML 预览、复制与导出适配，以及提交、PR、独立 review 和合并。主会话是当前 `svg-motion-audit` 工作树的 writer；Word/DOCX 不增加专门适配，不发布新版本。
-- [x] 复现透明度动画被过滤导致图示空白，建立公共合成 fixture。
-- [x] 提交首轮候选并创建 Draft PR #226，首轮三项 CI 通过。
-- [x] 完成独立首审，结论 `REQUEST_CHANGES`。
-- [x] 修复动画值的外部资源引用、危险引用被剥除后的目标变化，以及 `keyPoints` 丢失。
-- [x] 补回归、接入 CI 的动画用例并验证本地候选。
-- [ ] 同一 reviewer 复审通过，核对最终 head 的 CI 后合并。
-- **首审记录：** head `8a19c2b723cc1a2af790a7cf968799f9e552e962`。P1：`set`/`animate` 可通过 `filter` 等目标的动画值发起外部 SVG 请求；P2：公众号白名单丢失 `keyPoints`，路径中点从 20 变成 50；P2：DOMPurify 先清除危险 `href`，剩余动画可能改为作用于父节点。三项需修复后重新验收。
-- **已有证据与边界：** 首轮 CI run `40924583626` 的前端、Chromium 和 Rust 三项通过，但当时 Chromium job 未纳入新增动画用例；本地新增用例通过。真实文稿在 Folia 的 Chromium 预览中保留 34 个 `animate`、7 个 `animateTransform` 并播放。此前两条 `illegal-mermaid` 用例在基线同样失败；macOS WKWebView、Windows WebView2 和公众号平台粘贴后的二次清洗仍未验，不把 Folia HTML 产物通过称为平台验收通过。
-- **返修验收：** 改用独立 DOMPurify 实例的元素钩子，在属性被剥除前拒绝危险节点；绘图目标白名单和资源值逐项检查覆盖 `set`/`animate`、单值/多值及命名空间引用。补齐 `keyPoints`，新增动画文件加入 CI 的显式清单。严格 lint、typecheck、build、全量 Vitest 85 文件 / 1010 项通过；两个服务的 73 项单测通过。生产 `vite preview` 上动画 3 项与 Mermaid 保真 3 项共 6/6 通过，实际读取复制完成后的原始 HTML 剪贴板和下载文件，路径中点均为 20，危险动画无外部请求。首次生产探针的剪贴板读取早于异步写入终态，保留其 `InvalidStateError` 失败记录；用例改为等待复制成功并读取原始 HTML 后通过，未放宽动画断言。
+- **已确认：** 主 IR / Word 预览沿用的 DOMPurify SVG profile 已允许 `mpath`；公众号 HTML 白名单不保留它。此行为早于 PR #226，当前未扩大支持。
+- **后续范围：** 单独评估主编辑器 `mpath` 的外部路径引用，按最小范围收紧，并保留本地路径动画；不把本项纳入已授权的 SMIL 公众号适配返修。
+- **验收：** 比较本地与外部引用，实际观察主 IR 的资源请求及源码往返，复核与公众号产物的边界。当前未实施；不作为 PR #226 的通过证据。
 
 ### v0.8.8 发布恢复候选（2026-10-29）
 
@@ -690,6 +683,22 @@
 - **验证:** 见 CHANGELOG [Unreleased]；Rust `build_set_default_markdown_jxa` 纯函数断言 + 前端 `defaultAppService.test`（6 case）+ `GeneralSection.test`（5 case）。**NOT_VERIFIED**：osascript 经 `LSSetDefaultRoleHandlerForContentType` 真正改变系统默认应用须真机验证。详见 DEC-137。
 
 ## 进度日志
+
+### 动态 SVG 的公众号预览与导出（PR #226，2026-10-30）
+
+- **来源与范围：** 用户要求检查文稿中的动态 SVG，确认后授权公众号 HTML 预览、复制与导出适配，以及提交、PR、独立 review 和合并。主会话是当前 `svg-motion-audit` 工作树的 writer；Word/DOCX 不增加专门适配，不发布新版本。
+- [x] 复现透明度动画被过滤导致图示空白，建立公共合成 fixture。
+- [x] 提交首轮候选并创建 Draft PR #226，首轮三项 CI 通过。
+- [x] 完成独立首审，结论 `REQUEST_CHANGES`。
+- [x] 修复动画值的外部资源引用、危险引用被剥除后的目标变化，以及 `keyPoints` 丢失。
+- [x] 补回归、接入 CI 的动画用例并验证本地候选。
+- [x] 同一 reviewer 对返修候选复审通过，关闭首轮三项 finding。
+- **首审记录：** head `8a19c2b723cc1a2af790a7cf968799f9e552e962`。P1：`set`/`animate` 可通过 `filter` 等目标的动画值发起外部 SVG 请求；P2：公众号白名单丢失 `keyPoints`，路径中点从 20 变成 50；P2：DOMPurify 先清除危险 `href`，剩余动画可能改为作用于父节点。三项需修复后重新验收。
+- **已有证据与边界：** 首轮 CI run `40924583626` 的前端、Chromium 和 Rust 三项通过，但当时 Chromium job 未纳入新增动画用例；本地新增用例通过。真实文稿在 Folia 的 Chromium 预览中保留 34 个 `animate`、7 个 `animateTransform` 并播放。此前两条 `illegal-mermaid` 用例在基线同样失败；macOS WKWebView、Windows WebView2 和公众号平台粘贴后的二次清洗仍未验，不把 Folia HTML 产物通过称为平台验收通过。
+- **返修验收：** 改用独立 DOMPurify 实例的元素钩子，在属性被剥除前拒绝危险节点；绘图目标白名单和资源值逐项检查覆盖 `set`/`animate`、单值/多值及命名空间引用。补齐 `keyPoints`，新增动画文件加入 CI 的显式清单。严格 lint、typecheck、build、全量 Vitest 85 文件 / 1010 项通过；两个服务的 73 项单测通过。生产 `vite preview` 上动画 3 项与 Mermaid 保真 3 项共 6/6 通过，实际读取复制完成后的原始 HTML 剪贴板和下载文件，路径中点均为 20，危险动画无外部请求。首次生产探针的剪贴板读取早于异步写入终态，保留其 `InvalidStateError` 失败记录；用例改为等待复制成功并读取原始 HTML 后通过，未放宽动画断言。
+- **独立复审：** 原生 `code-reviewer`（Ohm）对代码候选 `875873bedc67a05a31d56d2ed06bbc949a398a64` 给出 `APPROVE`；独立重跑三个首审探针及生产六项 E2E，确认外部请求为 0、路径中点为 20、危险引用不再隐式转嫁父节点；并核全量 1010 项测试通过。未以作者自审或 GitHub 自 approve 代替独审。
+- **集成交付：** 用户已明确授权合并；[PR #226](https://github.com/cat-xierluo/Folia/pull/226) 是唯一集成入口，最终 head 的 checks、`MERGED`、`mergedAt` 和合并 OID 以该 PR 服务端回执为权威，不在多个文档复制维护。复审后的收口提交仅补任务状态和 P3 登记，代码候选保持不变；本机主目录、已安装应用与版本发布分别结算。
+
 
 - **2026-08-16** ISS-194 PR #131 独立 review 回合（首轮 REQUEST_CHANGES → 修复后复审 APPROVE）：**M-1 已修**——CRLF 文档 `split('\n')` 残留 `\r` 让 `FENCE_CLOSE_PATTERN` 永不命中，首个围栏后整篇被当代码块、图片全部不归一化（node 实测复现）；修复为剥离 `\r` 参与判定、输出原样回接（换行风格逐字节保留），+4 项 CRLF 守卫测试，单文件 25/25、全量 749/749、lint/build 0 error。**M-2 复现成立但降级 MINOR 不改**——作者首轮复跑被 shell 转义吃掉反斜杠、误判为「不复现」（已勘正）；字符码构造（零转义歧义）复测确认：目标含未转义空格且 title 含 `\"` 后跟 `)` 的构造，归一化时 title 被并入目标编码。但该输入本身即非法 CommonMark（目标含未转义空格，归一化前后都不渲染为图片，无渲染回归），三个合法 title 转义变体实测全部正确；reviewer 复审主动降级 MINOR。**m-1（HTML 属性内字面文本被归一化）、M-2、`\r\r\n` 双 CR 行尾（无现实工具产出）登记进 DEC-140 已知边界**；m-2~m-5、n-1~n-7 为次要 / 已登记边界 / 验证性确认，不改。复审核实：M-1 逐字节实测 + 6 项回归探针全过。issue #130 / PR #131。
 - **2026-08-16** 完成 ISS-194（L1 直接修复，用户会话报告）：修复转录工具生成的「目标含空格」Markdown 图片不渲染。根因：CommonMark 禁止非 `<>` 包裹的行内图片目标含空格，Lute 严格遵循、整段按普通文本输出（用户文档 94 张幻灯片归一化前 `<img>` 渲染数为 0），`localImageResolver` 无 `<img>` 可处理。修法：新增 `markdownImagePathNormalizer`（未转义空格/Tab → %20/%09，围栏与行内代码逐字节保留、幂等）接入 `fileService.openPath` markdown 分支（三条读盘路径唯一收口），`content`/`lastSavedContent` 同步归一化不误标 dirty。验证：新增 24 项单测（21 归一化 = 17 主用例 + 4 项回归守卫 + 2 fileService + 1 解析链路守卫）；`npm test` 745/745、typecheck / lint 0 error、`npm run build` 0 error；用户原文件 node + vendored Lute 端到端 94/94 渲染为 `<img>`。真机 WKWebView 显示移交用户确认。详见 CHANGELOG [Unreleased] / DEC-140。
