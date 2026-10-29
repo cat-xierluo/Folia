@@ -57,6 +57,20 @@
       "expectedDiagnostics": []
     },
     {
+      "id": "animated-svg",
+      "file": "animated-svg.md",
+      "scenario": "render",
+      "kind": "svg",
+      "blocks": ["svg:smil-animate+animateTransform+animateMotion"],
+      "asserts": [
+        "main IR: keeps animate / animateTransform nodes and the SMIL timeline advances",
+        "HTML 预览 article: keeps animate / animateTransform; fade group reaches opacity 1 within its cycle",
+        "clipboard and downloaded HTML preserve keyPoints and the path midpoint",
+        "unsafe animation targets, external values and unsafe hrefs rejected as whole nodes without external SVG requests"
+      ],
+      "expectedDiagnostics": []
+    },
+    {
       "id": "dangerous-svg-attrs",
       "file": "dangerous-svg-attrs.md",
       "scenario": "sanitize",

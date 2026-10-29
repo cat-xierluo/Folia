@@ -170,6 +170,68 @@ describe('wechatPreviewService', () => {
     expect(svgs[0].querySelectorAll('rect')).toHaveLength(1);
   });
 
+  it('keeps SMIL animation elements for dynamic SVG while stripping unsafe animation targets', () => {
+    const result = createHtmlExportResult('', `
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 60" width="120" height="60">
+        <g opacity="0"><text x="10" y="20">fade</text><animate attributeName="opacity" begin="0s" dur="2s" repeatCount="indefinite" calcMode="discrete" values="0;1;0" keyTimes="0;0.5;1"/></g>
+        <rect x="0" y="40" width="12" height="8" fill="#176D61"><animateTransform attributeName="transform" type="translate" values="0 0;80 0" dur="3s" repeatCount="indefinite"/></rect>
+        <rect x="0" y="50" width="12" height="8"><animate attributeName="onclick" to="alert(1)" begin="0s" dur="1s" fill="freeze"/></rect>
+        <animate attributeName="opacity" values="0;1" dur="1s" href="https://evil.example/a.svg"/>
+      </svg>
+    `);
+
+    for (const html of [result.previewHtml, result.clipboardHtml]) {
+      const lower = html.toLowerCase();
+      expect(lower).toContain('<animate');
+      expect(lower).toContain('attributename="opacity"');
+      expect(lower).toContain('<animatetransform');
+      expect(lower).toContain('keytimes="0;0.5;1"');
+      expect(html).not.toContain('alert(');
+      expect(html).not.toContain('evil.example');
+    }
+
+    const svg = queryRequired<Element>(getDocumentBody(result.previewHtml), 'svg');
+    expect(svg.querySelectorAll('animate')).toHaveLength(1);
+    expect(svg.querySelectorAll('animateTransform')).toHaveLength(1);
+  });
+
+  it('preserves keyPoints through preview, clipboard and standalone HTML export', () => {
+    const result = createHtmlExportResult('', `
+      <svg viewBox="0 0 120 60">
+        <circle r="2"><animateMotion path="M0 0 L100 0" keyTimes="0;0.5;1" keyPoints="0;0.2;1" dur="2s" calcMode="linear"/></circle>
+      </svg>
+    `);
+    for (const html of [result.previewHtml, result.clipboardHtml, createHtmlExportDocument(result.previewHtml)]) {
+      const motion = queryRequired<Element>(getDocumentBody(html), 'animateMotion');
+      expect(motion.getAttribute('keyPoints')).toBe('0;0.2;1');
+      expect(motion.getAttribute('keyTimes')).toBe('0;0.5;1');
+    }
+  });
+
+  it('rejects animation resource values and dangerous references before attributes disappear', () => {
+    const result = createHtmlExportResult('', `
+      <svg xmlns:xlink="http://www.w3.org/1999/xlink">
+        <rect id="target" width="20" height="20">
+          <set attributeName="filter" to="url(https://example.invalid/filter.svg#x)" begin="0s"/>
+          <animate attributeName="fill" values="#ffffff;url(https://example.invalid/paint.svg#x)" dur="2s"/>
+          <set attributeName="opacity" to="0" href="javascript:alert(1)"/>
+          <set attributeName="opacity" to="0" xlink:href="data:image/svg+xml,external"/>
+          <animate attributeName="href" values="https://example.invalid/;javascript:alert(1)"/>
+        </rect>
+        <animate attributeName="fill" values="#ffffff;#176D61" href="#target" dur="2s"/>
+        <set attributeName="filter" to="url(#local)" href="#target" begin="0s"/>
+      </svg>
+    `);
+    for (const html of [result.previewHtml, result.clipboardHtml]) {
+      const root = getDocumentBody(html);
+      expect(root.querySelectorAll('#target > animate, #target > set')).toHaveLength(0);
+      expect(root.querySelectorAll('animate, set')).toHaveLength(2);
+      expect(html).not.toContain('example.invalid');
+      expect(html).not.toContain('javascript:');
+      expect(html).not.toContain('data:image');
+    }
+  });
+
   it('removes Vditor preview chrome before wrapping export HTML', () => {
     const result = createHtmlExportResult('', `
       <pre><code class="language-ts hljs">const ok = true</code></pre>

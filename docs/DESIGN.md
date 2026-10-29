@@ -873,6 +873,7 @@ Folia 是 Tauri 桌面应用，响应窗口大小变化。
 
 | 版本 | 日期 | 变更 |
 |------|------|------|
+| 2.3.0 | 2026-10-30 | 新增 §13.6 动态 SVG（SMIL）契约：主 IR 与公众号导出链路保留并播放动画节点，危险动画目标整节点剥除；Word / DOCX 侧沿用既有静态边界 |
 | 2.2.0 | 2026-07-16 | 新增 §13 富媒体资源状态：mermaid / SVG / 图片在加载中、缺失、损坏、被阻止、超时场景下的占位与降级视觉约定（DEC-119 / DEC-120 / DEC-121） |
 | 2.1.0 | 2026-05-28 | 新增官方网站设计补充：定义 Astro 官网的品牌延展、首屏要求和移动端约束 |
 | 2.0.0 | 2026-05-16 | **全面重写**：从 Typora 风格简表扩展为 12 节完整设计系统；色彩从 hex 迁移到 oklch()；引入衬线 display 字体（Iowan Old Style）；布局从固定分屏改为可拖拽 resizer + 三种视图模式；新增 Command Palette 和 Settings 组件；新增信息密度、深度层级、页面状态、禁止事项、设计评审清单等段 |
@@ -929,3 +930,12 @@ mermaid / SVG / 图片三类富媒体在主 IR、HTML 预览、Word 预览、DOC
 - HTML 预览 / Word 预览 / DOCX 导出三条链路在面对同一 fixture 时必须呈现相同的资源状态：要么都 ready，要么都 timeout，绝不允许主 IR 含 mermaid SVG 而 HTML 预览无 SVG（这正是 2026-07-12 生产探针的根因）
 - RenderCoordinator 通过 `mutation.ts` 中的 diagnostics 与 `aborted` / `generation-superseded` 协调三 surface 的 generation 同步
 - `data-render="1"` 不再视为完成信号；completion 必须以 `.language-mermaid` 子树含 `<svg>` 为准（RenderCoordinator.detectPendingRenderers）
+
+### 13.6 动态 SVG（SMIL）契约
+
+内联 SVG 可以用 SMIL 动画元素表达分步示意（如教学稿里的「规则页逐层展开」「命令在本地与远程之间流动」）。这类图的可见内容常由初始 `opacity="0"` 的图层承担，若动画元素被剥除，图会永远停在「只剩背景与标题」的空白首帧。
+
+- 主 IR 与 HTML 预览、复制及导出保留安全的 `animate` / `animateTransform` / `animateMotion` / `set`；透明度、绘图位置、路径、变换、颜色和受限本地绘图引用按 SMIL 时间轴播放。目标属性以 `sanitizeService` 的白名单为准，不承诺任意属性动画。
+- `begin` / `dur` / `values` / `keyTimes` / `calcMode` / `keySplines` / `keyPoints` / `repeatCount` / `from` / `to` / `by` 随动画保留；离散切换和路径时序在各 HTML 产物中一致。
+- 事件、样式、导航、未知目标或外部资源值在属性清洗前拒绝整个动画。`href` / `xlink:href` 只允许本地 `#id`；颜色与绘图引用的每个动画值也须受检查，不能只检查静态属性。
+- Word 纸张预览沿用共享 HTML 渲染，不增加 DOCX 动画或定格处理。公众号平台粘贴后的二次清洗与原生 WebView 播放需分别验证，Folia HTML 产物通过不代表这些平台已通过。

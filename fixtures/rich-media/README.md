@@ -28,6 +28,7 @@ fixtures/rich-media/
 | `illegal-mermaid.md` | 非法 Mermaid 语法 | 显示错误摘要，不静默空白 |
 | `multi-line-svg.md` | 跨多行的内联 SVG | 块级恢复与字体兜底 |
 | `complex-svg-features.md` | `defs / marker / clipPath / use / style / foreignObject` | canonical 子集 + 复杂 feature 降级 |
+| `animated-svg.md` | SMIL 动态 SVG（`animate` / `animateTransform` / `animateMotion`） | 时间轴推进，复制与下载保留路径中点；危险动画整节点拒绝且不请求外部资源 |
 | `dangerous-svg-attrs.md` | `onload`、`<script>`、`javascript:` URL | 安全终态清洗 |
 | `relative-png-webp.md` | 相对 PNG / WebP 图片 | relative 路径解析、加载 |
 | `unicode-paths.md` | 中文 / 空格 / emoji 文件名图片 | Unicode 路径解析 |

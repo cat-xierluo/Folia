@@ -119,4 +119,145 @@ describe('sanitizeForVditor', () => {
     expect(sanitized).not.toContain('&amp;lt;');
     expect(sanitized).toContain('&lt;https://example.com&gt;');
   });
+
+  it('保留 SMIL animate / animateTransform 节点及其时间属性（动态 SVG）', () => {
+    const rendered = [
+      '<svg viewBox="0 0 100 50">',
+      '<g opacity="0"><rect width="10" height="10"/><animate attributeName="opacity" begin="0s" dur="2s" repeatCount="indefinite" calcMode="discrete" values="0;1;0" keyTimes="0;0.5;1" fill="freeze"/></g>',
+      '<g opacity="1"><animateTransform attributeName="transform" type="translate" values="0 0;20 0" dur="3s" repeatCount="indefinite"/></g>',
+      '</svg>',
+    ].join('');
+
+    const sanitized = sanitizeForVditor(rendered);
+
+    expect(sanitized).toContain('<animate attributeName="opacity"');
+    expect(sanitized).toContain('keyTimes="0;0.5;1"');
+    expect(sanitized).toContain('calcMode="discrete"');
+    expect(sanitized).toContain('<animateTransform');
+    expect(sanitized).toContain('type="translate"');
+  });
+
+  it('保留安全的 set / animateMotion 节点', () => {
+    const rendered = [
+      '<svg viewBox="0 0 100 50">',
+      '<rect width="10" height="10"><set attributeName="opacity" to="1" begin="1s" dur="2s" fill="freeze"/></rect>',
+      '<circle r="4"><animateMotion path="M0 0 L40 40" dur="3s" repeatCount="indefinite"/></circle>',
+      '</svg>',
+    ].join('');
+
+    const sanitized = sanitizeForVditor(rendered);
+
+    expect(sanitized).toContain('<set attributeName="opacity"');
+    expect(sanitized).toContain('<animateMotion');
+    expect(sanitized).toContain('path="M0 0 L40 40"');
+  });
+
+  it('剥离以事件属性为目标的 SMIL 动画（回写即事件注入）', () => {
+    const rendered = [
+      '<svg viewBox="0 0 100 50">',
+      '<rect width="10" height="10"/>',
+      '<animate attributeName="onclick" to="alert(1)" begin="0s" dur="1s" fill="freeze"/>',
+      '<set attributeName="onmouseover" to="alert(2)"/>',
+      '</svg>',
+    ].join('');
+
+    const sanitized = sanitizeForVditor(rendered);
+
+    expect(sanitized).not.toContain('onclick');
+    expect(sanitized).not.toContain('onmouseover');
+    expect(sanitized).not.toContain('alert');
+    expect(sanitized).toContain('<rect');
+  });
+
+  it('拒绝整个 href 目标或外链引用动画，保留本地引用', () => {
+    const rendered = [
+      '<svg viewBox="0 0 100 50">',
+      '<a><animate attributeName="href" to="javascript:alert(1)"/></a>',
+      '<animate attributeName="opacity" values="0;1" dur="1s" href="https://evil.example/other.svg"/>',
+      '<animate attributeName="opacity" values="0;1" dur="1s" href="#local"/>',
+      '</svg>',
+    ].join('');
+
+    const sanitized = sanitizeForVditor(rendered);
+
+    expect(sanitized).not.toContain('javascript:');
+    expect(sanitized).not.toContain('attributeName="href"');
+    expect(sanitized).not.toContain('evil.example');
+
+    const template = document.createElement('template');
+    template.innerHTML = sanitized;
+    const animations = template.content.querySelectorAll('animate');
+    expect(animations).toHaveLength(1);
+    expect(animations[0].getAttribute('href')).toBe('#local');
+  });
+
+  it('仅允许绘图目标，拒绝缺失目标或命名空间目标', () => {
+    const template = document.createElement('template');
+    template.innerHTML = sanitizeForVditor([
+      '<svg>',
+      '<animate id="a1" attributeName="opacity" values="0;1"/>',
+      '<animate id="a2" attributeName="src" values="a.png"/>',
+      '<animate id="a3" attributeName="style" values="color:red"/>',
+      '<animate id="a4" attributeName="bad name" values="0;1"/>',
+      '<animateTransform id="a5" attributeName="transform" type="translate"/>',
+      '<set id="a6" attributeName="id" to="changed"/>',
+      '<set id="a7" attributeName="class" to="app-toolbar"/>',
+      '<set id="a8" attributeName="xml:base" to="https://example.invalid/"/>',
+      '<set id="a9" attributeName="unknown" to="value"/>',
+      '<set id="a10" to="0"/>',
+      '</svg>',
+    ].join(''));
+
+    const kept = Array.from(template.content.querySelectorAll('[id]')).map((el) => el.id);
+    expect(kept).toEqual(['a1', 'a5']);
+  });
+
+  it.each([
+    ['set', 'filter', 'to', 'url(https://example.invalid/filter.svg#x)'],
+    ['animate', 'filter', 'from', 'url(https://example.invalid/filter.svg#x)'],
+    ['animate', 'fill', 'by', 'url(https://example.invalid/paint.svg#x)'],
+    ['animate', 'stroke', 'values', '#176D61;url(https://example.invalid/paint.svg#x);#ffffff'],
+    ['set', 'clip-path', 'to', 'url(//example.invalid/clip.svg#x)'],
+    ['set', 'mask', 'to', 'url(data:image/svg+xml,external)'],
+    ['animate', 'marker-end', 'values', 'url(#local);url(https://example.invalid/marker.svg#x)'],
+    ['set', 'filter', 'to', 'u\\72l(https://example.invalid/filter.svg#x)'],
+    ['set', 'fill', 'to', 'var(--external-paint)'],
+  ])('拒绝 %s 通过 %s 的 %s 写入外部或间接资源', (tag, target, attribute, value) => {
+    const template = document.createElement('template');
+    template.innerHTML = sanitizeForVditor(
+      `<svg><rect><${tag} attributeName="${target}" ${attribute}="${value}" dur="2s"/></rect></svg>`,
+    );
+    expect(template.content.querySelector(tag)).toBeNull();
+    expect(template.content.querySelector('rect')).not.toBeNull();
+  });
+
+  it('保留本地绘图引用、颜色插值与 keyPoints', () => {
+    const template = document.createElement('template');
+    template.innerHTML = sanitizeForVditor(`
+      <svg xmlns:xlink="http://www.w3.org/1999/xlink">
+        <rect id="target" width="20" height="20"/>
+        <animate attributeName="fill" values="#176D61;rgb(100, 50, 25);url(#local)" href="#target"/>
+        <set attributeName="filter" to="url(#local)" xlink:href="#target"/>
+        <circle><animateMotion path="M0 0 L100 0" keyTimes="0;0.5;1" keyPoints="0;0.2;1" dur="2s" calcMode="linear"/></circle>
+      </svg>
+    `);
+    expect(template.content.querySelectorAll('animate, set, animateMotion')).toHaveLength(3);
+    expect(template.content.querySelector('animateMotion')?.getAttribute('keyPoints')).toBe('0;0.2;1');
+  });
+
+  it.each([
+    'href="javascript:alert(1)"',
+    'href="&#106;avascript:alert(1)"',
+    'href="data:image/svg+xml,external"',
+    'xlink:href="javascript:alert(1)"',
+    'href=""',
+    'href="#"',
+  ])('在 DOMPurify 剥除 %s 之前拒绝整个动画，避免隐式父目标', (reference) => {
+    const template = document.createElement('template');
+    template.innerHTML = sanitizeForVditor(
+      `<svg xmlns:xlink="http://www.w3.org/1999/xlink"><g id="parent"><set attributeName="opacity" to="0" ${reference}/></g></svg>`,
+    );
+    expect(template.content.querySelector('set')).toBeNull();
+    expect(template.content.querySelector('#parent')).not.toBeNull();
+  });
 });

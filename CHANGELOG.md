@@ -2,6 +2,12 @@
 
 All notable changes of this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- **动态 SVG 预览与 HTML 导出**：编辑器及公众号 HTML 链路保留透明度、位移和路径动画，修复图示只显示背景和标题的问题；复制与 HTML 导出保留 `calcMode`、`keyPoints` 等时序属性。仅允许绘图目标和本地绘图引用，拒绝危险动画目标或外部资源值。Word/DOCX 不增加专门适配；公众号平台粘贴后的处理仍需平台实测。
+
 ## [0.8.8] - 2026-10-29
 
 ### Fixed

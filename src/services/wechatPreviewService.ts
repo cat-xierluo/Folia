@@ -1,4 +1,3 @@
-import DOMPurify from 'dompurify';
 import {
   DEFAULT_HTML_EXPORT_PRESET_ID,
   HTML_EXPORT_ARTICLE_CLASS,
@@ -14,6 +13,7 @@ import {
   removeVditorPreviewChrome,
   stripVditorPreviewChrome,
 } from './vditorPreviewChromeService';
+import { sanitizeWithSmil } from './sanitizeService';
 
 export {
   HTML_EXPORT_ARTICLE_CLASS,
@@ -189,6 +189,7 @@ const ALLOWED_TAGS = [
   'filter', 'fedropshadow', 'fegaussianblur', 'feoffset', 'feblend',
   'fecolormatrix', 'feflood', 'fecomposite',
   'lineargradient', 'radialgradient', 'stop',
+  'animate', 'animatetransform', 'animatemotion', 'set',
 ];
 
 const ALLOWED_ATTR = [
@@ -208,6 +209,13 @@ const ALLOWED_ATTR = [
   'markerWidth', 'markerwidth', 'markerHeight', 'markerheight',
   'orient', 'offset', 'opacity', 'transform',
   'filter', 'stop-color', 'stop-opacity',
+  // SMIL 动画属性（camelCase 供可读性，小写形式为 DOMPurify lcName 实际匹配项）。
+  'attributeName', 'attributename', 'attributeType', 'attributetype',
+  'begin', 'dur', 'end', 'from', 'to', 'by', 'values',
+  'keyTimes', 'keytimes', 'keySplines', 'keysplines', 'keyPoints', 'keypoints',
+  'calcMode', 'calcmode',
+  'repeatCount', 'repeatcount', 'repeatDur', 'repeatdur',
+  'restart', 'additive', 'accumulate', 'path', 'rotate', 'type',
   // v0.7：表格列隐藏规则（ROADMAP）。布尔属性，存在即隐藏该表格最后一列。
   // 精确放行单一属性，不开 ALLOW_DATA_ATTR: true 的口子。
   'data-hide-last-column',
@@ -664,7 +672,7 @@ function sanitizeUrlAttributes(root: ParentNode): void {
 }
 
 function sanitizeHtmlExportArticleFragment(articleHtml: string): string {
-  const sanitized = DOMPurify.sanitize(stripVditorPreviewChrome(articleHtml), {
+  const sanitized = sanitizeWithSmil(stripVditorPreviewChrome(articleHtml), {
     ALLOWED_TAGS,
     ALLOWED_ATTR,
     ALLOW_DATA_ATTR: false,
