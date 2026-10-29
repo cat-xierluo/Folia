@@ -170,6 +170,31 @@ describe('wechatPreviewService', () => {
     expect(svgs[0].querySelectorAll('rect')).toHaveLength(1);
   });
 
+  it('keeps SMIL animation elements for dynamic SVG while stripping unsafe animation targets', () => {
+    const result = createHtmlExportResult('', `
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 60" width="120" height="60">
+        <g opacity="0"><text x="10" y="20">fade</text><animate attributeName="opacity" begin="0s" dur="2s" repeatCount="indefinite" calcMode="discrete" values="0;1;0" keyTimes="0;0.5;1"/></g>
+        <rect x="0" y="40" width="12" height="8" fill="#176D61"><animateTransform attributeName="transform" type="translate" values="0 0;80 0" dur="3s" repeatCount="indefinite"/></rect>
+        <rect x="0" y="50" width="12" height="8"><animate attributeName="onclick" to="alert(1)" begin="0s" dur="1s" fill="freeze"/></rect>
+        <animate attributeName="opacity" values="0;1" dur="1s" href="https://evil.example/a.svg"/>
+      </svg>
+    `);
+
+    for (const html of [result.previewHtml, result.clipboardHtml]) {
+      const lower = html.toLowerCase();
+      expect(lower).toContain('<animate');
+      expect(lower).toContain('attributename="opacity"');
+      expect(lower).toContain('<animatetransform');
+      expect(lower).toContain('keytimes="0;0.5;1"');
+      expect(html).not.toContain('alert(');
+      expect(html).not.toContain('evil.example');
+    }
+
+    const svg = queryRequired<Element>(getDocumentBody(result.previewHtml), 'svg');
+    expect(svg.querySelectorAll('animate')).toHaveLength(1);
+    expect(svg.querySelectorAll('animateTransform')).toHaveLength(1);
+  });
+
   it('removes Vditor preview chrome before wrapping export HTML', () => {
     const result = createHtmlExportResult('', `
       <pre><code class="language-ts hljs">const ok = true</code></pre>

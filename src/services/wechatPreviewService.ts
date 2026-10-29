@@ -14,6 +14,7 @@ import {
   removeVditorPreviewChrome,
   stripVditorPreviewChrome,
 } from './vditorPreviewChromeService';
+import { hardenSmilAnimationElements } from './sanitizeService';
 
 export {
   HTML_EXPORT_ARTICLE_CLASS,
@@ -189,6 +190,9 @@ const ALLOWED_TAGS = [
   'filter', 'fedropshadow', 'fegaussianblur', 'feoffset', 'feblend',
   'fecolormatrix', 'feflood', 'fecomposite',
   'lineargradient', 'radialgradient', 'stop',
+  // 动态 SVG（SMIL）：公众号导出保留内联动画；目标属性安全由
+  // hardenSmilAnimationElements 与下方 ALLOWED_ATTR 共同约束。
+  'animate', 'animatetransform', 'animatemotion', 'set',
 ];
 
 const ALLOWED_ATTR = [
@@ -208,6 +212,13 @@ const ALLOWED_ATTR = [
   'markerWidth', 'markerwidth', 'markerHeight', 'markerheight',
   'orient', 'offset', 'opacity', 'transform',
   'filter', 'stop-color', 'stop-opacity',
+  // SMIL 动画属性（camelCase 供可读性，小写形式为 DOMPurify lcName 实际匹配项）。
+  'attributeName', 'attributename', 'attributeType', 'attributetype',
+  'begin', 'dur', 'end', 'from', 'to', 'by', 'values',
+  'keyTimes', 'keytimes', 'keySplines', 'keysplines',
+  'calcMode', 'calcmode',
+  'repeatCount', 'repeatcount', 'repeatDur', 'repeatdur',
+  'restart', 'additive', 'accumulate', 'path', 'rotate', 'type',
   // v0.7：表格列隐藏规则（ROADMAP）。布尔属性，存在即隐藏该表格最后一列。
   // 精确放行单一属性，不开 ALLOW_DATA_ATTR: true 的口子。
   'data-hide-last-column',
@@ -672,6 +683,7 @@ function sanitizeHtmlExportArticleFragment(articleHtml: string): string {
   const template = document.createElement('template');
   template.innerHTML = sanitized;
 
+  hardenSmilAnimationElements(template.content);
   removeVditorPreviewChrome(template.content);
   template.content.querySelectorAll('[id]').forEach((element) => {
     if (!isSvgElement(element)) {

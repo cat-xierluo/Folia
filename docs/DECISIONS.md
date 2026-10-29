@@ -2,6 +2,16 @@
 
 ## 第一部分：决策记录
 
+### 2026-10-30（Codex）：动态 SVG（SMIL）在公众号导出链路的适配
+
+- **问题证据：** 用户稿件《法律人的 Git 入门》含 4 张内联 SVG、34 个 `<animate>`、7 个 `<animateTransform>`、27 个初始 `opacity="0"` 图层。Folia 0.8.6 实测：DOMPurify 的 svg profile 把 `animate` / `set` 列入 `svgDisallowed` 黑名单（`animateTransform` 侥幸在白名单内），公众号导出自身的标签白名单连 `animateTransform` 也没有。结果是主 IR 只剩每图 1–2 个 `animateTransform`、HTML 预览一个不剩，所有初始透明图层永远不可见，四张示意图只剩背景与标题（截图 `/tmp/folia-svg-motion-article-audit.png`）。
+- **用户明确取舍：** Word 侧「无所谓」，不为动画做适配；公众号导出必须适配。DOCX 导出沿用既有边界（内联 SVG 不进 docx），不做「导出时定格到最终帧」的额外降级。
+- **方案：** `sanitizeForVditor` 以 `ADD_TAGS` 放行 `animate` / `animateTransform` / `animateMotion` / `set`，并以 `ADD_ATTR` 补 `calcMode` / `keySplines` / `from` / `to` / `by`——svg profile 属性白名单缺这些时序属性，缺失会把 `discrete` 静默降级为线性插值。公众号导出白名单（`wechatPreviewService`）追加同名标签与时序属性；DOMPurify 按小写 `lcName` 匹配，故 camelCase 与小写双写。
+- **安全取舍：** DOMPurify 自带「`attributeName` 含 href 即剥除」，但 `attributeName="onclick"` 这类事件属性目标没有内建防护——SMIL 可在渲染后回写属性，回写事件属性等于绕过 sanitize。新增 `hardenSmilAnimationElements`：`attributeName` 指向 `on*` / `style` / `href` / `src` / `data` 等属性或含非法字符时**整个动画节点移除**（不是仅剥属性：无目标的动画节点没有保留价值）；动画元素的 `href` / `xlink:href` 只允许本地 `#` 引用。此为黑名单式取舍：新增未知危险属性名不在覆盖内，故选择对事件属性与导航/资源属性直接整节点移除，优先收敛暴露面。
+- **不改的：** 不放开 `<mpath>`、不放开外部文档引用、不改 Markdown 语义与源码往返、不触碰 Word 预览与 DOCX 导出链路。
+- **验证：** 单测 `sanitizeService`（animate / animateTransform / set / animateMotion 保留、事件属性目标剥离、href 目标剥除、外链引用移除、本地 `#` 保留、harden 单测）与 `wechatPreviewService`（previewHtml + clipboardHtml 保留动画节点且危险目标被剥）；新增 fixture `fixtures/rich-media/animated-svg.md` 与 manifest / README 登记；新增 e2e `e2e/wechat-animated-svg.spec.ts` 在真实 Chromium 断言主 IR 与公众号 article 保留节点、fade 组一个周期内到达 opacity 1、`animateTransform` 目标位移随时间变化、`svg.getCurrentTime()` 推进。真实稿件实机验证：4 张图 animate 计数 7 / 12 / 10 / 5、animateTransform 2 / 2 / 2 / 1，采样透明度序列 0 → 0.16 → 0.49 → 0.83 → 1，截图 `/tmp/folia-article-after.png`。
+- **回归与边界：** `npm run typecheck`、`npm run lint`、全量 Vitest 84 文件 / 975 用例通过；e2e `dangerous-boundaries` / `mermaid-fidelity` / `rich-media-fixture-matrix` / `resource-failure-matrix` 通过。其中 `illegal-mermaid` 两条用例失败在改动前基线同样失败（IR 未出现 `graph TD`），属既有问题，未由本次改动引入，也未在本补丁内处理。仅 Chromium 验证，macOS WKWebView / Windows WebView2 未实机复验。
+
 ### 2026-10-29：Issue #219 反馈日志快照与长内容传递
 
 - **入口：** 采用设置中的独立“问题与反馈”页面，与关于分离；当前不增加第二个顶栏入口。设置页持有草稿，栏目切换不丢失描述和已选择的日志。

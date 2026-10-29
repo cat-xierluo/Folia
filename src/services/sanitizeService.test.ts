@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
-import { sanitizeForVditor, sanitizeHtml } from './sanitizeService';
+import { hardenSmilAnimationElements, sanitizeForVditor, sanitizeHtml } from './sanitizeService';
 
 describe('sanitizeHtml', () => {
   it('removes executable tags and event handlers from preview HTML', () => {
@@ -118,5 +118,95 @@ describe('sanitizeForVditor', () => {
     expect(sanitized).toContain('a &lt; b &amp;&amp; c &gt; d');
     expect(sanitized).not.toContain('&amp;lt;');
     expect(sanitized).toContain('&lt;https://example.com&gt;');
+  });
+
+  it('保留 SMIL animate / animateTransform 节点及其时间属性（动态 SVG）', () => {
+    const rendered = [
+      '<svg viewBox="0 0 100 50">',
+      '<g opacity="0"><rect width="10" height="10"/><animate attributeName="opacity" begin="0s" dur="2s" repeatCount="indefinite" calcMode="discrete" values="0;1;0" keyTimes="0;0.5;1" fill="freeze"/></g>',
+      '<g opacity="1"><animateTransform attributeName="transform" type="translate" values="0 0;20 0" dur="3s" repeatCount="indefinite"/></g>',
+      '</svg>',
+    ].join('');
+
+    const sanitized = sanitizeForVditor(rendered);
+
+    expect(sanitized).toContain('<animate attributeName="opacity"');
+    expect(sanitized).toContain('keyTimes="0;0.5;1"');
+    expect(sanitized).toContain('calcMode="discrete"');
+    expect(sanitized).toContain('<animateTransform');
+    expect(sanitized).toContain('type="translate"');
+  });
+
+  it('保留安全的 set / animateMotion 节点', () => {
+    const rendered = [
+      '<svg viewBox="0 0 100 50">',
+      '<rect width="10" height="10"><set attributeName="opacity" to="1" begin="1s" dur="2s" fill="freeze"/></rect>',
+      '<circle r="4"><animateMotion path="M0 0 L40 40" dur="3s" repeatCount="indefinite"/></circle>',
+      '</svg>',
+    ].join('');
+
+    const sanitized = sanitizeForVditor(rendered);
+
+    expect(sanitized).toContain('<set attributeName="opacity"');
+    expect(sanitized).toContain('<animateMotion');
+    expect(sanitized).toContain('path="M0 0 L40 40"');
+  });
+
+  it('剥离以事件属性为目标的 SMIL 动画（回写即事件注入）', () => {
+    const rendered = [
+      '<svg viewBox="0 0 100 50">',
+      '<rect width="10" height="10"/>',
+      '<animate attributeName="onclick" to="alert(1)" begin="0s" dur="1s" fill="freeze"/>',
+      '<set attributeName="onmouseover" to="alert(2)"/>',
+      '</svg>',
+    ].join('');
+
+    const sanitized = sanitizeForVditor(rendered);
+
+    expect(sanitized).not.toContain('onclick');
+    expect(sanitized).not.toContain('onmouseover');
+    expect(sanitized).not.toContain('alert');
+    expect(sanitized).toContain('<rect');
+  });
+
+  it('动画目标 href 被 DOMPurify 防护剥除；外链动画引用整节点移除、本地 # 引用保留', () => {
+    const rendered = [
+      '<svg viewBox="0 0 100 50">',
+      '<a><animate attributeName="href" to="javascript:alert(1)"/></a>',
+      '<animate attributeName="opacity" values="0;1" dur="1s" href="https://evil.example/other.svg"/>',
+      '<animate attributeName="opacity" values="0;1" dur="1s" href="#local"/>',
+      '</svg>',
+    ].join('');
+
+    const sanitized = sanitizeForVditor(rendered);
+
+    expect(sanitized).not.toContain('javascript:');
+    expect(sanitized).not.toContain('attributeName="href"');
+    expect(sanitized).not.toContain('evil.example');
+
+    const template = document.createElement('template');
+    template.innerHTML = sanitized;
+    const animations = template.content.querySelectorAll('animate');
+    expect(animations).toHaveLength(2);
+    expect(animations[1].getAttribute('href')).toBe('#local');
+  });
+});
+
+describe('hardenSmilAnimationElements', () => {
+  it('移除 attributeName 指向导航与资源属性的动画元素，保留常规目标', () => {
+    const template = document.createElement('template');
+    template.innerHTML = [
+      '<svg>',
+      '<animate id="a1" attributeName="opacity" values="0;1"/>',
+      '<animate id="a2" attributeName="src" values="a.png"/>',
+      '<animate id="a3" attributeName="style" values="color:red"/>',
+      '<animate id="a4" attributeName="bad name" values="0;1"/>',
+      '<animateTransform id="a5" attributeName="transform" type="translate"/>',
+      '</svg>',
+    ].join('');
+
+    expect(hardenSmilAnimationElements(template.content)).toBe(true);
+    const kept = Array.from(template.content.querySelectorAll('[id]')).map((el) => el.id);
+    expect(kept).toEqual(['a1', 'a5']);
   });
 });

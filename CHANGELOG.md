@@ -18,6 +18,10 @@ All notable changes of this project will be documented in this file.
 
 - **问题与反馈（#219）**：设置新增独立页面；诊断日志可一键填入、预览、重新生成和移除，切换设置栏目保留草稿。保存反馈时包含全部所选日志；GitHub 预填放不下时明确提示保存完整 Markdown 并作为附件提交。
 
+### Added
+
+- **动态 SVG（SMIL 动画）支持**：内联 SVG 中的 `<animate>`、`<animateTransform>`、`<animateMotion>`、`<set>` 在所见即所得编辑器与公众号 HTML 预览（含「复制到公众号编辑器」与导出 HTML）中保留并真实播放，此前这些元素会被整体剥除，导致初始透明的图层永远不显示、示意图只剩空白首帧。`calcMode`、`keyTimes`、`keySplines` 等时序属性一并保留，`discrete` 切换不再被静默降级为线性插值。动画目标指向事件属性（`onclick` 等）、`style` 或导航/资源属性，或引用外部文档时，整个动画节点被剥除；`<script>`、`on*` 处理器与 `javascript:` 协议仍照旧清除。Word 纸张预览为 HTML 模拟因而随之播放；DOCX 导出沿用既有边界（内联 SVG 不进入 docx），未做「定格到最终帧」类额外降级。
+
 ## [0.8.6] - 2026-10-28
 
 ### Fixed
