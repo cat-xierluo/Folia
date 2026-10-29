@@ -2,6 +2,12 @@
 
 All notable changes of this project will be documented in this file.
 
+## [0.8.8] - 2026-10-29
+
+### Fixed
+
+- **发布流水线跨平台校验**：发布构建的版本守卫显式使用 Bash，修复 Windows runner 默认 PowerShell 无法执行该步骤的问题。`v0.8.7` 的 tag 构建在创建 Release 前终止，未公开任何安装包；`v0.8.8` 取代该次未完成的发行。
+
 ## [0.8.7] - 2026-10-29
 
 ### Fixed
