@@ -4,6 +4,10 @@ All notable changes of this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **反馈与关于页版本信息**：浏览器预览和原生版本读取失败时，回退版本改为读取构建清单，避免继续报告过期的 `0.3.7`；正常原生应用仍优先使用实际安装版本。
+
 ### Improved
 
 - **问题与反馈（#219）**：设置新增独立页面；诊断日志可一键填入、预览、重新生成和移除，切换设置栏目保留草稿。保存反馈时包含全部所选日志；GitHub 预填放不下时明确提示保存完整 Markdown 并作为附件提交。

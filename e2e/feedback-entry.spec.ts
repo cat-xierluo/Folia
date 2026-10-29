@@ -1,5 +1,10 @@
 import { readFile } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
+
+const bundledAppVersion = JSON.parse(
+  readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+).version as string;
 
 async function openFeedback(page: Page) {
   await page.goto('/');
@@ -37,6 +42,7 @@ test('independent feedback keeps its draft across settings sections and exports 
   await expect(description).toHaveValue('表格预览异常\n请查看诊断事件');
   await expect(preview).toHaveValue(snapshotText);
   const markdown = await downloadFeedback(page);
+  expect(markdown).toContain(`- Version: ${bundledAppVersion}\n`);
   expect(markdown).toContain('表格预览异常\n请查看诊断事件');
   expect(markdown).toContain(`\`\`\`json\n${snapshotText}\n\`\`\``);
   await page.getByRole('button', { name: '移除日志', exact: true }).click();
@@ -70,6 +76,7 @@ test('long feedback warns before opening and exports its full text even with a d
   await expect(page.locator('.settings-row-message')).not.toContainText('完整反馈已复制');
   const url = new URL((await page.locator('html').getAttribute('data-feedback-opened-url'))!);
   const body = url.searchParams.get('body')!;
+  expect(body).toContain(`- Folia ${bundledAppVersion}\n`);
   expect(body.length).toBeLessThanOrEqual(650);
   expect(body).toContain('Description truncated');
   expect(body).not.toContain('"events"');

@@ -1,7 +1,8 @@
 import type { DownloadEvent, Update } from '@tauri-apps/plugin-updater';
+import { version as bundledAppVersion } from '../../package.json';
 
 const UPDATE_CHECK_TIMEOUT_MS = 12_000;
-export const FALLBACK_APP_VERSION = '0.3.7';
+export const FALLBACK_APP_VERSION = bundledAppVersion;
 
 export type UpdateSource = 'auto' | 'manual';
 

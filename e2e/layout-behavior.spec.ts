@@ -1,4 +1,9 @@
 import { expect, type Page, test } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+
+const bundledAppVersion = JSON.parse(
+  readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+).version as string;
 
 async function openWysiwygEditor(page: Page): Promise<void> {
   await expect(page.locator('.recent-page, .cm-editor, .wysiwyg-editor-pane').first()).toBeVisible();
@@ -770,8 +775,8 @@ test('settings about section exposes update controls', async ({ page }) => {
   await expect(page.getByText(/法律、财税/)).toHaveCount(0);
   await expect(page.getByRole('button', { name: '自动检查更新' })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByText('尚未检查更新。')).toBeVisible();
-  await expect(page.getByText('Folia 0.3.7')).toHaveCount(0);
-  await expect(page.getByText('0.3.7')).toBeVisible();
+  await expect(page.getByText(`Folia ${bundledAppVersion}`)).toHaveCount(0);
+  await expect(page.getByText(bundledAppVersion, { exact: true })).toBeVisible();
   await expect(page.getByText(/启动后延迟检查/)).toHaveCount(0);
   await expect(page.getByText('杨卫薪律师')).toBeVisible();
   await expect(page.getByRole('link', { name: 'github.com/cat-xierluo', exact: true })).toBeVisible();

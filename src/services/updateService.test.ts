@@ -1,5 +1,6 @@
 import type { DownloadEvent, Update } from '@tauri-apps/plugin-updater';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   FALLBACK_APP_VERSION,
   categorizeUpdateError,
@@ -13,13 +14,21 @@ import {
 const processMock = vi.hoisted(() => ({
   relaunch: vi.fn(),
 }));
+const appMock = vi.hoisted(() => ({ getVersion: vi.fn() }));
+const manifestVersion = JSON.parse(
+  readFileSync('package.json', 'utf8'),
+).version as string;
 
 vi.mock('@tauri-apps/plugin-process', () => processMock);
+vi.mock('@tauri-apps/api/app', () => appMock);
 
 describe('updateService', () => {
   beforeEach(() => {
     processMock.relaunch.mockReset();
+    appMock.getVersion.mockReset();
   });
+
+  afterEach(() => vi.unstubAllGlobals());
 
   it('detects browser test runtime as unsupported for Tauri updater', async () => {
     expect(isTauriRuntime()).toBe(false);
@@ -27,7 +36,22 @@ describe('updateService', () => {
   });
 
   it('returns the bundled app version fallback outside Tauri', async () => {
-    await expect(getCurrentAppVersion()).resolves.toBe(FALLBACK_APP_VERSION);
+    expect(FALLBACK_APP_VERSION).toBe(manifestVersion);
+    await expect(getCurrentAppVersion()).resolves.toBe(manifestVersion);
+    expect(appMock.getVersion).not.toHaveBeenCalled();
+  });
+
+  it('uses the actual native version when Tauri returns it', async () => {
+    vi.stubGlobal('__TAURI_INTERNALS__', {});
+    appMock.getVersion.mockResolvedValue('9.8.7');
+    await expect(getCurrentAppVersion()).resolves.toBe('9.8.7');
+    expect(appMock.getVersion).toHaveBeenCalledOnce();
+  });
+
+  it('falls back to the manifest version when the native version API rejects', async () => {
+    vi.stubGlobal('__TAURI_INTERNALS__', {});
+    appMock.getVersion.mockRejectedValue(new Error('unavailable'));
+    await expect(getCurrentAppVersion()).resolves.toBe(manifestVersion);
   });
 
   it('downloads app updates without installing immediately', async () => {
