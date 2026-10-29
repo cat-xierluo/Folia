@@ -109,6 +109,7 @@ jobs:
             --config config/playwright.config.ts \
             e2e/rich-media-cross-surface.spec.ts \
             e2e/rich-media-fixture-matrix.spec.ts \
+            e2e/wechat-animated-svg.spec.ts \
             e2e/mermaid-ir-renders.spec.ts \
             e2e/mermaid-fidelity.spec.ts \
             e2e/theme-system-guards.spec.ts \

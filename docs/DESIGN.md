@@ -935,8 +935,7 @@ mermaid / SVG / 图片三类富媒体在主 IR、HTML 预览、Word 预览、DOC
 
 内联 SVG 可以用 SMIL 动画元素表达分步示意（如教学稿里的「规则页逐层展开」「命令在本地与远程之间流动」）。这类图的可见内容常由初始 `opacity="0"` 的图层承担，若动画元素被剥除，图会永远停在「只剩背景与标题」的空白首帧。
 
-- 主 IR 与 HTML 预览（公众号预览、复制到公众号、导出 HTML）必须保留 `animate` / `animateTransform` / `animateMotion` / `set`，并按 SMIL 时间轴真实播放；各 surface 的动画节点数应一致
-- 时序属性（`begin` / `dur` / `values` / `keyTimes` / `calcMode` / `keySplines` / `repeatCount` / `from` / `to` / `by`）必须随动画节点一起保留；`calcMode` 缺失会把 `discrete` 静默降级为线性插值，画面不再按离散步骤切换
-- 动画目标指向事件属性（`onclick` 等）、`style`、导航与资源属性（`href` / `src` / `data` 等），或动画元素引用外部文档时，整个动画节点必须剥除——SMIL 可在渲染后回写属性，回写事件属性等于绕过 sanitize
-- 动画元素的 `href` / `xlink:href` 只允许本地 `#` 引用
-- Word 纸张预览是 HTML 模拟，与 HTML 预览同源因而随之播放；DOCX 导出沿用既有边界（内联 SVG 不进入 docx），不要求动画等价，也不需要为导出做「定格到最终帧」的额外降级
+- 主 IR 与 HTML 预览、复制及导出保留安全的 `animate` / `animateTransform` / `animateMotion` / `set`；透明度、绘图位置、路径、变换、颜色和受限本地绘图引用按 SMIL 时间轴播放。目标属性以 `sanitizeService` 的白名单为准，不承诺任意属性动画。
+- `begin` / `dur` / `values` / `keyTimes` / `calcMode` / `keySplines` / `keyPoints` / `repeatCount` / `from` / `to` / `by` 随动画保留；离散切换和路径时序在各 HTML 产物中一致。
+- 事件、样式、导航、未知目标或外部资源值在属性清洗前拒绝整个动画。`href` / `xlink:href` 只允许本地 `#id`；颜色与绘图引用的每个动画值也须受检查，不能只检查静态属性。
+- Word 纸张预览沿用共享 HTML 渲染，不增加 DOCX 动画或定格处理。公众号平台粘贴后的二次清洗与原生 WebView 播放需分别验证，Folia HTML 产物通过不代表这些平台已通过。

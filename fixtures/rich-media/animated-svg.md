@@ -11,6 +11,9 @@
   <rect id="smil-rect" x="0" y="44" width="12" height="8" fill="#8F5148">
     <animateTransform attributeName="transform" begin="0s" dur="2s" repeatCount="indefinite" calcMode="linear" values="0 0;100 0;0 0" keyTimes="0;0.5;1" type="translate"/>
   </rect>
+  <circle id="smil-motion" cx="0" cy="34" r="3" fill="#176D61">
+    <animateMotion path="M0 0 L100 0" keyTimes="0;0.5;1" keyPoints="0;0.2;1" calcMode="linear" dur="2s" repeatCount="indefinite"/>
+  </circle>
 </svg>
 
 文档结束。

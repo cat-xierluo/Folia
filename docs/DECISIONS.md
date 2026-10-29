@@ -4,13 +4,10 @@
 
 ### 2026-10-30（Codex）：动态 SVG（SMIL）在公众号导出链路的适配
 
-- **问题证据：** 用户稿件《法律人的 Git 入门》含 4 张内联 SVG、34 个 `<animate>`、7 个 `<animateTransform>`、27 个初始 `opacity="0"` 图层。Folia 0.8.6 实测：DOMPurify 的 svg profile 把 `animate` / `set` 列入 `svgDisallowed` 黑名单（`animateTransform` 侥幸在白名单内），公众号导出自身的标签白名单连 `animateTransform` 也没有。结果是主 IR 只剩每图 1–2 个 `animateTransform`、HTML 预览一个不剩，所有初始透明图层永远不可见，四张示意图只剩背景与标题（截图 `/tmp/folia-svg-motion-article-audit.png`）。
-- **用户明确取舍：** Word 侧「无所谓」，不为动画做适配；公众号导出必须适配。DOCX 导出沿用既有边界（内联 SVG 不进 docx），不做「导出时定格到最终帧」的额外降级。
-- **方案：** `sanitizeForVditor` 以 `ADD_TAGS` 放行 `animate` / `animateTransform` / `animateMotion` / `set`，并以 `ADD_ATTR` 补 `calcMode` / `keySplines` / `from` / `to` / `by`——svg profile 属性白名单缺这些时序属性，缺失会把 `discrete` 静默降级为线性插值。公众号导出白名单（`wechatPreviewService`）追加同名标签与时序属性；DOMPurify 按小写 `lcName` 匹配，故 camelCase 与小写双写。
-- **安全取舍：** DOMPurify 自带「`attributeName` 含 href 即剥除」，但 `attributeName="onclick"` 这类事件属性目标没有内建防护——SMIL 可在渲染后回写属性，回写事件属性等于绕过 sanitize。新增 `hardenSmilAnimationElements`：`attributeName` 指向 `on*` / `style` / `href` / `src` / `data` 等属性或含非法字符时**整个动画节点移除**（不是仅剥属性：无目标的动画节点没有保留价值）；动画元素的 `href` / `xlink:href` 只允许本地 `#` 引用。此为黑名单式取舍：新增未知危险属性名不在覆盖内，故选择对事件属性与导航/资源属性直接整节点移除，优先收敛暴露面。
-- **不改的：** 不放开 `<mpath>`、不放开外部文档引用、不改 Markdown 语义与源码往返、不触碰 Word 预览与 DOCX 导出链路。
-- **验证：** 单测 `sanitizeService`（animate / animateTransform / set / animateMotion 保留、事件属性目标剥离、href 目标剥除、外链引用移除、本地 `#` 保留、harden 单测）与 `wechatPreviewService`（previewHtml + clipboardHtml 保留动画节点且危险目标被剥）；新增 fixture `fixtures/rich-media/animated-svg.md` 与 manifest / README 登记；新增 e2e `e2e/wechat-animated-svg.spec.ts` 在真实 Chromium 断言主 IR 与公众号 article 保留节点、fade 组一个周期内到达 opacity 1、`animateTransform` 目标位移随时间变化、`svg.getCurrentTime()` 推进。真实稿件实机验证：4 张图 animate 计数 7 / 12 / 10 / 5、animateTransform 2 / 2 / 2 / 1，采样透明度序列 0 → 0.16 → 0.49 → 0.83 → 1，截图 `/tmp/folia-article-after.png`。
-- **回归与边界：** `npm run typecheck`、`npm run lint`、全量 Vitest 84 文件 / 975 用例通过；e2e `dangerous-boundaries` / `mermaid-fidelity` / `rich-media-fixture-matrix` / `resource-failure-matrix` 通过。其中 `illegal-mermaid` 两条用例失败在改动前基线同样失败（IR 未出现 `graph TD`），属既有问题，未由本次改动引入，也未在本补丁内处理。仅 Chromium 验证，macOS WKWebView / Windows WebView2 未实机复验。
+- **问题与取舍：** 稿件的 4 张 SVG 依赖 34 个 `animate` 和 7 个 `animateTransform`；透明度动画被清除后，主体图层始终不可见。用户要求适配公众号导出，Word/DOCX 不增加专门处理。
+- **统一安全边界：** `sanitizeService` 使用独立 DOMPurify 实例的 `uponSanitizeElement` 钩子，在属性清洗前检查动画。首审证明事后黑名单不足：动画值可写入外部 `filter` 等引用，危险 `href` 被先行清除还会使动画转而作用于父节点。因此改为绘图目标白名单，并在任意 `from` / `to` / `by` / `values` 值含不允许的绘图引用时拒绝整个动画；颜色只接受受限颜色字面量或本地 `url(#id)`，滤镜、裁剪、蒙版与 marker 只接受本地引用或 `none`，动画元素的引用只接受本地 `#id`。不增加全局 DOMPurify 钩子。
+- **播放保真：** 主 IR 与公众号 HTML 清洗共用该入口，分别保持自己的标签与属性配置；保留 `calcMode`、`keyTimes`、`keySplines`、`keyPoints` 等时序信息。`keyPoints` 丢失已在首审中复现为路径中点从 20 变成 50，作为回归用例。`animateMotion` 使用内联 `path`，不新增 `mpath` 支持。
+- **验收与限制：** 验证通过实际动画采样、真实 HTML 剪贴板、下载的独立 HTML 及外部请求拦截完成。首审发现、返修、精确候选检查和合并回执集中记在 [TASKS 的 PR #226 条目](TASKS.md)，不把 Folia 产物验收当作公众号平台粘贴或原生 WebView 验收。
 
 ### 2026-10-29：Issue #219 反馈日志快照与长内容传递
 

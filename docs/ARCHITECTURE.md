@@ -142,7 +142,7 @@ word/table-handler.ts 输出 docx Table；Markdown 管道表格使用专用 pars
 | `feedbackService.ts` | 组装完整反馈 Markdown 与 GitHub 预填链接；诊断日志由独立反馈页在用户点击时采集快照，预填超限整段省略日志并返回状态，完整文件导出不截断；不直接提交或自动上传 |
 | `i18n.ts` | 轻量多语言字典，提供中文、英文、日文，第一阶段覆盖设置导航、关于页、顶部栏和 Word 预览核心文案 |
 | `licenseService.ts` | 额外槽位授权抽象层：本地内测码验证、本地授权缓存、未来在线激活、在线校验、撤销/停用均通过该层封装 |
-| `sanitizeService.ts` | DOMPurify HTML 清洗；当前用于 Word 纸张预览和 docx 预览 HTML 安全边界 |
+| `sanitizeService.ts` | DOMPurify HTML 清洗；`sanitizeWithSmil` 用独立实例的元素钩子在属性移除前拒绝危险动画，共用于主 IR、Markdown 预览及公众号 HTML 管线；目标属性采用绘图白名单，动画引用和值限定为安全颜色和本地绘图引用。docx 预览沿用基础 HTML 白名单 |
 | `docxPreviewService.ts` | 按需加载 mammoth，将 docx 转换为已清洗 HTML |
 | `wordPreviewArtifactService.ts` | 按需加载 Vditor，将当前 Markdown 渲染为 Word 纸张预览使用的快速 HTML（DEC-119 / DEC-120 之后已迁移到 RenderCoordinator，本文件保留其作为对外稳定 API，内部实现走 coordinator） |
 | `renderCoordinator.ts` | DEC-120 富媒体统一渲染协调器：`createRenderCoordinator()` 工厂 + `renderMarkdownArtifact(source, options)` 契约；generation 单调递增，旧 generation 完成被丢弃；AbortSignal 让当前 generation resolve 为 aborted artifact；MutationObserver 等待 `.language-mermaid` SVG / `.language-math` KaTeX 终态而非依赖 `after()` / `data-render="1"`；5s 软超时返回 timeout diagnostics。统一接管 `wordPreviewArtifactService` / `WechatPreviewPane` / `WordPaperPreviewPane` 的静态 HTML 链路。Phase 0 / 1 红测试 4 vitest + 3 Playwright 全部转绿 |

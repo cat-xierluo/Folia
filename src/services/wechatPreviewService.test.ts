@@ -195,6 +195,43 @@ describe('wechatPreviewService', () => {
     expect(svg.querySelectorAll('animateTransform')).toHaveLength(1);
   });
 
+  it('preserves keyPoints through preview, clipboard and standalone HTML export', () => {
+    const result = createHtmlExportResult('', `
+      <svg viewBox="0 0 120 60">
+        <circle r="2"><animateMotion path="M0 0 L100 0" keyTimes="0;0.5;1" keyPoints="0;0.2;1" dur="2s" calcMode="linear"/></circle>
+      </svg>
+    `);
+    for (const html of [result.previewHtml, result.clipboardHtml, createHtmlExportDocument(result.previewHtml)]) {
+      const motion = queryRequired<Element>(getDocumentBody(html), 'animateMotion');
+      expect(motion.getAttribute('keyPoints')).toBe('0;0.2;1');
+      expect(motion.getAttribute('keyTimes')).toBe('0;0.5;1');
+    }
+  });
+
+  it('rejects animation resource values and dangerous references before attributes disappear', () => {
+    const result = createHtmlExportResult('', `
+      <svg xmlns:xlink="http://www.w3.org/1999/xlink">
+        <rect id="target" width="20" height="20">
+          <set attributeName="filter" to="url(https://example.invalid/filter.svg#x)" begin="0s"/>
+          <animate attributeName="fill" values="#ffffff;url(https://example.invalid/paint.svg#x)" dur="2s"/>
+          <set attributeName="opacity" to="0" href="javascript:alert(1)"/>
+          <set attributeName="opacity" to="0" xlink:href="data:image/svg+xml,external"/>
+          <animate attributeName="href" values="https://example.invalid/;javascript:alert(1)"/>
+        </rect>
+        <animate attributeName="fill" values="#ffffff;#176D61" href="#target" dur="2s"/>
+        <set attributeName="filter" to="url(#local)" href="#target" begin="0s"/>
+      </svg>
+    `);
+    for (const html of [result.previewHtml, result.clipboardHtml]) {
+      const root = getDocumentBody(html);
+      expect(root.querySelectorAll('#target > animate, #target > set')).toHaveLength(0);
+      expect(root.querySelectorAll('animate, set')).toHaveLength(2);
+      expect(html).not.toContain('example.invalid');
+      expect(html).not.toContain('javascript:');
+      expect(html).not.toContain('data:image');
+    }
+  });
+
   it('removes Vditor preview chrome before wrapping export HTML', () => {
     const result = createHtmlExportResult('', `
       <pre><code class="language-ts hljs">const ok = true</code></pre>

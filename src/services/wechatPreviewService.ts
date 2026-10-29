@@ -1,4 +1,3 @@
-import DOMPurify from 'dompurify';
 import {
   DEFAULT_HTML_EXPORT_PRESET_ID,
   HTML_EXPORT_ARTICLE_CLASS,
@@ -14,7 +13,7 @@ import {
   removeVditorPreviewChrome,
   stripVditorPreviewChrome,
 } from './vditorPreviewChromeService';
-import { hardenSmilAnimationElements } from './sanitizeService';
+import { sanitizeWithSmil } from './sanitizeService';
 
 export {
   HTML_EXPORT_ARTICLE_CLASS,
@@ -190,8 +189,6 @@ const ALLOWED_TAGS = [
   'filter', 'fedropshadow', 'fegaussianblur', 'feoffset', 'feblend',
   'fecolormatrix', 'feflood', 'fecomposite',
   'lineargradient', 'radialgradient', 'stop',
-  // 动态 SVG（SMIL）：公众号导出保留内联动画；目标属性安全由
-  // hardenSmilAnimationElements 与下方 ALLOWED_ATTR 共同约束。
   'animate', 'animatetransform', 'animatemotion', 'set',
 ];
 
@@ -215,7 +212,7 @@ const ALLOWED_ATTR = [
   // SMIL 动画属性（camelCase 供可读性，小写形式为 DOMPurify lcName 实际匹配项）。
   'attributeName', 'attributename', 'attributeType', 'attributetype',
   'begin', 'dur', 'end', 'from', 'to', 'by', 'values',
-  'keyTimes', 'keytimes', 'keySplines', 'keysplines',
+  'keyTimes', 'keytimes', 'keySplines', 'keysplines', 'keyPoints', 'keypoints',
   'calcMode', 'calcmode',
   'repeatCount', 'repeatcount', 'repeatDur', 'repeatdur',
   'restart', 'additive', 'accumulate', 'path', 'rotate', 'type',
@@ -675,7 +672,7 @@ function sanitizeUrlAttributes(root: ParentNode): void {
 }
 
 function sanitizeHtmlExportArticleFragment(articleHtml: string): string {
-  const sanitized = DOMPurify.sanitize(stripVditorPreviewChrome(articleHtml), {
+  const sanitized = sanitizeWithSmil(stripVditorPreviewChrome(articleHtml), {
     ALLOWED_TAGS,
     ALLOWED_ATTR,
     ALLOW_DATA_ATTR: false,
@@ -683,7 +680,6 @@ function sanitizeHtmlExportArticleFragment(articleHtml: string): string {
   const template = document.createElement('template');
   template.innerHTML = sanitized;
 
-  hardenSmilAnimationElements(template.content);
   removeVditorPreviewChrome(template.content);
   template.content.querySelectorAll('[id]').forEach((element) => {
     if (!isSvgElement(element)) {

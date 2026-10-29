@@ -30,6 +30,19 @@
 
 ## 待处理
 
+### 动态 SVG 的公众号预览与导出（PR #226，2026-10-30）
+
+- **来源与范围：** 用户要求检查文稿中的动态 SVG，确认后授权公众号 HTML 预览、复制与导出适配，以及提交、PR、独立 review 和合并。主会话是当前 `svg-motion-audit` 工作树的 writer；Word/DOCX 不增加专门适配，不发布新版本。
+- [x] 复现透明度动画被过滤导致图示空白，建立公共合成 fixture。
+- [x] 提交首轮候选并创建 Draft PR #226，首轮三项 CI 通过。
+- [x] 完成独立首审，结论 `REQUEST_CHANGES`。
+- [x] 修复动画值的外部资源引用、危险引用被剥除后的目标变化，以及 `keyPoints` 丢失。
+- [x] 补回归、接入 CI 的动画用例并验证本地候选。
+- [ ] 同一 reviewer 复审通过，核对最终 head 的 CI 后合并。
+- **首审记录：** head `8a19c2b723cc1a2af790a7cf968799f9e552e962`。P1：`set`/`animate` 可通过 `filter` 等目标的动画值发起外部 SVG 请求；P2：公众号白名单丢失 `keyPoints`，路径中点从 20 变成 50；P2：DOMPurify 先清除危险 `href`，剩余动画可能改为作用于父节点。三项需修复后重新验收。
+- **已有证据与边界：** 首轮 CI run `40924583626` 的前端、Chromium 和 Rust 三项通过，但当时 Chromium job 未纳入新增动画用例；本地新增用例通过。真实文稿在 Folia 的 Chromium 预览中保留 34 个 `animate`、7 个 `animateTransform` 并播放。此前两条 `illegal-mermaid` 用例在基线同样失败；macOS WKWebView、Windows WebView2 和公众号平台粘贴后的二次清洗仍未验，不把 Folia HTML 产物通过称为平台验收通过。
+- **返修验收：** 改用独立 DOMPurify 实例的元素钩子，在属性被剥除前拒绝危险节点；绘图目标白名单和资源值逐项检查覆盖 `set`/`animate`、单值/多值及命名空间引用。补齐 `keyPoints`，新增动画文件加入 CI 的显式清单。严格 lint、typecheck、build、全量 Vitest 85 文件 / 1010 项通过；两个服务的 73 项单测通过。生产 `vite preview` 上动画 3 项与 Mermaid 保真 3 项共 6/6 通过，实际读取复制完成后的原始 HTML 剪贴板和下载文件，路径中点均为 20，危险动画无外部请求。首次生产探针的剪贴板读取早于异步写入终态，保留其 `InvalidStateError` 失败记录；用例改为等待复制成功并读取原始 HTML 后通过，未放宽动画断言。
+
 ### v0.8.8 发布恢复候选（2026-10-29）
 
 - **来源与范围：** 用户已授权发布 v0.8.7。该 tag 的 release run `40893161094` 在 Windows 的版本守卫处失败：step 未指定 shell，runner 用 PowerShell 执行 Bash 的 `set -euo pipefail`，因此退出 1。macOS 两项校验通过但构建被主动取消；Draft Release 未创建，没有任何安装包公开。公开 tag 不移动，按新 patch 恢复发行。

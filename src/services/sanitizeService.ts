@@ -1,44 +1,66 @@
-import DOMPurify from 'dompurify';
+import DOMPurify, { type Config } from 'dompurify';
 
-/** SMIL 动画元素。`animateTransform` 本就在 DOMPurify svg profile 内；
- * `animate` / `animateMotion` / `set` 默认在 svgDisallowed 黑名单中，
- * 由 ADD_TAGS 显式放行（公众号导出动态 SVG 支持，2026-10-30）。 */
 const SMIL_ANIMATION_TAGS = ['animate', 'animateTransform', 'animateMotion', 'set'] as const;
+const SMIL_TAG_NAMES = new Set(['animate', 'animatetransform', 'animatemotion', 'set', 'animatecolor']);
+const SMIL_LOCAL_REFERENCE = /^#[A-Za-z_][\w:.-]*$/;
+const SMIL_LOCAL_PAINT = /^url\((?:"#[A-Za-z_][\w:.-]*"|'#[A-Za-z_][\w:.-]*'|#[A-Za-z_][\w:.-]*)\)$/i;
+const SMIL_COLOR = /^(?:[a-z]+|#[0-9a-f]{3,8}|(?:rgb|rgba|hsl|hsla)\([\d.%+\-,/\s]+\))$/i;
+const SMIL_COLOR_TARGETS = new Set(['color', 'fill', 'stroke', 'stop-color', 'flood-color', 'lighting-color']);
+const SMIL_REFERENCE_TARGETS = new Set([
+  'filter', 'clip-path', 'mask', 'marker-start', 'marker-mid', 'marker-end',
+]);
+const SMIL_GEOMETRY_TARGETS = new Set([
+  'opacity', 'fill-opacity', 'stroke-opacity', 'stop-opacity', 'flood-opacity',
+  'x', 'y', 'x1', 'y1', 'x2', 'y2', 'cx', 'cy', 'r', 'rx', 'ry', 'dx', 'dy',
+  'width', 'height', 'offset', 'stroke-width', 'stroke-dasharray', 'stroke-dashoffset',
+  'stroke-miterlimit', 'font-size', 'letter-spacing', 'word-spacing',
+  'd', 'points', 'transform', 'display', 'visibility',
+]);
 
-const SMIL_TAG_PATTERN = /<(?:animate(?:Transform|Motion)?|set)[\s>/]/i;
-const SMIL_SELECTOR = SMIL_ANIMATION_TAGS.join(', ');
-
-/** 动画目标属性黑名单：SMIL 可在渲染后回写任意属性，事件处理器、style
- * 和导航/资源类属性被回写即等于绕过 sanitize（DOMPurify 只防 href 目标）。 */
-const UNSAFE_SMIL_TARGET_ATTR_RE = /^(?:on[\w-]*|style|(?:xlink:)?href|src|srcset|data|action|formaction|poster)$/i;
-
-const SMIL_TARGET_NAME_RE = /^[A-Za-z][\w:.-]*$/;
-
-/**
- * 对已 sanitize 的 DOM 做 SMIL 动画元素硬化：
- * - `attributeName` 指向事件处理器 / style / 导航与资源属性，或含非法字符时
- *   整个动画元素移除（不是仅剥属性——无目标的动画节点没有保留价值）；
- * - 动画元素的 `href` / `xlink:href` 只允许本地 `#` 引用，外链与危险协议
- *   一并移除元素。
- * 返回是否有修改。调用方负责在 DOMPurify 输出之后执行。
- */
-export function hardenSmilAnimationElements(root: ParentNode): boolean {
-  let changed = false;
-  root.querySelectorAll(SMIL_SELECTOR).forEach((element) => {
-    const attributeName = element.getAttribute('attributeName')?.trim();
-    const hasLocalRefOnly = ['href', 'xlink:href'].every((attr) => {
-      const value = element.getAttribute(attr);
-      return value === null || value.trim().startsWith('#');
-    });
-    if (
-      (attributeName && (!SMIL_TARGET_NAME_RE.test(attributeName) || UNSAFE_SMIL_TARGET_ATTR_RE.test(attributeName)))
-      || !hasLocalRefOnly
-    ) {
-      element.remove();
-      changed = true;
+function isSafeSmilAnimation(element: Element): boolean {
+  if (element.namespaceURI !== 'http://www.w3.org/2000/svg') return false;
+  for (const attr of Array.from(element.attributes)) {
+    if (/^(?:[\w.-]+:)?href$/i.test(attr.name) && !SMIL_LOCAL_REFERENCE.test(attr.value.trim())) {
+      return false;
     }
+  }
+
+  const tagName = element.localName.toLowerCase();
+  const target = (element.getAttribute('attributeName') ?? '').trim().toLowerCase();
+  if (tagName === 'animatemotion') return target === '' || target === 'transform';
+  if (tagName === 'animatetransform' && target !== 'transform') return false;
+  if (SMIL_GEOMETRY_TARGETS.has(target)) return true;
+  if (!SMIL_COLOR_TARGETS.has(target) && !SMIL_REFERENCE_TARGETS.has(target)) return false;
+
+  // 属性名安全仍不够：动画值会在清洗结束后回写，资源类值只允许本地引用。
+  return ['from', 'to', 'by', 'values'].every((name) => {
+    const value = element.getAttribute(name);
+    if (value === null) return true;
+    return value.split(';').every((part) => {
+      const token = part.trim();
+      return SMIL_LOCAL_PAINT.test(token)
+        || (SMIL_COLOR_TARGETS.has(target) ? SMIL_COLOR.test(token) : token === 'none');
+    });
   });
-  return changed;
+}
+
+// 独立实例的元素钩子在属性被移除前拒绝整节点，防止危险 href 被剥后转而作用于父节点。
+const smilPurifier = DOMPurify();
+smilPurifier.addHook('uponSanitizeElement', (node) => {
+  if (node.nodeType !== 1) return;
+  const element = node as Element;
+  if (SMIL_TAG_NAMES.has(element.localName.toLowerCase()) && !isSafeSmilAnimation(element)) {
+    element.remove();
+  }
+});
+
+export function sanitizeWithSmil(html: string, config: Config): string {
+  return smilPurifier.sanitize(html, {
+    ...config,
+    RETURN_DOM: false,
+    RETURN_DOM_FRAGMENT: false,
+    RETURN_TRUSTED_TYPE: false,
+  });
 }
 
 const ALLOWED_TAGS = [
@@ -95,7 +117,7 @@ export function sanitizeHtml(html: string): string {
  * 入参是 Lute 已转义的 HTML 字符串（Vditor transform 钩子传入）。
  */
 export function sanitizeForVditor(renderedHtml: string): string {
-  const sanitized = DOMPurify.sanitize(renderedHtml, {
+  return sanitizeWithSmil(renderedHtml, {
     // 同时启用 html / svg / svgFilters profile：保留 svg 及子元素、滤镜，
     // 同时剥离 script、on* 事件处理器、危险协议与属性。
     USE_PROFILES: { html: true, svg: true, svgFilters: true },
@@ -106,18 +128,8 @@ export function sanitizeForVditor(renderedHtml: string): string {
     // 显式 ADD_TAGS 保留 foreignObject；其内部 HTML 仍由 DOMPurify 按
     // html profile 清洗（script / on* 仍被剥离），不降低安全性。
     // 动态 SVG（SMIL）：追加放行 animate / animateTransform / animateMotion /
-    // set。DOMPurify 自带「attributeName 含 href 即剥除」防护；事件属性目标
-    // 与外链引用由 hardenSmilAnimationElements 兜底。
+    // set。元素钩子先检查目标、引用和动画值，再交由 DOMPurify 清洗属性。
     ADD_TAGS: ['foreignObject', ...SMIL_ANIMATION_TAGS],
-    // svg profile 属性白名单缺时序类属性（calcMode/keySplines/from/to/by），
-    // 缺失会把 discrete 动画静默降级为线性插值。
     ADD_ATTR: ['calcMode', 'keySplines', 'from', 'to', 'by'],
   });
-
-  // 仅在产物含动画元素时才做 DOM 后处理，保证既有内容路径字节稳定。
-  if (!SMIL_TAG_PATTERN.test(sanitized)) return sanitized;
-
-  const template = document.createElement('template');
-  template.innerHTML = sanitized;
-  return hardenSmilAnimationElements(template.content) ? template.innerHTML : sanitized;
 }
